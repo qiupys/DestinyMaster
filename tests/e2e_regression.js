@@ -332,6 +332,31 @@ function latestCard(page, containerSel) {
       : fail('归档轮残留解读按钮', JSON.stringify(archRO));
     await archHead.click(); await page.waitForTimeout(150);
 
+    // 核心回归：同一问题、不同牌阵 = 两个平级轮。三张牌解读过「创业…」后，切凯尔特十字
+    // 用【完全相同的问题文本】再抽牌解读，必须各自成轮、不嵌套、不按文本去重。
+    const archBefore = await page.locator('#p-stage-tarot > .round-archive .round-item').count();
+    await page.click('#tr-spread button[data-v="celtic_cross"]');
+    await page.fill('#tr-q', '创业还是留在大公司更适合我');
+    const rkBeforeSpread = await page.evaluate(() => document.getElementById('tr-result').dataset.rk || '');
+    await page.click('#tr-draw');
+    await page.waitForFunction((rk) => (document.getElementById('tr-result') || {}).dataset.rk !== rk,
+      rkBeforeSpread, { timeout: 15000 }).catch(() => {});
+    await page.click('#tr-ai');
+    const crossCard = latestCard(page, '#tr-result');
+    try { await waitAI(crossCard); ok('同问题换牌阵(十字)可再次解读'); }
+    catch (e) { fail('同问题换牌阵解读', e.message.split('\n')[0]); }
+    const crossState = await page.evaluate(() => ({
+      archive: document.querySelectorAll('#p-stage-tarot > .round-archive .round-item').length,
+      nested: document.querySelectorAll('#p-stage-tarot .round-item .round-item').length,
+      rks: [...document.querySelectorAll('#p-stage-tarot > .round-archive .round-item')].map(n => n.dataset.rk || ''),
+      curRk: document.getElementById('tr-result').dataset.rk || ''
+    }));
+    const crossRks = crossState.rks.concat(crossState.curRk).filter(Boolean);
+    (crossState.archive === archBefore + 1 && crossState.nested === 0 && new Set(crossRks).size === crossRks.length)
+      ? ok('同问题不同牌阵=平级独立轮、无嵌套', JSON.stringify(crossState))
+      : fail('同问题不同牌阵归档', JSON.stringify(crossState));
+    await shot(page, '41c_tarot_cross_newround');
+
     // 模板问题点击定位：已解读过的问题再次点 chip → 定位并展开原对话，不新开解读
     const chips = page.locator('#p-stage-tarot .tr-chips button').first();
     if (await chips.count()) {
@@ -359,6 +384,36 @@ function latestCard(page, containerSel) {
     try { await waitAI(hlCard); ok('黄历 AI 答疑', 'len=' + (await hlCard.innerText()).length); }
     catch (e) { fail('黄历 AI 答疑', e.message.split('\n')[0]); }
     await shot(page, '51_huangli_ai');
+
+    // 核心回归：同一问题、换日期 = 两个平级轮。旧实现只按问题文本去重，
+    // 同问题换日期被误判重复、新卡塞进旧轮造成嵌套；修复后按 day|ymd 身份分成两轮。
+    const hlArchBefore = await page.locator('#p-stage-huangli > .round-archive .round-item').count();
+    const pickedDay = await page.evaluate(() => {
+      const cells = [...document.querySelectorAll('#p-stage-huangli #hl-cal .hl-cell')];
+      const today = cells.find(c => c.dataset.today === '1' && c.dataset.off === '0');
+      const other = cells.find(c => c.dataset.off === '0' && c.dataset.d !== (today ? today.dataset.d : ''));
+      if (other) { other.click(); return other.dataset.d; }
+      return null;
+    });
+    if (pickedDay) {
+      await page.waitForTimeout(700);
+      await page.fill('#hl-q', '这天适合搬家吗');   // 与上一轮完全相同的问题文本
+      await page.click('#hl-ai');
+      const hlCard2 = latestCard(page, '#hl-result');
+      try { await waitAI(hlCard2); ok('同问题换日期可再次解读', 'day=' + pickedDay); }
+      catch (e) { fail('黄历换日期解读', e.message.split('\n')[0]); }
+      const hlState = await page.evaluate(() => ({
+        archive: document.querySelectorAll('#p-stage-huangli > .round-archive .round-item').length,
+        nested: document.querySelectorAll('#p-stage-huangli .round-item .round-item').length,
+        rks: [...document.querySelectorAll('#p-stage-huangli > .round-archive .round-item')].map(n => n.dataset.rk || ''),
+        curRk: document.getElementById('hl-result').dataset.rk || ''
+      }));
+      const hlRks = hlState.rks.concat(hlState.curRk).filter(Boolean);
+      (hlState.archive === hlArchBefore + 1 && hlState.nested === 0 && new Set(hlRks).size === hlRks.length)
+        ? ok('同问题换日期=平级独立轮、无嵌套', JSON.stringify(hlState))
+        : fail('黄历同问题换日期归档', JSON.stringify(hlState));
+      await shot(page, '51b_huangli_two_rounds');
+    } else info('黄历换日期场景', '未找到可点的其它日期，跳过');
 
     section('8. 个人中心（用户名/密码文案 + 历史 + 日期查找）');
     await page.goto(BASE + '/?e2e=' + Date.now() + '#/profile', { waitUntil: 'domcontentloaded' });

@@ -828,7 +828,7 @@
           var scope = "";
           if (pick.kind === "dy") scope = "（只看 " + pick.gz + " 大运 " + pick.from + "-" + pick.to + "）";
           if (pick.kind === "ln") scope = "（只看 " + pick.year + " " + pick.gz + " 流年）";
-          streamAI("bazi", lastQS + "&q=" + encodeURIComponent(scope + q) + authParam(), q, $("#bz-ai-out"));
+          streamAI("bazi", lastQS + "&q=" + encodeURIComponent(scope + q) + authParam(), q, $("#bz-ai-out"), lastQS + "|" + scope);
         };
         $("#bz-ai").onclick = askBz;
         $("#bz-q").onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); askBz(); } };
@@ -1018,7 +1018,8 @@
         var bianUpper = (d.bian_gua && d.bian_gua.upper) || d.upper;
         var bianLower = (d.bian_gua && d.bian_gua.lower) || d.lower;
         // 每次起卦 = 新一轮：先折叠归档上一整轮（卦象+解读+追问链），再渲染新卦象。
-        archiveRound($("#mh-result"), $("#mh-result").dataset.roundQ || $("#mh-result").dataset.lastQ || "上一轮起卦");
+        // 带上旧轮的 rk，归档项才有完整身份；同问题不同卦因 rk 不同而各成平级轮。
+        archiveRound($("#mh-result"), $("#mh-result").dataset.roundQ || $("#mh-result").dataset.lastQ || "上一轮起卦", $("#mh-result").dataset.rk);
         $("#mh-result").innerHTML = '<div class="p-result">' + resultTitle("卦象") +
           '<div class="p-card"><div style="text-align:center;margin-bottom:14px"><div class="p-hero-tag">第' + d.ben_gua.index + '卦</div>' +
           '<div style="font-family:var(--serif);font-size:26px;margin:8px 0">' + esc(d.ben_gua.name) + '</div>' +
@@ -1032,14 +1033,17 @@
           '</div></div>';
         lastGua = d;
         $("#mh-result").dataset.roundQ = q0;
+        // 卦象身份 = 本卦序 + 动爻 + 变卦序；同问题不同卦是两轮，不能按问题文本去重
+        var mhRk = "gua|" + d.ben_gua.index + "-" + d.moving + "-" + d.bian_gua.index;
+        $("#mh-result").dataset.rk = mhRk;
         $("#mh-ai").onclick = function () {
           var q = $("#mh-q").value.trim();
           if (!q) { toast("请先写下所问之事"); return; }
           // 问题文本变了 = 新提问 → 重新起卦并按新问题解卦
           if (q !== $("#mh-result").dataset.roundQ) { toast("问题已更改，正在按新问题重新起卦"); castMeihua(q); return; }
-          streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(q) + authParam(), q, $("#mh-result"));
+          streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(q) + authParam(), q, $("#mh-result"), mhRk);
         };
-        if (autoAskQ) streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(autoAskQ) + authParam(), autoAskQ, $("#mh-result"));
+        if (autoAskQ) streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(autoAskQ) + authParam(), autoAskQ, $("#mh-result"), mhRk);
         $("#mh-result").scrollIntoView({ behavior: "smooth", block: "nearest" });
       }).catch(function () { mhDrawing = false; });
     }
@@ -1124,7 +1128,7 @@
       }).join("") + '</div>';
     }
     function askTarot(deck, q) {
-      streamAI("tarot", trParam() + "&q=" + encodeURIComponent(q) + "&deck=" + encodeURIComponent(deck) + authParam(), q, $("#tr-result"));
+      streamAI("tarot", trParam() + "&q=" + encodeURIComponent(q) + "&deck=" + encodeURIComponent(deck) + authParam(), q, $("#tr-result"), $("#tr-result").dataset.rk);
     }
     var trDrawing = false;
     function drawTarot(autoAskQ) {
@@ -1139,9 +1143,13 @@
         if (!d.ok) { $("#tr-err").textContent = d.error || "抽牌失败"; return; }
         // 每次抽牌 = 新一轮：先把上一整轮（牌面+解读+追问链）折叠归档，再渲染新牌面。
         // 归档区在结果容器之外，所以这里 innerHTML 重建 #tr-result 不会冲掉归档。
-        archiveRound($("#tr-result"), $("#tr-result").dataset.roundQ || $("#tr-result").dataset.lastQ || "上一轮抽牌");
+        // 带上旧轮 rk：同问题三张牌/凯尔特十字是不同身份，各自成平级轮，不嵌套、不互相去重。
+        archiveRound($("#tr-result"), $("#tr-result").dataset.roundQ || $("#tr-result").dataset.lastQ || "上一轮抽牌", $("#tr-result").dataset.rk);
         // 锁定本次抽牌结果：slug|正逆位串随 AI 解读回传，保证解读用的牌 == 用户看到的牌
         var deck = (d.cards || []).map(function(c){ return c.slug + "|" + (c.reversed ? 1 : 0); }).join(",");
+        var spreadNow = d.spread || segVal($("#tr-spread"));
+        // 牌阵身份 = 牌阵类型 + 实际牌面串；换牌阵或重新抽牌都会得到新的 rk
+        $("#tr-result").dataset.rk = "tarot|" + spreadNow + "|" + deck;
         $("#tr-result").innerHTML = '<div class="p-result">' + resultTitle("牌面") +
           '<div class="p-card">' + showCards(d.cards, d.spread || segVal($("#tr-spread"))) +
           '<button class="tool-ai" id="tr-ai" style="margin-top:18px">AI 解读牌义</button></div>' + '</div>';
@@ -1354,7 +1362,7 @@
       if (!q) { toast("请先写下想问的事"); $("#hl-q").focus(); return; }
       // 勾选「导入本人八字信息」时，把档案八字一并交给 AI 作为择日参考
       var useBazi = $("#hl-bazi") && $("#hl-bazi").checked && S.profile ? "&use_bazi=1" : "";
-      streamAI("huangli", hlParam() + "&q=" + encodeURIComponent(q) + useBazi + authParam(), q, $("#hl-result"));
+      streamAI("huangli", hlParam() + "&q=" + encodeURIComponent(q) + useBazi + authParam(), q, $("#hl-result"), "day|" + sel.y + "-" + sel.m + "-" + sel.d);
     };
 
     renderCal();
@@ -1391,16 +1399,20 @@
     Array.prototype.slice.call(controls).forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
     return node;
   }
-  /* 把 container 当前一轮（结果卡 + 解读卡 + 追问链）打包折叠归档，并清空 container。返回归档节点数。 */
-  function archiveRound(container, question) {
+  /* 把 container 当前一轮（结果卡 + 解读卡 + 追问链）打包折叠归档，并清空 container。返回归档节点数。
+     rk = 本轮确定性结果身份（牌阵|牌面 / 卦象 / 日期 / 命盘），同问题不同结果身份 = 不同轮，
+     必须归档成平级的独立轮，绝不能塞进同一个旧轮造成嵌套。 */
+  function archiveRound(container, question, rk) {
     if (!container) return 0;
     var nodes = Array.prototype.slice.call(container.children).filter(function (n) {
       return n.classList && (n.classList.contains("p-result") || n.classList.contains("p-ai"));
     });
     if (!nodes.length) return 0;
+    // 若旧轮本身没有 rk（老数据），尝试从容器补一个，避免归档项无身份导致跨轮误判
     var host = archiveHost(container);
     var item = document.createElement("div");
     item.className = "round-item";
+    if (rk) item.dataset.rk = rk;
     item.innerHTML = '<div class="round-item-hd"><span class="dot"></span><span class="rq"></span><span class="rsign">展开回看</span></div>' +
       '<div class="round-item-bd"></div>';
     $(".rq", item).textContent = question || "上一轮提问";
@@ -1414,18 +1426,27 @@
     if (S.feature === "ziwei") return container.id === "zw-d-ai-out" ? "#zw-dq" : "#zw-q";
     return QBOX_SEL[S.feature] || "#bz-q";
   }
-  /* 在本会话已解读的问题里查找问题文本 q：先查归档轮 .round-item，再查当前轮 .p-ai。
+  /* 在本会话已解读的问题里查找「问题文本 q + 确定性结果身份 rk」：先查归档轮 .round-item，再查当前轮 .p-ai。
+     rk 为空（模板问题点击定位）时跨所有轮匹配；rk 非空时只匹配同一结果身份的轮。
+     塔罗三张牌/凯尔特十字、梅花不同卦、黄历不同日期——同问题不同 rk 属于不同轮，不算重复。
      返回 {node, isArchive} 或 null。供模板问题点击与重复解读拦截共用。 */
-  function findAnswered(st, q) {
+  function findAnswered(st, q, rk) {
     if (!st || !q) return null;
+    function sameRk(node) {
+      if (!rk) return true;                          // 无 rk：模板定位，跨所有轮
+      var nrk = node.dataset ? (node.dataset.rk || "") : "";
+      return !nrk || nrk === rk;                     // 老归档轮无 rk 时按文本兜底
+    }
     var items = st.querySelectorAll(".round-archive .round-item");
     for (var i = 0; i < items.length; i++) {
+      if (!sameRk(items[i])) continue;
       var rq = $(".rq", items[i]);
       if (rq && rq.textContent.trim() === q) return { node: items[i], isArchive: true };
     }
     var ais = st.querySelectorAll(".p-ai");
     for (var j = 0; j < ais.length; j++) {
-      if (ais[j].closest(".round-archive")) continue;
+      if (ais[j].closest(".round-archive") || ais[j].closest(".ai-follow")) continue;  // 归档轮/追问子卡不参与
+      if (!sameRk(ais[j])) continue;
       var t = $(".p-ai-title", ais[j]);
       if (t && t.textContent.indexOf(q) >= 0) return { node: ais[j], isArchive: false };
     }
@@ -1458,30 +1479,35 @@
     var key = container.id || (container.dataset && container.dataset.bkey);
     return !!(key && S.busyKeys && S.busyKeys[key]);
   }
-  /* 新提问前置：并发保护 + 改问题归档旧轮 + 同问题拦截。返回 true 表示可以继续发起解读。
-     盘面固定类功能（八字/紫微/黄历）与 streamAI 共用；塔罗/梅花在抽牌流程里已自行归档。 */
-  function prepareNewQuestion(container, question) {
+  /* 新提问前置：并发保护 + 结果身份/问题变化则归档旧轮 + 同一「问题+结果身份」拦截。返回 true 表示可继续解读。
+     rk = 本轮确定性结果身份。关键：仅当问题文本【且】结果身份都相同才算重复；换了牌阵/卦象/日期
+     即使文字一样也是新一轮，旧轮必须平级归档，不能留在同一容器里造成嵌套。 */
+  function prepareNewQuestion(container, question, rk) {
     // 并发保护：本轮解读仍在流式输出时，任何新解读/归档都拦下，避免清空正在写入的容器导致卡死
     if (containerBusy(container)) { toast("当前解读进行中，请等解读完成后再提问"); return false; }
-    // 同问题去重：当前轮或归档轮已解读过同一问题 → 只定位回看，不再新发起解读（避免同问题反复归档堆叠）
-    var hit = findAnswered(stageEl(), question);
+    var oldQ = container.dataset.lastQ || "";
+    var oldRk = container.dataset.rk || "";
+    // 同一「问题 + 结果身份」才算重复：同问题换了牌阵/卦象/日期属不同轮，不拦截
+    var hit = findAnswered(stageEl(), question, rk);
     if (hit) {
-      revealAnswered(hit, "这个问题已解读过，已定位到那次对话；可继续追问，或换一个全新的问题");
+      revealAnswered(hit, "这一轮已解读过该问题，已定位到那次对话；换牌阵/换卦/换日期会作为新一轮");
       return false;
     }
-    if (container.dataset.lastQ && container.dataset.lastQ !== question) {
-      archiveRound(container, container.dataset.lastQ);
+    // 问题变了【或】结果身份变了 = 新一轮 → 把上一整轮平级归档（含旧的 rk），绝不再往旧轮里塞
+    if ((oldQ && oldQ !== question) || (oldRk && oldRk !== rk)) {
+      archiveRound(container, oldQ || "上一轮提问", oldRk);
     }
     container.dataset.lastQ = question;
+    container.dataset.rk = rk || "";
     return true;
   }
   /* ================= AI 流式解读（共用） ================= */
-  function streamAI(feature, query, question, container) {
-    if (!prepareNewQuestion(container, question)) return;
-    streamToUrl("/api/" + feature + "/deduce?" + query, "AI 解读", question, container, false);
+  function streamAI(feature, query, question, container, rk) {
+    if (!prepareNewQuestion(container, question, rk)) return;
+    streamToUrl("/api/" + feature + "/deduce?" + query, "AI 解读", question, container, false, rk);
   }
   /* 通用 SSE 流式渲染：解读 / 历史追问共用 */
-  function streamToUrl(url, tag, question, container, noRefresh) {
+  function streamToUrl(url, tag, question, container, noRefresh, rk) {
     // AI 解读与追问一律要求登录（后端也要鉴权，这里先拦一层给出明确引导）
     if (requireLogin()) return;
     // busy 按容器隔离：一个功能在解读，不影响切到别的功能发起新解读（后台并行）
@@ -1495,7 +1521,7 @@
     // 这里只负责渲染新卡，追问子卡走 beforeend 插入追问 slot。
     var isNewQuestion = tag === "AI 解读";
     var headLabel = isNewQuestion ? "新提问" : esc(tag);
-    var html = '<div class="p-ai" id="' + holderId + '"><div class="p-ai-head"><span class="dot"></span>' +
+    var html = '<div class="p-ai" id="' + holderId + '"' + (rk ? ' data-rk="' + esc(rk) + '"' : '') + '><div class="p-ai-head"><span class="dot"></span>' +
       '<span class="p-ai-title">' + headLabel + ' · ' + esc(question) + '</span></div>' +
       '<div class="p-ai-body"><span class="p-cursor"></span></div></div>';
     if (isNewQuestion) {
@@ -2421,9 +2447,10 @@
     if (!st.id) { toast("命盘未就绪，请稍候"); return; }
     var out = $(outSel || "#zw-ai-out");
     if (!out) return;
-    if (!prepareNewQuestion(out, q)) return;
+    var rk = "chart|" + st.id;
+    if (!prepareNewQuestion(out, q, rk)) return;
     var url = "/api/deduce?id=" + encodeURIComponent(st.id) + "&q=" + encodeURIComponent(q) + authParam();
-    streamToUrl(url, "AI 解读", q, out, false);
+    streamToUrl(url, "AI 解读", q, out, false, rk);
   }
   function zwHoro(retried) {
     var st = zwS();
