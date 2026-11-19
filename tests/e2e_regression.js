@@ -273,7 +273,55 @@ function latestCard(page, containerSel) {
       return !!(res && ai && res.compareDocumentPosition(ai) & Node.DOCUMENT_POSITION_FOLLOWING);
     });
     orderOK ? ok('AI 解读在牌面下方展开') : fail('AI 解读在牌面下方展开');
+    const reaskState = await page.evaluate(() => ({
+      onPlate: document.querySelectorAll('#tr-result > .p-result .round-reask').length,
+      onDoneCard: document.querySelectorAll('#tr-result > .p-ai.done .round-reask').length,
+      onStreaming: document.querySelectorAll('#tr-result > .p-ai:not(.done) .round-reask').length
+    }));
+    (reaskState.onPlate === 0 && reaskState.onDoneCard >= 1 && reaskState.onStreaming === 0)
+      ? ok('换问题按钮只在解读完成后出现、不在牌面卡上', JSON.stringify(reaskState))
+      : fail('换问题按钮位置', JSON.stringify(reaskState));
     await shot(page, '41_tarot_ai');
+
+    // 新提问语义：问题与牌面绑定 —— 换问题必须重新抽牌 + 旧整轮归档 + 新卡用新问题
+    const deck1 = await page.evaluate(() => document.getElementById('tr-result').dataset.deck);
+    await page.fill('#tr-q', '换一个全新问题：今年要不要跳槽？');
+    await page.click('#tr-ai');
+    await page.waitForFunction((d) => (document.getElementById('tr-result') || {}).dataset.deck !== d,
+      deck1, { timeout: 15000 }).catch(() => {});
+    const deck2 = await page.evaluate(() => document.getElementById('tr-result').dataset.deck);
+    (deck1 !== deck2) ? ok('换问题自动重新抽牌', 'deck 已变化') : fail('换问题自动重新抽牌', 'deck 未变化');
+    const trNew = latestCard(page, '#tr-result');
+    try { await waitAI(trNew); } catch (e) { fail('换问题新解读', e.message.split('\n')[0]); }
+    const roundState = await page.evaluate(() => ({
+      cards: document.querySelectorAll('#tr-result > .p-ai').length,
+      archive: document.querySelectorAll('#p-stage-tarot > .round-archive .round-item').length,
+      archivedFollowVisible: [...document.querySelectorAll('#p-stage-tarot > .round-archive .p-ai .ai-follow')]
+        .filter(n => getComputedStyle(n).display !== 'none').length,
+      head: document.querySelector('#tr-result > .p-ai .p-ai-title')?.textContent || ''
+    }));
+    (roundState.cards === 1 && roundState.archive === 1 && roundState.archivedFollowVisible === 0)
+      ? ok('新提问:旧轮折叠归档+追问条不漏出+当前仅1卡', JSON.stringify(roundState))
+      : fail('新提问归档', JSON.stringify(roundState));
+    (roundState.head.indexOf('要不要跳槽') >= 0) ? ok('新卡标题用新问题') : fail('新卡标题用新问题', roundState.head);
+    await shot(page, '41b_tarot_newround');
+
+    // 归档轮在当前功能内可展开回看 / 再收起（问题绑定整轮，登录态下随时回看）
+    const archHead = page.locator('#p-stage-tarot > .round-archive .round-item-hd').first();
+    await archHead.click(); await page.waitForTimeout(250);
+    const expanded = await page.evaluate(() => {
+      const it = document.querySelector('#p-stage-tarot > .round-archive .round-item');
+      return { open: it.classList.contains('open'),
+        bd: getComputedStyle(it.querySelector('.round-item-bd')).display !== 'none',
+        sign: it.querySelector('.rsign').textContent };
+    });
+    (expanded.open && expanded.bd && expanded.sign === '收起') ? ok('归档轮可展开回看') : fail('归档轮展开', JSON.stringify(expanded));
+    await archHead.click(); await page.waitForTimeout(250);
+    const collapsed = await page.evaluate(() => {
+      const it = document.querySelector('#p-stage-tarot > .round-archive .round-item');
+      return { open: it.classList.contains('open'), sign: it.querySelector('.rsign').textContent };
+    });
+    (!collapsed.open && collapsed.sign === '展开回看') ? ok('归档轮可再收起') : fail('归档轮收起', JSON.stringify(collapsed));
 
     section('7. 黄历（日历 + AI 择日答疑）');
     await page.click('.p-navitem[data-feature="huangli"]');
