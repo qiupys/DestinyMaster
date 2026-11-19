@@ -305,18 +305,48 @@ details.p-disclose .inner { padding-bottom: 12px; }
 
 /* ---------- AI 解读 ---------- */
 .p-ai { margin-top: 8px; border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
-/* 历史解读归档：新的「新提问」出现后，旧卡折叠为一行，点标题可展开回看（不丢失追问链） */
-.p-ai-archived .p-ai-body { display: none; }
+/* 历史解读归档：新的「新提问」出现后，旧卡折叠为一行，点标题可展开回看（不丢失追问链）。
+   追问条 .ai-follow 是 .p-ai 的平级子元素（不在 .p-ai-body 内），必须一起隐藏，
+   否则归档后一屏全是漏出来的「追问会沿用…+输入框+追问按钮」。 */
+.p-ai-archived .p-ai-body,
+.p-ai-archived .ai-follow { display: none; }
 .p-ai-archived .p-ai-head { cursor: pointer; opacity: .72; }
 .p-ai-archived .p-ai-head:hover { opacity: 1; background: var(--accent-soft); }
 .p-ai-archived .p-ai-head::after { content: "展开回看"; float: right; font-size: 11px; color: var(--ink-3); }
-.p-ai-archived.p-ai-open .p-ai-body { display: block; }
+.p-ai-archived.p-ai-open .p-ai-body,
+.p-ai-archived.p-ai-open .ai-follow { display: block; }
 .p-ai-archived.p-ai-open .p-ai-head::after { content: "收起"; }
+
+/* 整轮归档区：一次「提问」= 牌面/卦象结果卡 + AI 解读 + 追问链，作为一组折叠保留。
+   独立于结果容器之外（结果容器在重新抽牌/起卦时会被 innerHTML 重建），所以归档不会被冲掉。 */
+.round-archive { max-width: 720px; margin: 22px auto 0; }
+#p-stage-huangli .round-archive,
+#p-stage-ziwei .round-archive { max-width: 760px; }
+.round-archive-hd { font-size: 11px; color: var(--ink-3); margin: 0 2px 8px; letter-spacing: .5px; }
+.round-item { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; overflow: hidden; background: var(--panel); }
+.round-item-hd {
+  display: flex; align-items: center; gap: 9px; padding: 11px 16px; cursor: pointer;
+  background: linear-gradient(90deg, var(--accent-soft), transparent); font-size: 12.5px; color: var(--ink-2);
+}
+.round-item-hd .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); flex: 0 0 auto; }
+.round-item-hd .rq { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.round-item-hd .rsign { font-size: 11px; color: var(--ink-3); flex: 0 0 auto; }
+.round-item-bd { display: none; padding: 4px 12px 12px; }
+.round-item.open .round-item-bd { display: block; }
+.round-item.open .round-item-hd .rsign::after { content: ""; }
+.round-item-bd .p-ai { margin-top: 8px; }
+/* 归档轮是只读回看：内部追问条默认隐藏，只在展开该轮时恢复（问题与卦象绑定，不该在归档里继续问） */
+.round-item-bd .ai-follow { display: none; }
+.round-item.open .round-item-bd .ai-follow { display: block; }
 .p-ai-head {
   display: flex; align-items: center; gap: 9px; padding: 11px 16px;
   background: linear-gradient(90deg, var(--accent-soft), transparent); font-size: 13px; color: var(--ink); font-weight: 600;
 }
-.p-ai-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wx-jin); }
+.p-ai-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wx-jin); flex: 0 0 auto; }
+.p-ai-head .p-ai-title { flex: 1; min-width: 0; }
+.p-ai-head .round-reask { margin-left: auto; flex: 0 0 auto; height: 28px; padding: 0 10px; font-size: 11px; }
+/* 归档卡只读回看：里面的「换个问题」按钮无意义且会误操作，隐藏掉 */
+.p-ai-archived .round-reask { display: none; }
 .p-ai-body { padding: 16px 20px; font-size: 13.5px; line-height: 1.95; color: var(--ink); }
 /* AI 正文排版与站内一致：标题不再用浏览器默认字号 */
 .p-ai-body h1, .p-ai-body h2, .p-ai-body h3, .p-ai-body h4 {
@@ -534,6 +564,13 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
   font-size: 13px; font-family: inherit; transition: .15s;
 }
 .tool-ai:hover { border-color: var(--wx-jin); color: var(--wx-jin); }
+/* 「换个问题重新提问」：与 AI 解读/追问同款浅色描边小按钮，用在结果卡与归档卡头部 */
+.round-reask {
+  display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 13px;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel);
+  color: var(--ink-2); font-size: 12px; font-family: inherit; cursor: pointer; transition: .15s;
+}
+.round-reask:hover { border-color: var(--wx-jin); color: var(--wx-jin); }
 @media (max-width: 640px){ .tool-card { padding: 24px 18px; } .tf-grid, .tf-grid3 { grid-template-columns: 1fr; } .tool-hero h1 { font-size: 26px; } }
 
 /* 结果区标题（无编号）：上下间距统一 14px，与命盘 tabs、卡片间距一致 */

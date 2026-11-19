@@ -906,7 +906,7 @@
         '<b>数字起卦</b>：第一个数字取下卦，第二个数字取上卦，动爻 =（两数之和）mod 6。',
         '先天八卦数：乾1 · 兑2 · 离3 · 震4 · 巽5 · 坎6 · 艮7 · 坤8；年数以立春为界的年支序数计（子1…亥12），不是公历年份；余数为 0 时按第 8 卦 / 第 6 爻处理。',
         '<b>手动起卦</b>：点击爻位设置阴阳，再选择变爻位置；本卦、动爻、变卦随之确定。'
-      ], "问题文字不参与起卦运算；同一输入永远得到同一卦，AI 解读引用的卦爻辞是《周易》真实文本。");
+      ], "每一次起卦结果与所问之事绑定：本卦、动爻与变卦在同一轮解读和追问中保持不变；换了问题请点「换个问题重新提问」重新开始。AI 解读引用的卦爻辞是《周易》真实文本。");
 
     $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { $("#mh-q").value = b.dataset.q; updateBtn(); }; });
     var GUA_NAMES = ["乾","兑","离","震","巽","坎","艮","坤"];
@@ -1002,37 +1002,47 @@
         (movingLabel ? '<div class="mv">' + esc(movingLabel) + '</div>' : '') +
       '</div>';
     }
-    function showResult(d) {
-      lastGua = d;
-      var bianUpper = (d.bian_gua && d.bian_gua.upper) || d.upper;
-      var bianLower = (d.bian_gua && d.bian_gua.lower) || d.lower;
-      $("#mh-result").innerHTML = '<div class="p-result">' + resultTitle("卦象") +
-        '<div class="p-card"><div style="text-align:center;margin-bottom:14px"><div class="p-hero-tag">第' + d.ben_gua.index + '卦</div>' +
-        '<div style="font-family:var(--serif);font-size:26px;margin:8px 0">' + esc(d.ben_gua.name) + '</div>' +
-        '<div style="color:var(--cinnabar);font-size:13px">第 ' + d.moving + ' 爻动 · 变卦 ' + esc(d.bian_gua.name) + '</div></div>' +
-        '<div class="mh-gua-row">' +
-          guaCard("本卦", d.ben_gua, d.upper, d.lower, false, "第 " + d.moving + " 爻动") +
-          guaCard("互卦", d.hu_gua || d.ben_gua, (d.hu_gua || d).upper, (d.hu_gua || d).lower, false) +
-          guaCard("变卦", d.bian_gua, bianUpper, bianLower, true, "第 " + d.moving + " 爻动") +
-        '</div>' +
-        '<button class="tool-ai" id="mh-ai" style="margin-top:16px">AI 解卦</button>' +
-        '</div></div>';
-      $("#mh-ai").onclick = function () {
-        var q = $("#mh-q").value.trim();
-        if (!q) { toast("请先写下所问之事"); return; }
-        streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(q) + authParam(), q, $("#mh-result"));
-      };
-      $("#mh-result").scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-    $("#mh-calc").onclick = function () {
-      var q = $("#mh-q").value.trim();
-      if (!q) { toast("请先写下你的决策问题"); $("#mh-q").focus(); return; }
+    var mhDrawing = false;
+    function castMeihua(autoAskQ) {
+      if (mhDrawing) return;
+      // 并发保护：本轮 AI 解卦仍在流式输出时，禁止重新起卦（否则会清空正在写入的容器导致卡死）
+      if (S.busyKeys && S.busyKeys["mh-result"]) { toast("当前解卦进行中，请等解读完成后再起新卦"); return; }
+      var q0 = $("#mh-q").value.trim();
+      if (!q0) { toast("请先写下你的决策问题"); $("#mh-q").focus(); return; }
+      mhDrawing = true;
       $("#mh-err").textContent = "";
       fetch("/api/meihua/calc?" + mhParams()).then(function(r){return r.json();}).then(function(d){
+        mhDrawing = false;
         if (!d.ok) { $("#mh-err").textContent = d.error || "起卦失败"; return; }
-        showResult(d);
-      });
-    };
+        var bianUpper = (d.bian_gua && d.bian_gua.upper) || d.upper;
+        var bianLower = (d.bian_gua && d.bian_gua.lower) || d.lower;
+        // 每次起卦 = 新一轮：先折叠归档上一整轮（卦象+解读+追问链），再渲染新卦象。
+        archiveRound($("#mh-result"), $("#mh-result").dataset.roundQ || $("#mh-result").dataset.lastQ || "上一轮起卦");
+        $("#mh-result").innerHTML = '<div class="p-result">' + resultTitle("卦象") +
+          '<div class="p-card"><div style="text-align:center;margin-bottom:14px"><div class="p-hero-tag">第' + d.ben_gua.index + '卦</div>' +
+          '<div style="font-family:var(--serif);font-size:26px;margin:8px 0">' + esc(d.ben_gua.name) + '</div>' +
+          '<div style="color:var(--cinnabar);font-size:13px">第 ' + d.moving + ' 爻动 · 变卦 ' + esc(d.bian_gua.name) + '</div></div>' +
+          '<div class="mh-gua-row">' +
+            guaCard("本卦", d.ben_gua, d.upper, d.lower, false, "第 " + d.moving + " 爻动") +
+            guaCard("互卦", d.hu_gua || d.ben_gua, (d.hu_gua || d).upper, (d.hu_gua || d).lower, false) +
+            guaCard("变卦", d.bian_gua, bianUpper, bianLower, true, "第 " + d.moving + " 爻动") +
+          '</div>' +
+          '<button class="tool-ai" id="mh-ai" style="margin-top:16px">AI 解卦</button>' +
+          '</div></div>';
+        lastGua = d;
+        $("#mh-result").dataset.roundQ = q0;
+        $("#mh-ai").onclick = function () {
+          var q = $("#mh-q").value.trim();
+          if (!q) { toast("请先写下所问之事"); return; }
+          // 问题文本变了 = 新提问 → 重新起卦并按新问题解卦
+          if (q !== $("#mh-result").dataset.roundQ) { toast("问题已更改，正在按新问题重新起卦"); castMeihua(q); return; }
+          streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(q) + authParam(), q, $("#mh-result"));
+        };
+        if (autoAskQ) streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(autoAskQ) + authParam(), autoAskQ, $("#mh-result"));
+        $("#mh-result").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }).catch(function () { mhDrawing = false; });
+    }
+    $("#mh-calc").onclick = function () { castMeihua(null); };
     applyGate("meihua");
   }
 
@@ -1112,25 +1122,42 @@
         '</div>';
       }).join("") + '</div>';
     }
-    $("#tr-draw").onclick = function () {
-      // 先有问题再抽牌：没有问题时牌面无意义，直接提示并聚焦
+    function askTarot(deck, q) {
+      streamAI("tarot", trParam() + "&q=" + encodeURIComponent(q) + "&deck=" + encodeURIComponent(deck) + authParam(), q, $("#tr-result"));
+    }
+    var trDrawing = false;
+    function drawTarot(autoAskQ) {
+      if (trDrawing) return;
+      // 并发保护：本轮 AI 解读仍在流式输出时，禁止重新抽牌（否则会清空正在写入的容器导致卡死）
+      if (S.busyKeys && S.busyKeys["tr-result"]) { toast("当前解读进行中，请等解读完成后再抽新牌"); return; }
       var q0 = $("#tr-q").value.trim();
       if (!q0) { toast("请先写下你想问的事，再抽牌"); $("#tr-q").focus(); return; }
+      trDrawing = true;
       fetch("/api/tarot/calc?" + trParam()).then(function(r){return r.json();}).then(function(d){
+        trDrawing = false;
         if (!d.ok) { $("#tr-err").textContent = d.error || "抽牌失败"; return; }
+        // 每次抽牌 = 新一轮：先把上一整轮（牌面+解读+追问链）折叠归档，再渲染新牌面。
+        // 归档区在结果容器之外，所以这里 innerHTML 重建 #tr-result 不会冲掉归档。
+        archiveRound($("#tr-result"), $("#tr-result").dataset.roundQ || $("#tr-result").dataset.lastQ || "上一轮抽牌");
         // 锁定本次抽牌结果：slug|正逆位串随 AI 解读回传，保证解读用的牌 == 用户看到的牌
         var deck = (d.cards || []).map(function(c){ return c.slug + "|" + (c.reversed ? 1 : 0); }).join(",");
         $("#tr-result").innerHTML = '<div class="p-result">' + resultTitle("牌面") +
           '<div class="p-card">' + showCards(d.cards, d.spread || segVal($("#tr-spread"))) +
           '<button class="tool-ai" id="tr-ai" style="margin-top:18px">AI 解读牌义</button></div>' + '</div>';
+        $("#tr-result").dataset.roundQ = q0;
+        $("#tr-result").dataset.deck = deck;
         $("#tr-ai").onclick = function () {
           var q = $("#tr-q").value.trim();
           if (!q) { toast("请先写下你的问题"); $("#tr-q").focus(); return; }
-          streamAI("tarot", trParam() + "&q=" + encodeURIComponent(q) + "&deck=" + encodeURIComponent(deck) + authParam(), q, $("#tr-result"));
+          // 入口2：问题文本变了 = 真正的新提问 → 自动重新抽牌，并按新问题解读
+          if (q !== $("#tr-result").dataset.roundQ) { toast("问题已更改，正在按新问题重新抽牌"); drawTarot(q); return; }
+          askTarot($("#tr-result").dataset.deck, q);
         };
+        if (autoAskQ) askTarot(deck, autoAskQ);
         $("#tr-result").scrollIntoView({ behavior:"smooth", block:"nearest" });
-      });
-    };
+      }).catch(function () { trDrawing = false; });
+    }
+    $("#tr-draw").onclick = function () { drawTarot(null); };
     applyGate("tarot");
   }
 
@@ -1334,8 +1361,87 @@
     applyGate("huangli");
   }
 
+  /* ================= 轮次管理：「新提问」与「追问」严格区分 =================
+     一次「提问」= 确定性问题结果（牌面/卦象/盘面/历注）+ AI 解读 + 追问链，合称一轮。
+     · 追问：沿用本轮牌/卦/盘继续问，插在本轮卡内，不动结果、不归档。
+     · 新提问：换新问题 → 旧的一整轮折叠归档（功能页内可展开回看）→ 按新问题从头开始。
+       塔罗/梅花还会真正重新抽牌/起卦；八字/紫微/黄历的盘固定，只换问题重解。
+     归档区挂在结果容器【之外】（stage 层），因为塔罗/梅花重新抽牌会 innerHTML 重建结果容器。 */
+  var ROOT_SEL = { bazi:"#bz-result", meihua:"#mh-result", tarot:"#tr-result", huangli:"#hl-result", ziwei:"#zw-result" };
+  var QBOX_SEL = { bazi:"#bz-q", meihua:"#mh-q", tarot:"#tr-q", huangli:"#hl-q", ziwei:"#zw-q" };
+
+  function archiveHost(container) {
+    var st = container.closest(".p-wrap") || stageEl();
+    var host = st.querySelector(":scope > .round-archive");
+    if (!host) {
+      host = document.createElement("div");
+      host.className = "round-archive";
+      var root = st.querySelector(ROOT_SEL[S.feature]) || container;
+      if (root.parentNode) root.parentNode.insertBefore(host, root.nextSibling);
+      else st.appendChild(host);
+    }
+    return host;
+  }
+  /* 把 container 当前一轮（结果卡 + 解读卡 + 追问链）打包折叠归档，并清空 container。返回归档节点数。 */
+  function archiveRound(container, question) {
+    if (!container) return 0;
+    var nodes = Array.prototype.slice.call(container.children).filter(function (n) {
+      return n.classList && (n.classList.contains("p-result") || n.classList.contains("p-ai"));
+    });
+    if (!nodes.length) return 0;
+    var host = archiveHost(container);
+    var item = document.createElement("div");
+    item.className = "round-item";
+    item.innerHTML = '<div class="round-item-hd"><span class="dot"></span><span class="rq"></span><span class="rsign">展开回看</span></div>' +
+      '<div class="round-item-bd"></div>';
+    $(".rq", item).textContent = question || "上一轮提问";
+    var bd = $(".round-item-bd", item);
+    nodes.forEach(function (n) { bd.appendChild(n); });
+    host.insertBefore(item, host.firstChild);   // 最新一轮置顶
+    container.dataset.lastQ = "";
+    return nodes.length;
+  }
+  function qboxFor(container) {
+    if (S.feature === "ziwei") return container.id === "zw-d-ai-out" ? "#zw-dq" : "#zw-q";
+    return QBOX_SEL[S.feature] || "#bz-q";
+  }
+  /* 某结果容器当前是否有解读在流式输出中（与 streamToUrl 的 busy key 规则一致） */
+  function containerBusy(container) {
+    if (!container) return false;
+    var key = container.id || (container.dataset && container.dataset.bkey);
+    return !!(key && S.busyKeys && S.busyKeys[key]);
+  }
+  /* 「换个问题重新提问」：归档当前轮 → 清空本轮 → 清空并聚焦问题框，让用户填新问题从头开始 */
+  function reaskFlow(container) {
+    if (containerBusy(container)) { toast("当前解读进行中，请等解读完成后再换问题"); return; }
+    var label = container.dataset.lastQ || "上一轮提问";
+    archiveRound(container, label);
+    container.innerHTML = "";
+    var q = $(qboxFor(container));
+    if (q) { q.value = ""; q.focus(); q.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    toast("请输入一个新的问题，然后重新" + (S.feature === "tarot" ? "抽牌" : S.feature === "meihua" ? "起卦" : "解读"));
+  }
+
+  /* 新提问前置：并发保护 + 改问题归档旧轮 + 同问题拦截。返回 true 表示可以继续发起解读。
+     盘面固定类功能（八字/紫微/黄历）与 streamAI 共用；塔罗/梅花在抽牌流程里已自行归档。 */
+  function prepareNewQuestion(container, question) {
+    // 并发保护：本轮解读仍在流式输出时，任何新解读/归档都拦下，避免清空正在写入的容器导致卡死
+    if (containerBusy(container)) { toast("当前解读进行中，请等解读完成后再提问"); return false; }
+    if (container.dataset.lastQ && container.dataset.lastQ !== question) {
+      archiveRound(container, container.dataset.lastQ);
+    }
+    if (container.dataset.lastQ === question && container.querySelector(":scope > .p-ai")) {
+      toast("这个问题已解读过；继续请直接用下方追问，或点「换个问题重新提问」");
+      var f = container.querySelector(":scope > .p-ai .ai-follow input");
+      if (f) f.focus();
+      return false;
+    }
+    container.dataset.lastQ = question;
+    return true;
+  }
   /* ================= AI 流式解读（共用） ================= */
   function streamAI(feature, query, question, container) {
+    if (!prepareNewQuestion(container, question)) return;
     streamToUrl("/api/" + feature + "/deduce?" + query, "AI 解读", question, container, false);
   }
   /* 通用 SSE 流式渲染：解读 / 历史追问共用 */
@@ -1349,14 +1455,14 @@
     if (S.busyKeys[bkey]) { toast("此处解读进行中，请稍候"); return; }
     S.busyKeys[bkey] = true;
     var holderId = "ai-" + Date.now();
-    // 新提问不抹掉旧对话：把已有的顶层解读卡折叠归档（追问结果在 slot 内，不受影响），
-    // 新卡插在最前。这样同一功能里「新提问」（顶部提问框）与「追问」（卡内追问条）并存可区分。
+    // 新提问的旧轮归档已在 streamAI / 抽牌流程里完成（整轮移出结果容器）；
+    // 这里只负责渲染新卡：新提问卡带头「换个问题重新提问」，追问子卡不带。
     var isNewQuestion = tag === "AI 解读";
-    if (isNewQuestion) {
-      $$(":scope > .p-ai", container).forEach(function (n) { n.classList.add("p-ai-archived"); });
-    }
     var headLabel = isNewQuestion ? "新提问" : esc(tag);
-    var html = '<div class="p-ai" id="' + holderId + '"><div class="p-ai-head"><span class="dot"></span>' + headLabel + ' · ' + esc(question) + '</div>' +
+    // 「换个问题重新提问」不在初始 HTML：解读进行中不显示，流结束(finish)后才挂载，
+    // 避免用户在解读未完成时点它去归档/清空正在写入的容器 -> 卡死。
+    var html = '<div class="p-ai" id="' + holderId + '"><div class="p-ai-head"><span class="dot"></span>' +
+      '<span class="p-ai-title">' + headLabel + ' · ' + esc(question) + '</span></div>' +
       '<div class="p-ai-body"><span class="p-cursor"></span></div></div>';
     if (isNewQuestion) {
       // 解读卡必须排在确定性结果卡（牌面/卦象）之后，而不是容器最前——
@@ -1413,6 +1519,19 @@
       // 用 .done 作为「流结束」信号，供测试与追问定位。
       var card = $("#" + holderId);
       if (card) card.classList.add("done");
+      // 「换个问题重新提问」：只在解读完成后才挂载（解读进行中不出现，避免误点导致卡死）
+      if (isNewQuestion && card) {
+        var head = $(".p-ai-head", card);
+        if (head && !$(".round-reask", head)) {
+          var rask = document.createElement("button");
+          rask.type = "button";
+          rask.className = "round-reask";
+          rask.title = "归档本轮，按新问题重新开始";
+          rask.textContent = "换个问题重新提问";
+          rask.onclick = function () { reaskFlow(container); };
+          head.appendChild(rask);
+        }
+      }
       // 每一处解读都支持「继续追问」：有 hid（登录且已落盘）时在卡底挂追问条
       if (hid) attachFollow(card, hid, followNote(S.feature));
       if (!noRefresh && S.feature === "profile") renderProfile();
@@ -2279,6 +2398,7 @@
     if (!st.id) { toast("命盘未就绪，请稍候"); return; }
     var out = $(outSel || "#zw-ai-out");
     if (!out) return;
+    if (!prepareNewQuestion(out, q)) return;
     var url = "/api/deduce?id=" + encodeURIComponent(st.id) + "&q=" + encodeURIComponent(q) + authParam();
     streamToUrl(url, "AI 解读", q, out, false);
   }
@@ -2577,6 +2697,16 @@
     if (!h) return;
     var card = h.parentElement;
     if (card) card.classList.toggle("p-ai-open");
+  });
+  // 整轮归档卡：点头部展开/收起回看（问题绑定整轮，登录态下本功能内即可回看）
+  document.addEventListener("click", function (e) {
+    var h = e.target.closest && e.target.closest(".round-item-hd");
+    if (!h) return;
+    var item = h.parentElement;
+    if (!item || !item.classList.contains("round-item")) return;
+    var open = item.classList.toggle("open");
+    var sign = $(".rsign", h);
+    if (sign) sign.textContent = open ? "收起" : "展开回看";
   });
   // 「关于本功能」开合：委托到 document，页面重渲染后依然有效
   document.addEventListener("click", function (e) {
