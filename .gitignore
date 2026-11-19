@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# 本地数据库与密钥（运行时在服务器生成，绝不入库）
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+server/.apikey
+server/.adminkey
+
+# macOS
+.DS_Store
+._*
+.AppleDouble
+
+# 编辑器 / 临时
+*.swp
+*.swo
+.idea/
+.vscode/
+*.log

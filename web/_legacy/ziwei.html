@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>紫微斗数 · 智能推演</title>
+  <link rel="stylesheet" href="/style.css?v=45" />
+  <script>
+    // 主题初始化（默认浅色「宣纸·墨·黛青」，记忆用户选择），置于 head 防止闪烁
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem("zw-theme"); } catch (e) {}
+      document.documentElement.dataset.theme = t === "dark" ? "dark" : "light";
+    })();
+  </script>
+  <script src="/vendor/marked.min.js"></script>
+</head>
+<body>
+  <button class="theme-toggle" id="btn-theme" title="切换深浅主题" aria-label="切换深浅主题">
+    <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    <svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.6v2.1M12 19.3v2.1M2.6 12h2.1M19.3 12h2.1M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>
+  </button>
+
+  <!-- ============ 视图一：首页（入口分流） ============ -->
+  <div class="view" id="view-login">
+    <div class="page page-login">
+      <header class="hero">
+        <div class="hero-mark">
+          <span class="star s1">✦</span>
+          <span class="star s2">✧</span>
+          <span class="star s3">✦</span>
+        </div>
+        <h1>紫微斗数 <em>·</em> 智能推演</h1>
+        <p class="subtitle">注册你的命理档案，AI 命理师依三方四正与四化引动为你持续推演</p>
+      </header>
+
+      <!-- 面板：首页入口 -->
+      <div class="auth-panel" id="panel-home">
+        <section class="card login-card">
+          <button id="go-register" class="btn-primary btn-block">注册档案</button>
+          <button id="go-login" class="btn-ghost btn-block">登 录</button>
+          <div class="home-note">注册后推演自动保存、历史可随时找回</div>
+        </section>
+      </div>
+
+      <!-- 面板：注册（用户名 + 密码 + 出生信息） -->
+      <div class="auth-panel hidden" id="panel-register">
+        <section class="card login-card">
+          <h2 class="panel-title">创建档案</h2>
+          <div class="lf-block">
+            <div class="lf-label">用 户 名</div>
+            <input type="text" id="auth-name" class="lf-input" placeholder="2~24 位字母、数字或下划线" maxlength="24" autocomplete="off" />
+          </div>
+          <div class="lf-block">
+            <div class="lf-label">密 码</div>
+            <input type="password" id="auth-pass" class="lf-input" placeholder="≥6 位" maxlength="32" autocomplete="off" />
+          </div>
+          <div class="lf-block">
+            <div class="lf-label">确认密码</div>
+            <input type="password" id="auth-pass2" class="lf-input" placeholder="再次输入密码" maxlength="32" autocomplete="off" />
+            <div id="pass-hint" class="pass-hint"></div>
+          </div>
+          <div class="lf-block">
+            <div class="lf-label">出生日期</div>
+            <div class="date-row">
+              <select id="birth-year" class="lf-sel"></select>
+              <span class="date-unit">年</span>
+              <select id="birth-month" class="lf-sel lf-sel-s"></select>
+              <span class="date-unit">月</span>
+              <select id="birth-day" class="lf-sel lf-sel-s"></select>
+              <span class="date-unit">日</span>
+            </div>
+          </div>
+          <div class="lf-block">
+            <div class="lf-label">出生时辰</div>
+            <select id="hour-select" class="lf-select"></select>
+          </div>
+          <div class="lf-block">
+            <div class="lf-label">性 别</div>
+            <div class="seg seg-lg" id="gender-seg">
+              <button type="button" class="active" data-v="男"><b>乾造</b><span>男命</span></button>
+              <button type="button" data-v="女"><b>坤造</b><span>女命</span></button>
+            </div>
+          </div>
+          <button id="btn-register" class="btn-primary btn-block">注册并排出命盘</button>
+          <div id="form-error" class="error hidden"></div>
+          <button type="button" class="btn-ghost btn-block btn-sm" id="reg-back">返回</button>
+        </section>
+      </div>
+
+      <!-- 面板：登录（仅用户名 + 密码） -->
+      <div class="auth-panel hidden" id="panel-login">
+        <section class="card login-card">
+          <h2 class="panel-title">登录档案</h2>
+          <div class="lf-block">
+            <div class="lf-label">用 户 名</div>
+            <input type="text" id="login-name" class="lf-input" maxlength="24" autocomplete="off" />
+          </div>
+          <div class="lf-block">
+            <div class="lf-label">密 码</div>
+            <input type="password" id="login-pass" class="lf-input" maxlength="32" autocomplete="off" />
+          </div>
+          <button id="btn-login" class="btn-primary btn-block">登录并进入命盘</button>
+          <div id="login-error" class="error hidden"></div>
+          <button type="button" class="btn-ghost btn-block btn-sm" id="login-back">返回</button>
+        </section>
+      </div>
+
+      <!-- 面板：我的档案（只读展示 + 点行就地编辑） -->
+      <div class="auth-panel hidden" id="panel-settings">
+        <section class="card login-card settings-card">
+          <header class="topbar st-top">
+            <button type="button" class="back-pill" id="settings-back">‹ 返回</button>
+            <h2 class="panel-title">我的档案</h2>
+          </header>
+
+          <div class="head-card">
+            <div class="avatar" id="st-avatar">?</div>
+            <div>
+              <div class="hc-name" id="st-name">—</div>
+              <div class="hc-sub" id="st-ganzhi"></div>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-cap">个人信息</div>
+            <div class="rows">
+              <div class="row" id="row-name">
+                <div class="row-show" data-open="row-name"><span class="r-label">昵称</span><span class="r-value" id="v-name">—</span><span class="r-arrow">›</span></div>
+                <div class="row-edit">
+                  <div class="e-cap">修改昵称（全局唯一）</div>
+                  <input type="text" id="set-name" placeholder="新昵称（字母、数字或下划线）" maxlength="24" autocomplete="off" />
+                  <div class="e-actions"><button type="button" class="btn-save" data-save="name">保 存</button><button type="button" class="btn-cancel" data-close="row-name">取消</button></div>
+                  <div class="e-hint"></div>
+                </div>
+              </div>
+              <div class="row" id="row-gender">
+                <div class="row-show" data-open="row-gender"><span class="r-label">性别</span><span class="r-value" id="v-gender">—</span><span class="r-arrow">›</span></div>
+                <div class="row-edit">
+                  <div class="e-cap">性别影响大限排布顺逆，请谨慎修改</div>
+                  <div class="seg" id="set-gender"><button type="button" data-v="男">男</button><button type="button" data-v="女">女</button></div>
+                  <div class="e-actions"><button type="button" class="btn-save" data-save="birth">保 存</button><button type="button" class="btn-cancel" data-close="row-gender">取消</button></div>
+                  <div class="e-hint"></div>
+                </div>
+              </div>
+              <div class="row" id="row-date">
+                <div class="row-show" data-open="row-date"><span class="r-label">出生日期</span><span class="r-value" id="v-date">—</span><span class="r-arrow">›</span></div>
+                <div class="row-edit">
+                  <div class="e-cap">修改后下次登录重新排盘</div>
+                  <input type="date" id="set-date" />
+                  <div class="e-actions"><button type="button" class="btn-save" data-save="birth">保 存</button><button type="button" class="btn-cancel" data-close="row-date">取消</button></div>
+                  <div class="e-hint"></div>
+                </div>
+              </div>
+              <div class="row" id="row-hour">
+                <div class="row-show" data-open="row-hour"><span class="r-label">出生时辰</span><span class="r-value" id="v-hour">—</span><span class="r-arrow">›</span></div>
+                <div class="row-edit">
+                  <div class="e-cap">时辰不定则命宫难立，建议核对后修改</div>
+                  <select id="set-hour"></select>
+                  <div class="e-actions"><button type="button" class="btn-save" data-save="birth">保 存</button><button type="button" class="btn-cancel" data-close="row-hour">取消</button></div>
+                  <div class="e-hint"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-cap">安全</div>
+            <div class="rows">
+              <div class="row" id="row-pass">
+                <div class="row-show" data-open="row-pass"><span class="r-label">登录密码</span><span class="r-value">已设置</span><span class="r-arrow">›</span></div>
+                <div class="row-edit">
+                  <div class="e-cap">修改密码需先验证当前密码</div>
+                  <input type="password" id="set-oldpass" placeholder="当前密码" maxlength="32" autocomplete="off" />
+                  <input type="password" id="set-newpass" placeholder="新密码（至少 6 位）" maxlength="32" autocomplete="off" />
+                  <div class="e-actions"><button type="button" class="btn-save" data-save="pass">保 存</button><button type="button" class="btn-cancel" data-close="row-pass">取消</button></div>
+                  <div class="e-hint"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button type="button" class="logout-btn" id="btn-settings-logout">退出登录</button>
+          <div class="set-note">档案信息仅用于排盘与推演</div>
+        </section>
+      </div>
+
+      <!-- 面板：管理（仅用户名与注册时间，不可见任何个人资料） -->
+      <div class="auth-panel hidden" id="panel-admin">
+        <section class="card login-card">
+          <h2 class="panel-title">数据管理</h2>
+          <div id="admin-gate">
+            <div class="lf-block">
+              <div class="lf-label">管理员密码</div>
+              <input type="password" id="admin-pass" class="lf-input" autocomplete="off" />
+            </div>
+            <div id="admin-error" class="error hidden"></div>
+            <button id="btn-admin-login" class="btn-primary btn-block">进入管理</button>
+          </div>
+          <div id="admin-body" class="hidden">
+            <div class="adm-cap">用户档案列表 · 仅含用户名与注册时间，不含任何个人资料</div>
+            <div id="admin-list" class="adm-list"></div>
+          </div>
+          <button type="button" class="btn-ghost btn-block btn-sm" id="admin-back">返回</button>
+        </section>
+      </div>
+
+      <div class="feature-line">
+        <span>十二宫星盘</span><i>·</i><span>大限 / 流年叠加</span><i>·</i><span>三方四正联动</span><i>·</i><span>AI 流式推演</span>
+      </div>
+
+      <footer class="foot">命理推演基于传统紫微斗数理论（《紫微斗数全书》三合派体系），仅供文化娱乐参考，不构成现实决策依据。<button type="button" class="go-admin" id="go-admin">管理</button></footer>
+    </div>
+  </div>
+
+  <!-- ============ 视图二：命盘总览 ============ -->
+  <div class="view hidden" id="view-overview">
+    <div class="page">
+      <header class="topbar">
+        <span class="topbar-brand">命盘总览</span>
+        <button id="btn-enter-chart" class="btn-primary btn-sm">进入命盘 →</button>
+        <span class="profile-chip hidden" id="profile-chip-ov"></span>
+      </header>
+      <div id="overview-body"></div>
+    </div>
+  </div>
+
+  <!-- ============ 视图三：排盘 + 推演 ============ -->
+  <div class="view hidden" id="view-chart">
+    <div class="page">
+      <header class="topbar">
+        <button class="btn-back" id="btn-overview">‹ 总览</button>
+        <span class="profile-chip hidden" id="profile-chip"></span>
+      </header>
+
+      <section class="card">
+        <div class="toolbar">
+          <div class="year-nav hidden" id="year-nav">
+            <button id="year-prev" aria-label="上一年">‹</button>
+            <span class="year-label" id="year-label">2027</span>
+            <button id="year-next" aria-label="下一年">›</button>
+          </div>
+          <button id="btn-natal" class="tool-btn hidden">⟲ 返回本命</button>
+          <div class="mode-hint" id="mode-hint">点选宫位查看详情，自动联动三方四正</div>
+        </div>
+
+        <div class="layout">
+          <div class="astrolabe" id="astrolabe"></div>
+          <aside class="detail" id="detail"></aside>
+        </div>
+
+        <div class="timeline" id="timeline"></div>
+      </section>
+
+      <section class="card">
+        <div class="title-row">
+          <h2 class="card-title">推演对话</h2>
+          <button type="button" id="btn-export" class="bact" title="导出本次推演为 Markdown 文件">导出对话</button>
+        </div>
+        <div id="chat"></div>
+        <div class="chips" id="chips">
+          <button class="chip" data-q="我的事业发展趋势如何？适合什么方向？">事业</button>
+          <button class="chip" data-q="我的财运状况怎么样？哪些阶段财运较好？">财运</button>
+          <button class="chip" data-q="我的感情与婚姻运势如何？">感情</button>
+          <button class="chip" data-q="我的性格优势与短板是什么？如何扬长避短？">性格格局</button>
+          <button class="chip" data-q="未来十年大限的整体走势与重点应事是什么？">未来十年</button>
+        </div>
+        <div class="ask-row">
+          <input id="question" type="text" placeholder="输入你想推演的问题…" disabled />
+          <button id="btn-ask" class="btn-primary" disabled>推演</button>
+        </div>
+        <div class="ask-note">卜以决疑，不疑何卜</div>
+      </section>
+
+      <footer class="foot">命理推演基于传统紫微斗数理论，仅供文化娱乐参考，不构成现实决策依据。</footer>
+    </div>
+  </div>
+
+  <script src="/app.js?v=56"></script>
+</body>
+</html>
