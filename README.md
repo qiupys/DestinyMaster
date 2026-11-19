@@ -1,6 +1,6 @@
 # 命理工作台 Destiny Master
 
-八字 / 紫微斗数 / 梅花易数 / 塔罗 / 老黄历 五合一命理平台，在原有紫微应用基础上扩展为统一门户：登录后共用出生档案，五类功能共享历史记录与个性化 AI 解读（RAG）。
+八字 / 紫微斗数 / 梅花易数 / 塔罗 / 老黄历 五合一命理平台：登录后共用出生档案，五类功能共享历史记录与个性化 AI 解读（RAG）。
 
 ## 线上部署（示例）
 
@@ -42,12 +42,13 @@ uvicorn  127.0.0.1:8744（systemd 服务 ziwei.service，仅内网监听，无�
 
 紫微命盘按出生信息缓存（sessionStorage），登录用户再次进入直接出盘、不再重新计算；`重新排盘` 会清掉缓存。缓存的盘 id 若因服务重启失效，运限请求失败时会自动重排一次。
 
-紫微已改为站内原生渲染（固定正方形 4×4 命盘，无 iframe），直接消费 `/api/chart` + `/api/horoscope`，与八字、塔罗等共用同一套门户外壳与 AI 推演通道。原紫微应用前端保留在 `web/_legacy/ziwei.html`（静态资源仍在根路径，可按需回看），但站点默认入口、导航与视觉都已统一到门户。
+紫微为站内原生渲染（固定正方形 4×4 命盘，无 iframe），直接消费 `/api/chart` + `/api/horoscope`，与八字、塔罗等共用同一套门户外壳与 AI 推演通道。
 
 ## 功能一览
 
 | 功能 | 入口 | 说明 |
 | --- | --- | --- |
+| 首页 | `#/home`（默认） | 落地页：五大功能入口卡片，点击品牌区（∞ + Destiny Master）随时返回 |
 | 八字排盘 | `#/bazi` | 四柱 + 十神 + 藏干 + 五行 + 神煞 + 大运 + 流年；大运/流年可点选后直接提问；支持阳历/农历、日期/四柱反查 |
 | 紫微斗数 | `#/ziwei` | 命格 / 本命 / 运势三视图；星曜竖写（主星加粗）、四化直接标在对应星曜下（生年实心 / 大限实心描金 / 流年描边）、运财·流命与大限数字同排、点宫位可就该宫提问、大限流年单行滑动选择；**本命盘命宫与运势盘运命统一为「淡金底 + 金色描边 + 宫名旁『命』标」**；**手机端命盘改为纵向宫位列表（十二宫逆时针），不再挤压星曜** |
 | 梅花易数 | `#/meihua` | 时间起卦（此刻/指定时间）/ 手动起卦；本卦 + 互卦 + 变卦，动爻标注 |
@@ -59,7 +60,7 @@ uvicorn  127.0.0.1:8744（systemd 服务 ziwei.service，仅内网监听，无�
 
 - **每处 AI 解读都支持继续追问**：八字、紫微、梅花、塔罗、黄历（紫微含主盘命格 + 宫位详情）的解读卡底部均有「就这次解读继续追问…」输入框，沿用本次盘面事实，可无限多轮。
 - **五功能追问全部走同一条链路 `/api/history/followup`**：deduce 落盘后经 SSE 回传 `hid`，追问卡据此续问、追问结果再回传新 `hid` 形成对话链；prompt 带上此前解读要点保持结论一致。未登录不落盘、无追问条。
-- 紫微的命盘事实在 deduce 时结构化存入历史 payload（`ziwei_data`），追问时据此重建 prompt，**不再依赖内存 chart 会话**——服务重启后历史追问仍可用，与其他功能行为一致。前端 `zwAsk` 与其他功能一样复用通用 `streamToUrl` 渲染与追问条。
+- 紫微的命盘事实在 deduce 时结构化存入历史 payload（`ziwei_data`），追问时据此重建 prompt，服务重启后历史追问仍可用。前端复用通用 `streamToUrl` 渲染与追问条。
 
 ### 出生档案（跨功能唯一数据源）
 
@@ -85,9 +86,6 @@ ziwei-upgrade/
 ├─ web/                    # 前端
 │  ├─ index.html           # 站点根入口 = 门户（版本号在这里 bump）
 │  ├─ portal.js / portal.css   # 门户逻辑与样式（八/紫微/梅花/塔罗/黄历）
-│  ├─ portal.html          # 旧入口，仅做 302 跳转到 /
-│  ├─ style.css / app.js   # 设计 token + 原紫微应用脚本（app.js 仅 _legacy 页面使用）
-│  ├─ _legacy/ziwei.html   # 原紫微应用首页备份（未接入导航）
 │  └─ *.json               # 静态数据（塔罗牌义等）
 ├─ docs/kb/                # 知识库素材（RAG），按领域分目录
 └─ tools/                  # 抓取/预处理脚本
@@ -154,15 +152,6 @@ nginx 注意事项：站点配置在 `/etc/nginx/sites-enabled/`，**不要在�
 | POST | `/api/history/delete` | 删除一条历史（body: profile_id + token + id，仅能删本人记录） |
 | GET | `/api/kb/stats` | 各领域知识库篇数（运维探活） |
 
-## 已下线的旧服务
-
-| 端口 | 原用途 | 处理 |
-| --- | --- | --- |
-| 8743 | 本门户旧入口 | nginx 站点删除该 listen，防火墙规则已删 |
-| 8745 | FitCoach 健身记录 | nginx 站点软链移除，systemd 服务此前已停用，防火墙规则已删 |
-| 8100 | 记账 App（静态页 + 8000 后端） | nginx 站点软链移除，后端 8000 早已停止，防火墙规则已删 |
-| 8741 | K 线时光机（上游 8742） | nginx 站点软链移除，后端 8742 早已停止，防火墙规则已删 |
-
 ## 知识库（RAG 语料）
 
 `tools/crawl_guides.py` 按子 sitemap 抓取 FateMaster `guides` 全部中文页面，按 slug 前缀分域写入 `docs/kb/<domain>/`（frontmatter 含 title/source/slug/domain）。梅花另从 zhouyi.cc 补充 64 篇传统各家解卦（见下）。当前已入库 **560 篇 / 8 个领域**：
@@ -188,5 +177,3 @@ python3 tools/crawl_guides.py --force --workers 12        # 全量重抓
 **召回要点（实测）**：各功能 deduce 用计算模块给出的 `rag_query` + `rag_extra` 检索。紫微走独立 `rag.retrieve`（命宫主星 + 生年四化作聚焦词）；八字/黄历走 `rag_kb.retrieve`（top5/1400）；梅花语料含爻辞+各家解卦，走 top10/3600 且传 `rag_primary_idx`（本卦序号）让 `rag_kb.retrieve(primary=…)` 按文件 stem 精确锁定本卦语料，压过上下卦，rag_query 含动爻标准爻称（初九/六二…）精确召回爻辞。塔罗不走模糊检索：`tarot.retrieve_excerpts` 按 slug 一牌一篇精确取文献，追问识别焦点牌置顶。塔罗牌数据 78 张、展示名「数字在前」（二宝剑）与语料名「花色在前」（宝剑二）经 `_kb_name` 映射。运行真源是线上 `/opt/ziwei/docs/kb`，本地 `docs/kb` 仅供开发参考、可能不全。
 
 **Prompt 结构**：紫微独立（`prompt.py` 的 `SYSTEM_RULES`，自带免责声明）；八字/梅花/塔罗/黄历共用 `ai.build_prompt` 的 5 条铁律 + `FEATURE_GUIDES` 各功能专属规则块。免责声明由系统统一附加（`feature_api._with_disclaimer`，幂等），模型不再自行撰写；deduce/followup/缓存回放三条路径都带。
-
-nginx 站点配置文件仍保留在 `/etc/nginx/sites-available/`（`ziwei`、`fitcoach`、`ledger8100`、`timetrader`），需要恢复时重新软链到 `sites-enabled/` 即可；防火墙规则也可在控制台或 CLI 重新添加。

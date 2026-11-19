@@ -4,7 +4,7 @@
   "use strict";
 
   var S = {
-    feature: "bazi",
+    feature: "home",
     profile: null,       // {id, token, name}
     busy: false,
     stageCache: {},      // feature -> 持久 DOM 容器；切页只隐藏/显示，不销毁
@@ -43,6 +43,57 @@
   function authParam() {
     return S.profile ? "&profile_id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token) : "";
   }
+  /* AI 功能登录门禁：各功能的门文案 */
+  var AI_GATES = {
+    bazi:   { title: "AI 八字问答", desc: "基于您的八字，可就具体问题继续提问，答复仅供参考。" },
+    meihua: { title: "AI 梅花解卦", desc: "基于本次卦象，可就所问之事继续提问，答复仅供参考。" },
+    tarot:  { title: "AI 塔罗解读", desc: "基于本次牌阵，可就所问之事继续提问，答复仅供参考。" },
+    huangli:{ title: "AI 黄历答疑", desc: "基于当日历注，可就择日事项继续提问，答复仅供参考。" },
+    ziwei:  { title: "AI 紫微推演", desc: "基于本次命盘，可就格局与运限继续提问，答复仅供参考。" }
+  };
+  /* 未登录时的门禁块：模糊的假提问框 + 锁 + 标题说明 + 登录按钮（对齐参考图） */
+  function aiGateBlock(feature) {
+    var cfg = AI_GATES[feature] || AI_GATES.bazi;
+    return '<div class="ai-gate">' +
+      '<div class="ag-fake" aria-hidden="true">' +
+        '<div class="ag-fake-chip"></div><div class="ag-fake-chip ag-fake-short"></div>' +
+        '<div class="ag-fake-row"><span></span><b></b></div></div>' +
+      '<div class="ag-front">' +
+        '<svg class="ag-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>' +
+        '<div class="ag-title">' + esc(cfg.title) + '</div>' +
+        '<p class="ag-desc">' + esc(cfg.desc) + '</p>' +
+        '<button type="button" class="ag-btn">立即登录 / 注册</button>' +
+      '</div></div>';
+  }
+  function bindAIGate(root) {
+    var b = root && $(".ag-btn", root);
+    if (b) b.onclick = openAuth;
+  }
+  /* 统一门禁守卫：未登录则拦下 AI 解读/追问并弹出登录框。返回 true 表示已拦截。 */
+  function requireLogin() {
+    if (S.profile) return false;
+    toast("请先登录或使用 AI 解读与追问");
+    openAuth();
+    return true;
+  }
+  /* 在每个功能舞台渲染后调用：未登录时在表单与结果之间插入门禁卡，
+     并给舞台加 stage-locked（CSS 隐藏真正的 AI 提问框/按钮），登录后自动移除。 */
+  function applyGate(feature) {
+    var st = stageEl();
+    st.classList.toggle("stage-locked", !S.profile);
+    var old = $(".ai-gate-host", st);
+    if (old) old.remove();
+    if (S.profile) return;
+    var host = document.createElement("div");
+    host.className = "ai-gate-host";
+    host.innerHTML = aiGateBlock(feature);
+    // 门禁卡放在确定性结果（卦象/牌面/历注/命盘）之后、「关于」说明之前，
+    // 即与登录后 AI 提问框出现的位置一致（结果卡下方），宽度也与结果卡对齐。
+    var about = $(".about-details", st);
+    if (about) st.insertBefore(host, about);
+    else st.appendChild(host);
+    bindAIGate(host);
+  }
   /* 档案出生信息变更后：清掉本地命盘缓存（否则旧盘仍被复用），并刷新档案副本 */
   function profileBirthChanged() {
     try { sessionStorage.removeItem("zw-chart-v1"); } catch (e) {}
@@ -54,12 +105,38 @@
         }).catch(function () {});
     }
   }
+  /* 销毁所有功能舞台缓存（提问/解读/追问/门禁 DOM）。登录或退出都必须调用：
+     否则其它功能里"未登录态"缓存的舞台（带门禁）在登录后切回去仍是门禁。 */
+  function dropStages() {
+    Object.keys(S.stageCache).forEach(function (k) {
+      var el = S.stageCache[k];
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      delete S.stageCache[k];
+    });
+    S.busyKeys = {};
+  }
+  /* 退出登录时清空本账号全部前端缓存：各功能舞台上的提问/解读/追问、命盘、
+     紫微 session 缓存、个人中心的历史与出生信息。避免退出后仍能翻到上一个人的对话。 */
+  function clearUserData() {
+    dropStages();
+    S.profileBirth = null;
+    S.zw = null; S.zwFromProfile = false;
+    try { sessionStorage.removeItem("zw-chart-v1"); } catch (e) {}
+    pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false, birth: null };
+  }
   function setProfile(p) {
+    var wasLogged = !!S.profile;
+    var changed = wasLogged !== !!p;
     S.profile = p;
     try { p ? localStorage.setItem("zw-profile", JSON.stringify(p)) : localStorage.removeItem("zw-profile"); } catch (e) {}
+    if (changed) {
+      if (!p) clearUserData();
+      else dropStages();   // 登录：清掉"未登录态"的舞台，切到任何功能都按已登录重建
+    }
     renderUser();
-    // 正停留在个人中心时，登录 / 退出后立刻刷新为对应视图，避免残留上一态的信息
-    if (S.feature === "profile") renderProfile();
+    // 登录/退出后立刻刷新当前视图：个人中心刷新统计，其它页强制重建（门禁 ↔ 档案带入）
+    if (changed && S.feature === "profile") renderProfile();
+    else if (changed) navigate(S.feature, true);
   }
   function renderUser() {
     var el = $("#p-user");
@@ -89,7 +166,7 @@
   /* ---------------- 路由 ---------------- */
   function parseHash() {
     var h = (location.hash || "").replace(/^#\/?/, "");
-    var feat = h.split("?")[0] || "bazi";
+    var feat = h.split("?")[0] || "home";
     return feat;
   }
   /* 移动端抽屉导航 */
@@ -117,7 +194,7 @@
     $$(".p-navitem").forEach(function (b) { b.classList.toggle("active", b.dataset.feature === feat); });
     var ab = $("#p-auth-btn");
     if (ab) ab.classList.toggle("current", feat === "profile");
-    var names = { bazi:"八字排盘",ziwei:"紫微斗数",meihua:"梅花易数",liuyao:"六爻",qimen:"奇门遁甲",
+    var names = { home:"首页",bazi:"八字排盘",ziwei:"紫微斗数",meihua:"梅花易数",liuyao:"六爻",qimen:"奇门遁甲",
       tarot:"塔罗牌",huangli:"黄历",profile:"个人中心" };
     $("#p-crumb").textContent = names[feat] || feat;
     // 隐藏所有已建舞台，只显示当前功能的；DOM 不销毁 → 提问框/解读/追问/进行中的 SSE 全部保留
@@ -128,6 +205,7 @@
     if (feat === "profile") { renderProfile(); return; }
     if (st.dataset.ready === "1" && !force) return;  // 已有内容，切回来直接复用
     st.dataset.ready = "1";
+    if (feat === "home") { renderHome(); return; }
     if (feat === "ziwei") { renderZiweiEntry(); return; }
     var fn = { bazi: renderBazi, meihua: renderMeihua, tarot: renderTarot, huangli: renderHuangli }[feat];
     if (fn) { fn(); }
@@ -505,9 +583,9 @@
         setProfile({ id: d.profile_id, token: d.token, name: d.name });
         $("#p-modal").classList.add("hidden");
         toast(okMsg);
-        // 登录后刷新当前页：八字页会据档案出生信息自动带入并排盘；个人中心刷新统计
+        // 登录后强制重建当前页：移除 AI 门禁、带入档案出生信息、个人中心刷新统计
         if (S.feature === "profile") renderProfile();
-        else if (S.feature === "bazi") navigate("bazi");
+        else navigate(S.feature, true);
       })
       .catch(function (e) { err.textContent = "网络错误：" + e.message; });
   }
@@ -550,6 +628,44 @@
         "&pillar_day=" + encodeURIComponent(p.pillar_day) + "&pillar_time=" + encodeURIComponent(p.pillar_time);
     return "calendar=" + p.calendar + "&year=" + p.year + "&month=" + p.month + "&day=" + p.day +
       "&hour=" + p.hour + "&minute=" + p.minute;
+  }
+
+  /* ================= 落地首页 ================= */
+  function renderHome() {
+    var FEATURES = [
+      { feat: "bazi",   tag: "八字命理", name: "八字排盘", desc: "四柱十神、五行喜忌、大运流年，就一张盘继续追问。",
+        icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>' },
+      { feat: "ziwei",  tag: "紫微斗数", name: "紫微斗数", desc: "十二宫格局、四化飞星、大限流年，命盘可点宫提问。",
+        icon: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/>' },
+      { feat: "meihua", tag: "周易占卜", name: "梅花易数", desc: "时间或手动起卦，本卦互卦变卦与动爻，逐层解读。",
+        icon: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.1 5-5 2.1 2.1-5 5-2.1z"/>' },
+      { feat: "tarot",  tag: "塔罗牌", name: "塔罗牌", desc: "三张或凯尔特十字牌阵，先写问题再抽牌，按牌位成文。",
+        icon: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M5 20h14"/>' },
+      { feat: "huangli",tag: "其他功能", name: "老黄历", desc: "宜忌、值神、冲煞与物候，结合所选日期作择日答疑。",
+        icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01"/>' }
+    ];
+    var cards = FEATURES.map(function (f) {
+      return '<button type="button" class="home-card" data-feature="' + f.feat + '">' +
+        '<span class="home-card-ic"><svg class="ic" viewBox="0 0 24 24">' + f.icon + '</svg></span>' +
+        '<span class="home-card-tag">' + esc(f.tag) + '</span>' +
+        '<span class="home-card-name">' + esc(f.name) + '</span>' +
+        '<span class="home-card-desc">' + esc(f.desc) + '</span>' +
+        '<span class="home-card-go" aria-hidden="true">→</span>' +
+        '</button>';
+    }).join("");
+    stageEl().innerHTML =
+      '<div class="home-page">' +
+        '<div class="home-hero">' +
+          '<span class="home-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 12c-1.889-2.554-3.77-4-6-4a4 4 0 0 0 0 8c2.23 0 4.111-1.446 6-4 1.889-2.554 3.77-4 6-4a4 4 0 0 1 0 8c-2.23 0-4.111-1.446-6-4Z"/></svg></span>' +
+          '<h1>观象 · 知变 · 自省</h1>' +
+          '<p>以传统命理与象征体系为镜，照见当下、理解自己。选择一个入口开始，所有推演都可继续追问。</p>' +
+        '</div>' +
+        '<div class="home-grid">' + cards + '</div>' +
+        '<p class="home-footnote">所有解读仅供自我探索与文化娱乐，不构成现实决策建议。</p>' +
+      '</div>';
+    $$(".home-card", stageEl()).forEach(function (c) {
+      c.onclick = function () { go(c.dataset.feature); };
+    });
   }
 
   /* ================= 八字排盘 ================= */
@@ -761,6 +877,7 @@
           }
         }).catch(function () {});
     }
+    applyGate("bazi");
   }
   function segSet(seg, v) { $$("button", seg).forEach(function (b) { b.classList.toggle("on", b.dataset.v === v); }); }
 
@@ -916,6 +1033,7 @@
         showResult(d);
       });
     };
+    applyGate("meihua");
   }
 
   /* ================= 塔罗牌 ================= */
@@ -1013,6 +1131,7 @@
         $("#tr-result").scrollIntoView({ behavior:"smooth", block:"nearest" });
       });
     };
+    applyGate("tarot");
   }
 
   /* ================= 黄历（月历视图 + 默认当日历注 + AI 问事） ================= */
@@ -1212,6 +1331,7 @@
 
     renderCal();
     loadDay();   // 打开页面默认直接给出今日历注
+    applyGate("huangli");
   }
 
   /* ================= AI 流式解读（共用） ================= */
@@ -1220,6 +1340,8 @@
   }
   /* 通用 SSE 流式渲染：解读 / 历史追问共用 */
   function streamToUrl(url, tag, question, container, noRefresh) {
+    // AI 解读与追问一律要求登录（后端也要鉴权，这里先拦一层给出明确引导）
+    if (requireLogin()) return;
     // busy 按容器隔离：一个功能在解读，不影响切到别的功能发起新解读（后台并行）
     var bkey = container.id || (container.dataset && container.dataset.bkey) || ("c" + Math.random());
     if (!container.id && container.dataset) container.dataset.bkey = bkey;
@@ -1236,8 +1358,13 @@
     var headLabel = isNewQuestion ? "新提问" : esc(tag);
     var html = '<div class="p-ai" id="' + holderId + '"><div class="p-ai-head"><span class="dot"></span>' + headLabel + ' · ' + esc(question) + '</div>' +
       '<div class="p-ai-body"><span class="p-cursor"></span></div></div>';
-    if (isNewQuestion) container.insertAdjacentHTML("afterbegin", html);
-    else container.insertAdjacentHTML("beforeend", html);
+    if (isNewQuestion) {
+      // 解读卡必须排在确定性结果卡（牌面/卦象）之后，而不是容器最前——
+      // 部分功能（塔罗/梅花）把结果卡与 AI 输出放在同一容器，用 afterbegin 会把解读顶到牌面上方。
+      var resultCard = container.querySelector(":scope > .p-result");
+      if (resultCard) resultCard.insertAdjacentHTML("afterend", html);
+      else container.insertAdjacentHTML("afterbegin", html);
+    } else container.insertAdjacentHTML("beforeend", html);
     var body = $(".p-ai-body", $("#" + holderId));
     // 点击 AI 解读后立即滚到解读框，避免停留在结果上方
     $("#" + holderId).scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1287,23 +1414,39 @@
       var card = $("#" + holderId);
       if (card) card.classList.add("done");
       // 每一处解读都支持「继续追问」：有 hid（登录且已落盘）时在卡底挂追问条
-      if (hid) attachFollow(card, hid);
+      if (hid) attachFollow(card, hid, followNote(S.feature));
       if (!noRefresh && S.feature === "profile") renderProfile();
     }
+  }
+
+  /* 追问备注：按功能给出准确说法（塔罗是「牌阵」不重新抽牌，梅花才叫「起卦」）。
+     放在追问条内、输入框上方作为提示，不写「说明：」前缀。 */
+  function followNote(feature) {
+    var MAP = {
+      bazi: "追问会沿用这一次的八字盘，不会重新排盘",
+      meihua: "追问会沿用这一次的卦象，不会重新起卦",
+      tarot: "追问会沿用这一次的牌阵与抽牌结果，不会重新抽牌",
+      huangli: "追问会沿用这一次的黄历信息，不会重新查询",
+      ziwei: "追问会沿用这一次的命盘，不会重新排盘"
+    };
+    return MAP[feature] || "追问会沿用这一次的解读内容，不会重新推演";
   }
 
   /* AI 解读卡通用追问条：复用 /api/history/followup，沿用本次盘面事实，可无限多轮。
      card 为 .p-ai 节点，hid 为该解读落盘后的历史 id。追问结果由 streamToUrl 渲染进
      追问条内的子容器，子结果卡再挂新的追问条，形成连续对话。 */
-  function attachFollow(card, hid) {
+  function attachFollow(card, hid, noteText) {
     if (!card || !hid) return;
     var old = $(".ai-follow", card);
     if (old) old.remove();
     var wrap = document.createElement("div");
     wrap.className = "ai-follow";
-    wrap.innerHTML = '<div class="ai-follow-row">' +
-      '<input class="ti" placeholder="就这次解读继续追问…" />' +
-      '<button class="ai-follow-btn" type="button">追问</button></div>' +
+    // 追问提示放在追问条内部、输入框上方，作为追问区域的说明；
+    // 不再挂在 AI 正文末尾（那样紧跟免责声明，像是答案的一部分）。
+    wrap.innerHTML = (noteText ? '<p class="p-note pf-follow-note">' + esc(noteText) + '</p>' : '') +
+      '<div class="ai-follow-row">' +
+        '<input class="ti" placeholder="就这次解读继续追问…" />' +
+        '<button class="ai-follow-btn" type="button">追问</button></div>' +
       '<div class="ai-follow-slot"></div>';
     card.appendChild(wrap);
     var inp = $("input", wrap), btn = $(".ai-follow-btn", wrap), slot = $(".ai-follow-slot", wrap);
@@ -1613,20 +1756,8 @@
       box.className = "p-card p-hist-detail";
       box.style.marginTop = "16px"; box.dataset.hbox = id;
       $("#pf-body").appendChild(box);
-      // 小字灰色备注：按功能给出准确说法（塔罗是「牌阵」、不重新抽牌；梅花才叫「起卦」）
-      // 不用 .pf-hint——它会加「说明：」前缀，与本条备注语义重复。
-      var FOLLOW_NOTE = {
-        bazi: "追问会沿用这一次的八字盘，不会重新排盘",
-        meihua: "追问会沿用这一次的卦象，不会重新起卦",
-        tarot: "追问会沿用这一次的牌阵与抽牌结果，不会重新抽牌",
-        huangli: "追问会沿用这一次的黄历信息，不会重新查询",
-        ziwei: "追问会沿用这一次的命盘，不会重新排盘"
-      };
-      var note = document.createElement("p");
-      note.className = "p-note pf-follow-note";
-      note.textContent = FOLLOW_NOTE[it.feature] || "追问会沿用这一次的解读内容，不会重新推演";
-      card.appendChild(note);
-      attachFollow(card, id);
+      // 小字灰色备注放在追问条内部（输入框上方），不再紧跟免责声明、避免像答案的一部分。
+      attachFollow(card, id, followNote(it.feature));
       box.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   }
@@ -2300,6 +2431,7 @@
     }
     // 未登录：用上次的手动排盘结果，否则展示表单
     restoreCache();
+    applyGate("ziwei");
   }
 
 
@@ -2466,16 +2598,32 @@
     var p = null;
     try { p = e.newValue ? JSON.parse(e.newValue) : null; } catch (err) {}
     if (JSON.stringify(p) === JSON.stringify(S.profile)) return;
-    var wasNull = !S.profile;
+    var wasLogged = !!S.profile;
     S.profile = p && p.id && p.token ? { id: p.id, token: p.token, name: p.name } : null;
+    var changed = wasLogged !== !!S.profile;
+    if (changed) {
+      if (!S.profile) clearUserData();   // 他处退出：同步清空本地缓存
+      else dropStages();                  // 他处登录：清掉未登录态舞台，避免残留门禁
+    }
     renderUser();
-    // 同步视图：个人中心刷新统计；八字页在变为登录态时重新带入档案并排盘
-    if (S.feature === "profile") renderProfile();
-    else if (S.feature === "bazi" && wasNull && S.profile) navigate("bazi", true);
+    // 同步视图：个人中心刷新统计；登录态切换时强制重建当前页（含门禁 / 档案带入）
+    if (changed && S.feature === "profile") renderProfile();
+    else if (changed) navigate(S.feature, true);
   });
 
   renderUser();
   var init = parseHash();
   if (["liuyao","qimen"].indexOf(init) >= 0) init = "bazi";
+  // 品牌区点击返回首页
+  var brand = $(".p-brand");
+  if (brand) {
+    brand.setAttribute("role", "link");
+    brand.setAttribute("tabindex", "0");
+    brand.style.cursor = "pointer";
+    brand.title = "返回首页";
+    var goHome = function () { go("home"); };
+    brand.addEventListener("click", goHome);
+    brand.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goHome(); } });
+  }
   navigate(init);
 })();
