@@ -777,6 +777,7 @@
           { t: "感情婚姻", q: "感情与婚姻的走向如何？" }
         ];
 
+        // 结构统一：盘面结果卡、独立提问卡、AI 解读输出三段平级（提问卡不再嵌在盘面卡内）
         $("#bz-result").innerHTML = '<div class="p-result">' +
           '<div class="result-head"><div class="result-title">四柱盘面</div>' + profileAside() + '</div>' +
           '<div class="p-card">' + note + kv + wxHtml +
@@ -784,16 +785,16 @@
             '<div class="bz-sec"><div class="bz-sec-h">大运<span>十年一运 · 点选可据此提问</span></div>' + curLine + dyHtml + '</div>' +
             '<div class="bz-sec"><div class="bz-sec-h">流年<span>今年起十年 · 点选可据此提问</span></div>' + lnHtml + '</div>' +
           '</div>' +
-          '<div class="bz-ask">' +
-            '<div class="bz-ask-h">就这张盘提问<span id="bz-pick">未选择大运或流年</span></div>' +
-            '<div class="p-suggest zw-chips">' + chips.map(function (c) {
-              return '<button type="button" data-q="' + esc(c.q) + '">' + esc(c.t) + '</button>';
-            }).join("") + '</div>' +
-            '<div class="zw-ask-row"><input class="ti" id="bz-q" placeholder="例如：事业与财运的格局，有哪些优势与需要警惕的短板？" />' +
-              '<button class="tool-ai zw-ask-btn" id="bz-ai" type="button">AI 解读</button></div>' +
-            '<div id="bz-ai-out"></div>' +
-          '</div>' +
-        '</div>';
+        '</div>' +
+        '<div class="bz-ask">' +
+          '<div class="bz-ask-h">就这张盘提问<span id="bz-pick">未选择大运或流年</span></div>' +
+          '<div class="p-suggest zw-chips">' + chips.map(function (c) {
+            return '<button type="button" data-q="' + esc(c.q) + '">' + esc(c.t) + '</button>';
+          }).join("") + '</div>' +
+          '<div class="zw-ask-row"><input class="ti" id="bz-q" placeholder="例如：事业与财运的格局，有哪些优势与需要警惕的短板？" />' +
+            '<button class="tool-ai zw-ask-btn" id="bz-ai" type="button">AI 解读</button></div>' +
+        '</div>' +
+        '<div id="bz-ai-out"></div>';
 
         // 大运 / 流年点选：高亮并可一键带入提问
         var pick = { kind: "", gz: "", from: "", to: "", year: "", age: "" };
@@ -819,7 +820,7 @@
           };
         });
         $$("#bz-result .zw-chips button").forEach(function (b) {
-          b.onclick = function () { $("#bz-q").value = b.dataset.q; $("#bz-q").focus(); };
+          b.onclick = function () { pickQuestion(b.dataset.q, "#bz-q"); };
         });
         var askBz = function () {
           var q = ($("#bz-q").value || "").trim();
@@ -906,9 +907,9 @@
         '<b>数字起卦</b>：第一个数字取下卦，第二个数字取上卦，动爻 =（两数之和）mod 6。',
         '先天八卦数：乾1 · 兑2 · 离3 · 震4 · 巽5 · 坎6 · 艮7 · 坤8；年数以立春为界的年支序数计（子1…亥12），不是公历年份；余数为 0 时按第 8 卦 / 第 6 爻处理。',
         '<b>手动起卦</b>：点击爻位设置阴阳，再选择变爻位置；本卦、动爻、变卦随之确定。'
-      ], "每一次起卦结果与所问之事绑定：本卦、动爻与变卦在同一轮解读和追问中保持不变；换了问题请点「换个问题重新提问」重新开始。AI 解读引用的卦爻辞是《周易》真实文本。");
+      ], "每一次起卦结果与所问之事绑定：本卦、动爻与变卦在同一轮解读和追问中保持不变；换了问题请重新起卦。AI 解读引用的卦爻辞是《周易》真实文本。");
 
-    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { $("#mh-q").value = b.dataset.q; updateBtn(); }; });
+    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#mh-q"); updateBtn(); }; });
     var GUA_NAMES = ["乾","兑","离","震","巽","坎","艮","坤"];
     var GUA_SYMBOL = { "乾":"☰","兑":"☱","离":"☲","震":"☳","巽":"☴","坎":"☵","艮":"☶","坤":"☷" };
     var GUA_BITS = { "乾":"111","兑":"011","离":"101","震":"001","巽":"110","坎":"010","艮":"100","坤":"000" };
@@ -1070,7 +1071,7 @@
       ], "塔罗像一面带象征语言的镜子，帮助看见期待、恐惧与尚未承认的选择；它是自我探索工具，不是心理诊断或命运判决。");
 
     segBind($("#tr-spread"));
-    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { $("#tr-q").value = b.dataset.q; }; });
+    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#tr-q"); }; });
     // 牌义清单（78 张：中英文名 / 牌面图 / 正逆位关键词 / 简介），一次加载全站复用
     if (!S.tarotCards) {
       fetch("/tarot-cards.json").then(function (r) { return r.json(); }).then(function (j) { S.tarotCards = j; }).catch(function () {});
@@ -1192,7 +1193,7 @@
         '<b>神位与物候</b>：财神喜神等方位、二十八宿、九星、物候，是传统择日的辅助参考层。'
       ], "黄历描述「这一天在传统体系中的位置」，不是针对某个人的命运判断；所有字段由程序确定性计算，宜忌只是醒目结论，孤立的吉凶不等于整天的定论。");
 
-    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { $("#hl-q").value = b.dataset.q; }; });
+    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#hl-q"); }; });
     function hlParam() { return "year=" + sel.y + "&month=" + sel.m + "&day=" + sel.d; }
 
     /* ---- 月历 ---- */
@@ -1382,6 +1383,14 @@
     }
     return host;
   }
+  /* 归档轮只读化：移除会「触发新一轮解读」的控件（AI 解读按钮、快捷问题 chips、开关），
+     保留解读正文、追问结果链与追问输入框——在归档轮里继续追问仍沿用本轮旧牌/旧卦，是合理的。
+     这样归档轮不会再用旧牌去解读一个新问题（历史对话点 AI 解读触发新解读的怪逻辑）。 */
+  function freezeForReview(node) {
+    var controls = node.querySelectorAll(".tool-ai, .p-suggest, .p-switch");
+    Array.prototype.slice.call(controls).forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
+    return node;
+  }
   /* 把 container 当前一轮（结果卡 + 解读卡 + 追问链）打包折叠归档，并清空 container。返回归档节点数。 */
   function archiveRound(container, question) {
     if (!container) return 0;
@@ -1396,7 +1405,7 @@
       '<div class="round-item-bd"></div>';
     $(".rq", item).textContent = question || "上一轮提问";
     var bd = $(".round-item-bd", item);
-    nodes.forEach(function (n) { bd.appendChild(n); });
+    nodes.forEach(function (n) { bd.appendChild(freezeForReview(n)); });
     host.insertBefore(item, host.firstChild);   // 最新一轮置顶
     container.dataset.lastQ = "";
     return nodes.length;
@@ -1405,36 +1414,63 @@
     if (S.feature === "ziwei") return container.id === "zw-d-ai-out" ? "#zw-dq" : "#zw-q";
     return QBOX_SEL[S.feature] || "#bz-q";
   }
+  /* 在本会话已解读的问题里查找问题文本 q：先查归档轮 .round-item，再查当前轮 .p-ai。
+     返回 {node, isArchive} 或 null。供模板问题点击与重复解读拦截共用。 */
+  function findAnswered(st, q) {
+    if (!st || !q) return null;
+    var items = st.querySelectorAll(".round-archive .round-item");
+    for (var i = 0; i < items.length; i++) {
+      var rq = $(".rq", items[i]);
+      if (rq && rq.textContent.trim() === q) return { node: items[i], isArchive: true };
+    }
+    var ais = st.querySelectorAll(".p-ai");
+    for (var j = 0; j < ais.length; j++) {
+      if (ais[j].closest(".round-archive")) continue;
+      var t = $(".p-ai-title", ais[j]);
+      if (t && t.textContent.indexOf(q) >= 0) return { node: ais[j], isArchive: false };
+    }
+    return null;
+  }
+  /* 定位到某次已解读：归档轮展开、滚动到视野、聚焦追问框，给出提示。 */
+  function revealAnswered(hit, msg) {
+    if (!hit) return;
+    var target = hit.node;
+    if (hit.isArchive) { target.classList.add("open"); var sign = $(".rsign", target); if (sign) sign.textContent = "收起"; }
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    var f = target.querySelector(".ai-follow input");
+    if (f) (function (x) { setTimeout(function () { x.focus(); }, 450); })(f);
+    toast(msg || "已定位到这次解读，可展开回看或继续追问");
+  }
+  /* 模板/快捷问题点击：先填入输入框；若本会话中该问题已解读过（当前轮或归档轮），
+     则定位回看而不重复发起解读。新问题只填框等待手动点「AI 解读」。 */
+  function pickQuestion(question, inputSel) {
+    var q = (question || "").trim();
+    var inp = $(inputSel || qboxForDefault());
+    if (inp) { inp.value = q; inp.focus(); }
+    if (!q) return;
+    var hit = findAnswered(stageEl(), q);
+    if (hit) revealAnswered(hit);
+  }
+  function qboxForDefault() { return QBOX_SEL[S.feature] || "#bz-q"; }
   /* 某结果容器当前是否有解读在流式输出中（与 streamToUrl 的 busy key 规则一致） */
   function containerBusy(container) {
     if (!container) return false;
     var key = container.id || (container.dataset && container.dataset.bkey);
     return !!(key && S.busyKeys && S.busyKeys[key]);
   }
-  /* 「换个问题重新提问」：归档当前轮 → 清空本轮 → 清空并聚焦问题框，让用户填新问题从头开始 */
-  function reaskFlow(container) {
-    if (containerBusy(container)) { toast("当前解读进行中，请等解读完成后再换问题"); return; }
-    var label = container.dataset.lastQ || "上一轮提问";
-    archiveRound(container, label);
-    container.innerHTML = "";
-    var q = $(qboxFor(container));
-    if (q) { q.value = ""; q.focus(); q.scrollIntoView({ behavior: "smooth", block: "center" }); }
-    toast("请输入一个新的问题，然后重新" + (S.feature === "tarot" ? "抽牌" : S.feature === "meihua" ? "起卦" : "解读"));
-  }
-
   /* 新提问前置：并发保护 + 改问题归档旧轮 + 同问题拦截。返回 true 表示可以继续发起解读。
      盘面固定类功能（八字/紫微/黄历）与 streamAI 共用；塔罗/梅花在抽牌流程里已自行归档。 */
   function prepareNewQuestion(container, question) {
     // 并发保护：本轮解读仍在流式输出时，任何新解读/归档都拦下，避免清空正在写入的容器导致卡死
     if (containerBusy(container)) { toast("当前解读进行中，请等解读完成后再提问"); return false; }
+    // 同问题去重：当前轮或归档轮已解读过同一问题 → 只定位回看，不再新发起解读（避免同问题反复归档堆叠）
+    var hit = findAnswered(stageEl(), question);
+    if (hit) {
+      revealAnswered(hit, "这个问题已解读过，已定位到那次对话；可继续追问，或换一个全新的问题");
+      return false;
+    }
     if (container.dataset.lastQ && container.dataset.lastQ !== question) {
       archiveRound(container, container.dataset.lastQ);
-    }
-    if (container.dataset.lastQ === question && container.querySelector(":scope > .p-ai")) {
-      toast("这个问题已解读过；继续请直接用下方追问，或点「换个问题重新提问」");
-      var f = container.querySelector(":scope > .p-ai .ai-follow input");
-      if (f) f.focus();
-      return false;
     }
     container.dataset.lastQ = question;
     return true;
@@ -1456,11 +1492,9 @@
     S.busyKeys[bkey] = true;
     var holderId = "ai-" + Date.now();
     // 新提问的旧轮归档已在 streamAI / 抽牌流程里完成（整轮移出结果容器）；
-    // 这里只负责渲染新卡：新提问卡带头「换个问题重新提问」，追问子卡不带。
+    // 这里只负责渲染新卡，追问子卡走 beforeend 插入追问 slot。
     var isNewQuestion = tag === "AI 解读";
     var headLabel = isNewQuestion ? "新提问" : esc(tag);
-    // 「换个问题重新提问」不在初始 HTML：解读进行中不显示，流结束(finish)后才挂载，
-    // 避免用户在解读未完成时点它去归档/清空正在写入的容器 -> 卡死。
     var html = '<div class="p-ai" id="' + holderId + '"><div class="p-ai-head"><span class="dot"></span>' +
       '<span class="p-ai-title">' + headLabel + ' · ' + esc(question) + '</span></div>' +
       '<div class="p-ai-body"><span class="p-cursor"></span></div></div>';
@@ -1519,19 +1553,6 @@
       // 用 .done 作为「流结束」信号，供测试与追问定位。
       var card = $("#" + holderId);
       if (card) card.classList.add("done");
-      // 「换个问题重新提问」：只在解读完成后才挂载（解读进行中不出现，避免误点导致卡死）
-      if (isNewQuestion && card) {
-        var head = $(".p-ai-head", card);
-        if (head && !$(".round-reask", head)) {
-          var rask = document.createElement("button");
-          rask.type = "button";
-          rask.className = "round-reask";
-          rask.title = "归档本轮，按新问题重新开始";
-          rask.textContent = "换个问题重新提问";
-          rask.onclick = function () { reaskFlow(container); };
-          head.appendChild(rask);
-        }
-      }
       // 每一处解读都支持「继续追问」：有 hid（登录且已落盘）时在卡底挂追问条
       if (hid) attachFollow(card, hid, followNote(S.feature));
       if (!noRefresh && S.feature === "profile") renderProfile();
@@ -2085,14 +2106,15 @@
       '<div class="zw-d-row"><label>大限</label><div class="zw-d-small">' +
         (p.decadal && p.decadal.range ? p.decadal.range[0] + "–" + p.decadal.range[1] + " 岁（" + esc(p.decadal.heavenlyStem + p.decadal.earthlyBranch) + "）" : "—") + '</div></div>' +
       '<div class="zw-d-row"><label>三方四正</label><div>' + trine + '</div></div>' +
-      '<div class="zw-d-ask">' +
-        '<div class="zw-d-ask-h">就「' + esc(pn) + '」提问<span>' + esc(dom) + '</span></div>' +
-        '<div class="p-suggest zw-chips zw-dchips">' + chips + '</div>' +
-        '<div class="zw-ask-row"><input class="ti" id="zw-dq" placeholder="例如：这一宫的星曜对' + esc(dom) + '意味着什么？" />' +
-          '<button class="tool-ai zw-ask-btn" id="zw-dask" type="button">AI 解读</button></div>' +
-        '<div id="zw-d-ai-out"></div>' +
-      '</div>' +
-    '</div>';
+    '</div>' +
+    // 结构统一：宫位提问区独立成卡（带边框），从宫位详情卡里移出，AI 输出紧随其后
+    '<div class="zw-ask zw-d-ask">' +
+      '<div class="zw-d-ask-h">就「' + esc(pn) + '」提问<span>' + esc(dom) + '</span></div>' +
+      '<div class="p-suggest zw-chips zw-dchips">' + chips + '</div>' +
+      '<div class="zw-ask-row"><input class="ti" id="zw-dq" placeholder="例如：这一宫的星曜对' + esc(dom) + '意味着什么？" />' +
+        '<button class="tool-ai zw-ask-btn" id="zw-dask" type="button">AI 解读</button></div>' +
+    '</div>' +
+    '<div id="zw-d-ai-out"></div>';
   }
   /* 格局启发式、星曜/四化含义（沿用原紫微服务的命盘总览口径） */
   var ZW_GE = [
@@ -2228,16 +2250,17 @@
       '<div class="zw-sec-h">十二宫一览<span>主星 · 辅星 · 大限</span></div>' +
       '<div class="zw-tbl-wrap"><table class="zw-tbl"><thead><tr><th>宫位</th><th>干支</th><th>主星</th><th>辅星</th><th>大限</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table></div>' +
-      '<div class="zw-ask">' +
-        '<div class="zw-ask-h">就这张命盘提问</div>' +
-        '<div class="p-suggest zw-chips"><button data-q="我的命格格局如何？优势与短板分别是什么？">格局与性格</button>' +
-          '<button data-q="事业方向适合什么？有哪些需要注意的短板？">事业方向</button>' +
-          '<button data-q="财运格局如何？哪些阶段财运会明显转好？">财运</button></div>' +
-        '<div class="zw-ask-row"><input class="ti" id="zw-q" placeholder="输入你想问的问题…" />' +
-          '<button class="tool-ai zw-ask-btn" id="zw-ask">AI 解读</button></div>' +
-      '</div>' +
-      '<div id="zw-ai-out"></div>' +
-    '</div>';
+    '</div>' +
+    // 结构统一：提问区（带边框独立卡）+ AI 输出与命格内容卡平级，提问框不再嵌在内容卡内
+    '<div class="zw-ask">' +
+      '<div class="zw-ask-h">就这张命盘提问</div>' +
+      '<div class="p-suggest zw-chips"><button data-q="我的命格格局如何？优势与短板分别是什么？">格局与性格</button>' +
+        '<button data-q="事业方向适合什么？有哪些需要注意的短板？">事业方向</button>' +
+        '<button data-q="财运格局如何？哪些阶段财运会明显转好？">财运</button></div>' +
+      '<div class="zw-ask-row"><input class="ti" id="zw-q" placeholder="输入你想问的问题…" />' +
+        '<button class="tool-ai zw-ask-btn" id="zw-ask">AI 解读</button></div>' +
+    '</div>' +
+    '<div id="zw-ai-out"></div>';
   }
 
   /* 运势盘：大限 / 流年直接点选（不用左右箭头），选中后叠加显示四化与宫位标注 */
@@ -2378,12 +2401,12 @@
       dask.onclick = runPalAsk;
       dq.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); runPalAsk(); } };
       $$(".zw-dchips button").forEach(function (b) {
-        b.onclick = function () { dq.value = b.dataset.q; dq.focus(); };
+        b.onclick = function () { pickQuestion(b.dataset.q, "#zw-dq"); };
       });
     }
     if (st.view === "pattern") {
       $$(".zw-chips button").forEach(function (b) {
-        b.onclick = function () { var q = $("#zw-q"); if (q) { q.value = b.dataset.q; q.focus(); } };
+        b.onclick = function () { pickQuestion(b.dataset.q, "#zw-q"); };
       });
       var ask = $("#zw-ask"), input = $("#zw-q");
       if (ask) ask.onclick = function () { zwAsk(input ? input.value.trim() : ""); };
