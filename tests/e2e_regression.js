@@ -274,13 +274,11 @@ function latestCard(page, containerSel) {
     });
     orderOK ? ok('AI 解读在牌面下方展开') : fail('AI 解读在牌面下方展开');
     const reaskState = await page.evaluate(() => ({
-      onPlate: document.querySelectorAll('#tr-result > .p-result .round-reask').length,
-      onDoneCard: document.querySelectorAll('#tr-result > .p-ai.done .round-reask').length,
-      onStreaming: document.querySelectorAll('#tr-result > .p-ai:not(.done) .round-reask').length
+      anywhere: document.querySelectorAll('#p-stage-tarot .round-reask').length
     }));
-    (reaskState.onPlate === 0 && reaskState.onDoneCard >= 1 && reaskState.onStreaming === 0)
-      ? ok('换问题按钮只在解读完成后出现、不在牌面卡上', JSON.stringify(reaskState))
-      : fail('换问题按钮位置', JSON.stringify(reaskState));
+    (reaskState.anywhere === 0)
+      ? ok('已移除「换个问题重新提问」按钮', JSON.stringify(reaskState))
+      : fail('换问题按钮未清除', JSON.stringify(reaskState));
     await shot(page, '41_tarot_ai');
 
     // 新提问语义：问题与牌面绑定 —— 换问题必须重新抽牌 + 旧整轮归档 + 新卡用新问题
@@ -322,6 +320,32 @@ function latestCard(page, containerSel) {
       return { open: it.classList.contains('open'), sign: it.querySelector('.rsign').textContent };
     });
     (!collapsed.open && collapsed.sign === '展开回看') ? ok('归档轮可再收起') : fail('归档轮收起', JSON.stringify(collapsed));
+
+    // 归档轮只读：展开后不应再有任何 AI 解读按钮/快捷 chips（防止用旧牌解读新问题）
+    await archHead.click(); await page.waitForTimeout(200);
+    const archRO = await page.evaluate(() => {
+      const bd = document.querySelector('#p-stage-tarot > .round-archive .round-item .round-item-bd');
+      return { aiBtns: bd ? bd.querySelectorAll('button.tool-ai, .p-suggest button').length : -1,
+        followInputs: bd ? bd.querySelectorAll('.ai-follow input').length : -1 };
+    });
+    (archRO.aiBtns === 0) ? ok('归档轮只读：无 AI 解读按钮/快捷问题', JSON.stringify(archRO))
+      : fail('归档轮残留解读按钮', JSON.stringify(archRO));
+    await archHead.click(); await page.waitForTimeout(150);
+
+    // 模板问题点击定位：已解读过的问题再次点 chip → 定位并展开原对话，不新开解读
+    const chips = page.locator('#p-stage-tarot .tr-chips button').first();
+    if (await chips.count()) {
+      const beforeCards = await page.locator('#tr-result > .p-ai').count();
+      await chips.click(); await page.waitForTimeout(350);
+      const located = await page.evaluate(() => ({
+        cards: document.querySelectorAll('#tr-result > .p-ai').length,
+        anyOpen: document.querySelectorAll('#p-stage-tarot > .round-archive .round-item.open').length,
+        qVal: (document.getElementById('tr-q') || {}).value || ''
+      }));
+      (located.cards === beforeCards && located.qVal.length > 0)
+        ? ok('模板问题点击只填框+定位、不重复解读', JSON.stringify(located))
+        : fail('模板问题点击行为', JSON.stringify(located));
+    }
 
     section('7. 黄历（日历 + AI 择日答疑）');
     await page.click('.p-navitem[data-feature="huangli"]');

@@ -335,7 +335,9 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .round-item.open .round-item-bd { display: block; }
 .round-item.open .round-item-hd .rsign::after { content: ""; }
 .round-item-bd .p-ai { margin-top: 8px; }
-/* 归档轮是只读回看：内部追问条默认隐藏，只在展开该轮时恢复（问题与卦象绑定，不该在归档里继续问） */
+/* 归档轮只读：JS 归档时已移除 AI 解读按钮/快捷 chips/开关（防止用旧牌解读新问题）；
+   追问框保留可用——在归档轮里追问仍沿用本轮旧牌/旧卦。这里 CSS 兜底隐藏解读类按钮。 */
+.round-item-bd .p-suggest, .round-item-bd .tool-ai, .round-item-bd .p-switch { display: none !important; }
 .round-item-bd .ai-follow { display: none; }
 .round-item.open .round-item-bd .ai-follow { display: block; }
 .p-ai-head {
@@ -344,9 +346,6 @@ details.p-disclose .inner { padding-bottom: 12px; }
 }
 .p-ai-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wx-jin); flex: 0 0 auto; }
 .p-ai-head .p-ai-title { flex: 1; min-width: 0; }
-.p-ai-head .round-reask { margin-left: auto; flex: 0 0 auto; height: 28px; padding: 0 10px; font-size: 11px; }
-/* 归档卡只读回看：里面的「换个问题」按钮无意义且会误操作，隐藏掉 */
-.p-ai-archived .round-reask { display: none; }
 .p-ai-body { padding: 16px 20px; font-size: 13.5px; line-height: 1.95; color: var(--ink); }
 /* AI 正文排版与站内一致：标题不再用浏览器默认字号 */
 .p-ai-body h1, .p-ai-body h2, .p-ai-body h3, .p-ai-body h4 {
@@ -415,7 +414,7 @@ details.p-disclose .inner { padding-bottom: 12px; }
 }
 /* 历史详情：与解读页同构的 AI 卡 + 追问条；说明文字为小字灰色备注 */
 .p-hist-detail .p-ai-body p:first-child { margin-top:0; }
-.pf-follow-note { margin:14px 2px 0; font-size:11px; color:var(--ink-3); }
+.pf-follow-note { margin:0 2px 11px; font-size:11px; color:var(--ink-3); }
 /* 每处 AI 解读卡内的通用追问条（复用 followup，沿用本次盘面，可多轮） */
 .ai-follow { margin-top:14px; padding:13px 20px 18px; border-top:1px solid var(--line); }
 .ai-follow-row { display:flex; gap:9px; align-items:center; }
@@ -564,13 +563,6 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
   font-size: 13px; font-family: inherit; transition: .15s;
 }
 .tool-ai:hover { border-color: var(--wx-jin); color: var(--wx-jin); }
-/* 「换个问题重新提问」：与 AI 解读/追问同款浅色描边小按钮，用在结果卡与归档卡头部 */
-.round-reask {
-  display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 13px;
-  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel);
-  color: var(--ink-2); font-size: 12px; font-family: inherit; cursor: pointer; transition: .15s;
-}
-.round-reask:hover { border-color: var(--wx-jin); color: var(--wx-jin); }
 @media (max-width: 640px){ .tool-card { padding: 24px 18px; } .tf-grid, .tf-grid3 { grid-template-columns: 1fr; } .tool-hero h1 { font-size: 26px; } }
 
 /* 结果区标题（无编号）：上下间距统一 14px，与命盘 tabs、卡片间距一致 */
@@ -1198,8 +1190,8 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .zw-mut-row { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 8px;
   font-size: 11.5px; color: var(--ink-3); margin-bottom: 8px; }
 .zw-mut-row i { font-style: normal; color: var(--ink-3); }
-/* 宫位详情里的「就此宫提问」 */
-.zw-d-ask { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+/* 宫位「就此宫提问」：与命格提问卡同款独立边框卡（不再嵌在宫位详情卡内） */
+.zw-d-ask { margin-top: 14px; }
 .zw-d-ask-h { font-family: var(--serif); font-size: 13.5px; color: var(--ink); display: flex; align-items: baseline; gap: 8px; margin-bottom: 9px; }
 .zw-d-ask-h span { font-family: inherit; font-size: 11.5px; color: var(--ink-3); }
 .zw-dchips { margin-bottom: 9px; }
