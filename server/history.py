@@ -73,21 +73,25 @@ def find_cached_entry(profile_id: int, feature: str, dedupe_key: str) -> tuple[i
 
 
 def list_history(profile_id: int, feature: str | None = None,
-                 limit: int = 50, offset: int = 0) -> list[dict]:
+                 limit: int = 50, offset: int = 0,
+                 date: str | None = None) -> list[dict]:
+    """按功能 / 日期列出历史。date 为 YYYY-MM-DD，按 ts 前缀精确匹配某一天。"""
     _ensure_table()
     c = profile_store.db()
+    where = "profile_id=?"
+    args: list = [profile_id]
     if feature:
-        rows = c.execute(
-            "SELECT id, feature, ts, question, answer, payload FROM feature_history "
-            "WHERE profile_id=? AND feature=? ORDER BY id DESC LIMIT ? OFFSET ?",
-            (profile_id, feature, limit, offset),
-        ).fetchall()
-    else:
-        rows = c.execute(
-            "SELECT id, feature, ts, question, answer, payload FROM feature_history "
-            "WHERE profile_id=? ORDER BY id DESC LIMIT ? OFFSET ?",
-            (profile_id, limit, offset),
-        ).fetchall()
+        where += " AND feature=?"
+        args.append(feature)
+    if date:
+        where += " AND ts LIKE ?"
+        args.append(str(date).strip()[:10] + "%")
+    args += [limit, offset]
+    rows = c.execute(
+        "SELECT id, feature, ts, question, answer, payload FROM feature_history "
+        "WHERE " + where + " ORDER BY id DESC LIMIT ? OFFSET ?",
+        args,
+    ).fetchall()
     out = []
     for r in rows:
         try:
@@ -153,11 +157,18 @@ def personalization(profile_id: int, feature: str) -> dict:
 
 
 def stats(profile_id: int) -> dict:
-    """个人中心：各功能历史条数 + 总数。"""
+    """个人中心：各功能历史条数 + 总数 + 有记录的日期列表（供日期查找）。"""
     _ensure_table()
-    rows = profile_store.db().execute(
+    c = profile_store.db()
+    rows = c.execute(
         "SELECT feature, COUNT(*) AS n FROM feature_history WHERE profile_id=? GROUP BY feature",
         (profile_id,),
     ).fetchall()
     by_feature = {r["feature"]: r["n"] for r in rows}
-    return {"total": sum(by_feature.values()), "by_feature": by_feature}
+    drows = c.execute(
+        "SELECT DISTINCT substr(ts,1,10) AS d FROM feature_history WHERE profile_id=? "
+        "ORDER BY d DESC",
+        (profile_id,),
+    ).fetchall()
+    dates = [r["d"] for r in drows if r["d"]]
+    return {"total": sum(by_feature.values()), "by_feature": by_feature, "dates": dates}

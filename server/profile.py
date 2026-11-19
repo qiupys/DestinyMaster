@@ -1,7 +1,7 @@
 """用户档案：SQLite 持久化出生信息与推演对话，LLM 定期压缩历史为摘要。
 
 设计：
-- profiles: 昵称唯一，PBKDF2-SHA256(120k 轮) 口令哈希，birth 存 JSON（出生信息）
+- profiles: 用户名唯一，PBKDF2-SHA256(120k 轮) 密码哈希，birth 存 JSON（出生信息）
 - messages: 每轮问答全量落盘（compressed=0 未压缩）
 - summaries: 每用户一行累计摘要（压缩后覆盖）
 - 压缩策略：未压缩消息 > COMPRESS_THRESHOLD 时，取最旧 COMPRESS_BATCH 条交给
@@ -77,14 +77,14 @@ def _now() -> str:
 def register(name: str, password: str, birth: dict) -> dict:
     name = name.strip()
     if not name or not password:
-        return {"ok": False, "error": "昵称与口令不能为空"}
+        return {"ok": False, "error": "用户名与密码不能为空"}
     if not re.fullmatch(r"[A-Za-z0-9_]{2,24}", name):
-        return {"ok": False, "error": "昵称仅支持 2~24 位字母、数字或下划线"}
+        return {"ok": False, "error": "用户名仅支持 2~24 位字母、数字或下划线"}
     if len(password) < 6:
-        return {"ok": False, "error": "口令至少 6 位"}
+        return {"ok": False, "error": "密码至少 6 位"}
     c = db()
     if c.execute("SELECT 1 FROM profiles WHERE name=?", (name,)).fetchone():
-        return {"ok": False, "error": "该昵称已存在，请直接登录"}
+        return {"ok": False, "error": "该用户名已存在，请直接登录"}
     if not birth:
         return {"ok": False, "error": "缺少出生信息"}
     birth = _birth_to_solar(birth)
@@ -102,7 +102,7 @@ def login(name: str, password: str) -> dict:
     c = db()
     row = c.execute("SELECT * FROM profiles WHERE name=?", (name.strip(),)).fetchone()
     if not row or _hash(password, row["salt"]) != row["pass_hash"]:
-        return {"ok": False, "error": "昵称或口令不正确"}
+        return {"ok": False, "error": "用户名或密码不正确"}
     token = secrets.token_hex(16)
     c.execute("UPDATE profiles SET token=? WHERE id=?", (token, row["id"]))
     c.commit()
@@ -133,7 +133,7 @@ def bind_birth(profile_id: int, birth: dict) -> None:
 
 def update_profile(profile_id: int, *, name=None, birth=None,
                    new_password=None, old_password=None) -> dict:
-    """修改档案：昵称（查重）/ 出生信息 / 口令（须验证当前口令）。先校验后写库，避免半提交。"""
+    """修改档案：用户名（查重）/ 出生信息 / 密码（须验证当前密码）。先校验后写库，避免半提交。"""
     c = db()
     row = c.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
     if not row:
@@ -141,14 +141,14 @@ def update_profile(profile_id: int, *, name=None, birth=None,
     if name is not None:
         name = name.strip()
         if not re.fullmatch(r"[A-Za-z0-9_]{2,24}", name):
-            return {"ok": False, "error": "昵称仅支持 2~24 位字母、数字或下划线"}
+            return {"ok": False, "error": "用户名仅支持 2~24 位字母、数字或下划线"}
         if c.execute("SELECT 1 FROM profiles WHERE name=? AND id<>?", (name, profile_id)).fetchone():
-            return {"ok": False, "error": "该昵称已被其他档案使用"}
+            return {"ok": False, "error": "该用户名已被其他档案使用"}
     if new_password is not None:
         if len(new_password) < 6:
-            return {"ok": False, "error": "新口令至少 6 位"}
+            return {"ok": False, "error": "新密码至少 6 位"}
         if not old_password or _hash(old_password, row["salt"]) != row["pass_hash"]:
-            return {"ok": False, "error": "当前口令不正确"}
+            return {"ok": False, "error": "当前密码不正确"}
     # 校验全部通过，统一写库
     if name is not None:
         c.execute("UPDATE profiles SET name=? WHERE id=?", (name, profile_id))
@@ -470,7 +470,7 @@ def admin_list() -> dict:
 
 
 def admin_delete(name: str) -> dict:
-    """删除指定用户及其全部对话与摘要。"""
+    """删除指定用户及其全部对话、摘要、功能历史（不可见任何对话内容）。"""
     c = db()
     row = c.execute("SELECT id FROM profiles WHERE name=?", (name.strip(),)).fetchone()
     if not row:
@@ -478,6 +478,7 @@ def admin_delete(name: str) -> dict:
     uid = row["id"]
     c.execute("DELETE FROM messages WHERE profile_id=?", (uid,))
     c.execute("DELETE FROM summaries WHERE profile_id=?", (uid,))
+    c.execute("DELETE FROM feature_history WHERE profile_id=?", (uid,))
     c.execute("DELETE FROM profiles WHERE id=?", (uid,))
     c.commit()
     return {"ok": True}

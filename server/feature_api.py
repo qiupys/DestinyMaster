@@ -263,8 +263,22 @@ def _make_calc_and_deduce(feature: str, compute_fn):
 
 
 def _with_disclaimer(answer: str) -> str:
-    """正文后统一附加免责声明（系统负责，模型不再自行撰写）。已含则不重复。"""
+    """正文后统一附加免责声明（系统负责，模型不再自行撰写）。
+
+    模型偶发会在正文结尾自行写一句免责套话（如「解读仅供参考，重在启发与自省」），
+    这里先剥离这类结尾套话，再统一附加官方声明，确保一次解读只出现一条声明。
+    """
+    import re
     text = (answer or "").rstrip()
+    # 剥离模型偶发自写的免责套话（典型：「解读仅供参考，重在启发与自省。」），
+    # 无论出现在官方声明之前还是正文结尾。只匹配独立的短句/短段，避免误伤正文结论。
+    self_written = (
+        r"(?:\n+\s*---\s*\n+)?[^。\n]{0,40}(?:解读仅供参考|以上内容仅供参考|本解读仅供参考|仅供参考，重在启发)[^。\n]{0,40}[。]?\s*",
+    )
+    for pat in self_written:
+        text = re.sub(pat, "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).rstrip()
+    # 已含官方声明则不再附加（缓存/回放场景）
     if ai.DISCLAIMER in text:
         return text
     return text + "\n\n---\n\n" + ai.DISCLAIMER if text else ai.DISCLAIMER
@@ -414,11 +428,12 @@ _make_calc_and_deduce("tarot", _calc_tarot)
 async def api_history_list(
     profile_id: int = Query(...), token: str = Query(...),
     feature: str | None = Query(None), limit: int = Query(50), offset: int = Query(0),
+    date: str | None = Query(None),
 ):
     pid = _auth(profile_id, token)
     if not pid:
         return {"ok": False, "error": "登录状态失效，请重新登录"}
-    return {"ok": True, "items": history.list_history(pid, feature, limit, offset)}
+    return {"ok": True, "items": history.list_history(pid, feature, limit, offset, date)}
 
 
 @router.get("/api/history/detail")

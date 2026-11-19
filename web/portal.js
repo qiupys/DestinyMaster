@@ -7,7 +7,23 @@
     feature: "bazi",
     profile: null,       // {id, token, name}
     busy: false,
+    stageCache: {},      // feature -> 持久 DOM 容器；切页只隐藏/显示，不销毁
   };
+  // 每个功能持有自己的舞台容器。切到别的功能时只隐藏，正在进行的 AI 流式解读
+  // 仍写到原容器里继续跑；切回来时提问框、解读结果、追问链都原样还在。
+  function stageEl() {
+    var f = S.feature;
+    var el = S.stageCache[f];
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "p-wrap";
+      el.id = "p-stage-" + f;
+      el.dataset.feature = f;
+      $("#p-content").appendChild(el);
+      S.stageCache[f] = el;
+    }
+    return el;
+  }
   try {
     var raw = localStorage.getItem("zw-profile");
     if (raw) S.profile = JSON.parse(raw);
@@ -94,7 +110,8 @@
     if (locked) { toast("该功能在二期上线，敬请期待"); return; }
     location.hash = "/meihua" === ("/" + feat) ? feat : feat; // 统一 #/xxx
   }
-  function navigate(feat) {
+  function navigate(feat, force) {
+    var changed = S.feature !== feat;
     S.feature = feat;
     closeNav();
     $$(".p-navitem").forEach(function (b) { b.classList.toggle("active", b.dataset.feature === feat); });
@@ -103,9 +120,14 @@
     var names = { bazi:"八字排盘",ziwei:"紫微斗数",meihua:"梅花易数",liuyao:"六爻",qimen:"奇门遁甲",
       tarot:"塔罗牌",huangli:"黄历",profile:"个人中心" };
     $("#p-crumb").textContent = names[feat] || feat;
-    // 所有功能页共用同一容器，统一在此创建，避免直接 hash 进入 profile/ziwei 时 #p-stage 不存在
-    $("#p-content").innerHTML = '<div class="p-wrap" id="p-stage"></div>';
+    // 隐藏所有已建舞台，只显示当前功能的；DOM 不销毁 → 提问框/解读/追问/进行中的 SSE 全部保留
+    Object.keys(S.stageCache).forEach(function (k) { S.stageCache[k].style.display = "none"; });
+    var st = stageEl();
+    st.style.display = "";
+    // 个人中心每次进入都刷新（历史/统计可能已变）；其余功能首次渲染或强制时才重建
     if (feat === "profile") { renderProfile(); return; }
+    if (st.dataset.ready === "1" && !force) return;  // 已有内容，切回来直接复用
+    st.dataset.ready = "1";
     if (feat === "ziwei") { renderZiweiEntry(); return; }
     var fn = { bazi: renderBazi, meihua: renderMeihua, tarot: renderTarot, huangli: renderHuangli }[feat];
     if (fn) { fn(); }
@@ -350,7 +372,7 @@
 
   /* ---------------- 「选择日期」弹窗（年月下拉 + 周一起始月历网格） ---------------- */
   var DP_CN_M = ["一月","二月","三月","四月","五月","六月","七月","八月","九月","十月","十一月","十二月"];
-  var dpEl = null, dpPfx = null, dpY = 0, dpM = 1;
+  var dpEl = null, dpPfx = null, dpY = 0, dpM = 1, dpOnPick = null, dpPickVal = "";
   function dpSync() {
     $("#dp-y", dpEl).value = String(dpY);
     $("#dp-m", dpEl).value = String(dpM);
@@ -361,7 +383,8 @@
     var dim = new Date(dpY, dpM, 0).getDate();
     var prevDim = new Date(dpY, dpM - 1, 0).getDate();
     var total = Math.ceil((lead + dim) / 7) * 7;
-    var sel = ($("#" + dpPfx + "-date").value || "").split("-").map(Number);
+    var sel = dpOnPick ? String(dpPickVal || "").split("-").map(Number)
+                       : (($("#" + dpPfx + "-date") || { value: "" }).value || "").split("-").map(Number);
     var td = new Date();
     var html = "";
     for (var i = 0; i < total; i++) {
@@ -405,13 +428,17 @@
     $("#dp-grid", dpEl).addEventListener("click", function (e) {
       var c = e.target.closest(".dp-cell");
       if (!c) return;
-      birthSetDate(dpPfx, +c.dataset.y, +c.dataset.m, +c.dataset.d);
+      if (dpOnPick) {
+        dpOnPick(+c.dataset.y, +c.dataset.m, +c.dataset.d);
+      } else {
+        birthSetDate(dpPfx, +c.dataset.y, +c.dataset.m, +c.dataset.d);
+      }
       dpClose();
     });
   }
   function openDatePicker(pfx) {
     dpEnsure();
-    dpPfx = pfx;
+    dpPfx = pfx; dpOnPick = null;
     var v = ($("#" + pfx + "-date").value || "").split("-");
     var td = new Date();
     dpY = +v[0] || td.getFullYear();
@@ -419,7 +446,19 @@
     dpSync(); dpRender();
     dpEl.classList.remove("hidden");
   }
-  function dpClose() { if (dpEl) dpEl.classList.add("hidden"); }
+  // 通用「选日期」弹窗（个人中心按日期查找）：复用出生日期同款日历，选完回调，不写入任何出生字段
+  function openDateLookup(initial, onPick) {
+    dpEnsure();
+    dpOnPick = onPick;
+    dpPickVal = initial || "";
+    var v = dpPickVal.split("-");
+    var td = new Date();
+    dpY = +v[0] || td.getFullYear();
+    dpM = +v[1] || td.getMonth() + 1;
+    dpSync(); dpRender();
+    dpEl.classList.remove("hidden");
+  }
+  function dpClose() { if (dpEl) dpEl.classList.add("hidden"); dpOnPick = null; }
 
   /* ---------------- 「选择农历日期」弹窗（年份/月份/日期 三下拉 + 确认） ---------------- */
   var lpEl = null, lpPfx = null;
@@ -516,7 +555,7 @@
   /* ================= 八字排盘 ================= */
   function renderBazi() {
     S.bzFromProfile = false;
-    $("#p-stage").innerHTML =
+    stageEl().innerHTML =
       toolHero("八字排盘", "八字以四柱定命局，以大运流年观其变化；AI 提供解读与连续问答。") +
       '<div class="tool-card" id="bz-form-card"><div class="tool-form" id="bazi-form">' +
         '<div class="tf-group"><div class="tf-gt">基本信息</div>' +
@@ -727,7 +766,7 @@
 
   /* ================= 梅花易数 ================= */
   function renderMeihua() {
-    $("#p-stage").innerHTML =
+    stageEl().innerHTML =
       toolHero("梅花易数 · 每日决策", "梅花易数取象于当下，观变于一事；卦成之后，由 AI 结合《周易》原文解读。") +
       '<div class="tool-card"><div class="tool-form" id="mh-form">' +
         '<div class="tf-group"><div class="tf-gt">提出您的决策问题</div>' +
@@ -752,7 +791,7 @@
         '<b>手动起卦</b>：点击爻位设置阴阳，再选择变爻位置；本卦、动爻、变卦随之确定。'
       ], "问题文字不参与起卦运算；同一输入永远得到同一卦，AI 解读引用的卦爻辞是《周易》真实文本。");
 
-    $$(".p-suggest button", $("#p-stage")).forEach(function (b) { b.onclick = function () { $("#mh-q").value = b.dataset.q; updateBtn(); }; });
+    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { $("#mh-q").value = b.dataset.q; updateBtn(); }; });
     var GUA_NAMES = ["乾","兑","离","震","巽","坎","艮","坤"];
     var GUA_SYMBOL = { "乾":"☰","兑":"☱","离":"☲","震":"☳","巽":"☴","坎":"☵","艮":"☶","坤":"☷" };
     var GUA_BITS = { "乾":"111","兑":"011","离":"101","震":"001","巽":"110","坎":"010","艮":"100","坤":"000" };
@@ -881,7 +920,7 @@
 
   /* ================= 塔罗牌 ================= */
   function renderTarot() {
-    $("#p-stage").innerHTML =
+    stageEl().innerHTML =
       toolHero("塔罗牌占卜", "以图像与象征映照问题的不同侧面。写下明确的问题，程序随机抽牌；确认牌面后，由 AI 按牌位和正逆位组织成一条与你有关的叙事——包含主线，也指出盲点。") +
       '<div class="tool-card"><div class="tool-form" id="tr-form">' +
         '<div class="tf-group"><div class="tf-gt">提出您的问题</div>' +
@@ -903,7 +942,7 @@
       ], "塔罗像一面带象征语言的镜子，帮助看见期待、恐惧与尚未承认的选择；它是自我探索工具，不是心理诊断或命运判决。");
 
     segBind($("#tr-spread"));
-    $$(".p-suggest button", $("#p-stage")).forEach(function (b) { b.onclick = function () { $("#tr-q").value = b.dataset.q; }; });
+    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { $("#tr-q").value = b.dataset.q; }; });
     // 牌义清单（78 张：中英文名 / 牌面图 / 正逆位关键词 / 简介），一次加载全站复用
     if (!S.tarotCards) {
       fetch("/tarot-cards.json").then(function (r) { return r.json(); }).then(function (j) { S.tarotCards = j; }).catch(function () {});
@@ -981,7 +1020,7 @@
     var now = new Date();
     var view = { y: now.getFullYear(), m: now.getMonth() + 1 };
     var sel = { y: view.y, m: view.m, d: now.getDate() };
-    $("#p-stage").innerHTML =
+    stageEl().innerHTML =
       toolHero("老黄历", "以干支、节气与日值辨一日之宜忌，为日常行事提供时间参考。AI 依据完整历注，解释栏目与具体事项的关系。") +
       '<div class="tool-card hl-cal" id="hl-cal"><p class="p-note" style="text-align:center">日历加载中…</p></div>' +
       '<div id="hl-day"><p class="p-note" style="text-align:center;margin:18px 0">当日历注加载中…</p></div>' +
@@ -1007,7 +1046,7 @@
         '<b>神位与物候</b>：财神喜神等方位、二十八宿、九星、物候，是传统择日的辅助参考层。'
       ], "黄历描述「这一天在传统体系中的位置」，不是针对某个人的命运判断；所有字段由程序确定性计算，宜忌只是醒目结论，孤立的吉凶不等于整天的定论。");
 
-    $$(".p-suggest button", $("#p-stage")).forEach(function (b) { b.onclick = function () { $("#hl-q").value = b.dataset.q; }; });
+    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { $("#hl-q").value = b.dataset.q; }; });
     function hlParam() { return "year=" + sel.y + "&month=" + sel.m + "&day=" + sel.d; }
 
     /* ---- 月历 ---- */
@@ -1181,14 +1220,24 @@
   }
   /* 通用 SSE 流式渲染：解读 / 历史追问共用 */
   function streamToUrl(url, tag, question, container, noRefresh) {
-    if (S.busy) { toast("解读进行中，请稍候"); return; }
-    S.busy = true;
+    // busy 按容器隔离：一个功能在解读，不影响切到别的功能发起新解读（后台并行）
+    var bkey = container.id || (container.dataset && container.dataset.bkey) || ("c" + Math.random());
+    if (!container.id && container.dataset) container.dataset.bkey = bkey;
+    if (!S.busyKeys) S.busyKeys = {};
+    if (S.busyKeys[bkey]) { toast("此处解读进行中，请稍候"); return; }
+    S.busyKeys[bkey] = true;
     var holderId = "ai-" + Date.now();
-    // 移除旧的 AI 块，插新的
-    $$(".p-ai", container).forEach(function (n) { n.remove(); });
-    var html = '<div class="p-ai" id="' + holderId + '"><div class="p-ai-head"><span class="dot"></span>' + esc(tag) + ' · ' + esc(question) + '</div>' +
+    // 新提问不抹掉旧对话：把已有的顶层解读卡折叠归档（追问结果在 slot 内，不受影响），
+    // 新卡插在最前。这样同一功能里「新提问」（顶部提问框）与「追问」（卡内追问条）并存可区分。
+    var isNewQuestion = tag === "AI 解读";
+    if (isNewQuestion) {
+      $$(":scope > .p-ai", container).forEach(function (n) { n.classList.add("p-ai-archived"); });
+    }
+    var headLabel = isNewQuestion ? "新提问" : esc(tag);
+    var html = '<div class="p-ai" id="' + holderId + '"><div class="p-ai-head"><span class="dot"></span>' + headLabel + ' · ' + esc(question) + '</div>' +
       '<div class="p-ai-body"><span class="p-cursor"></span></div></div>';
-    container.insertAdjacentHTML("beforeend", html);
+    if (isNewQuestion) container.insertAdjacentHTML("afterbegin", html);
+    else container.insertAdjacentHTML("beforeend", html);
     var body = $(".p-ai-body", $("#" + holderId));
     // 点击 AI 解读后立即滚到解读框，避免停留在结果上方
     $("#" + holderId).scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1222,7 +1271,7 @@
       })
       .catch(function (e) {
         body.innerHTML = '<div style="color:var(--cinnabar)">解读失败：' + esc(e.message) + '</div>';
-        S.busy = false;
+        S.busyKeys[bkey] = false;
       });
     function render() {
       try { body.innerHTML = (window.marked ? marked.parse(full) : esc(full)) + '<span class="p-cursor"></span>'; }
@@ -1230,15 +1279,15 @@
       body.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     function finish() {
-      S.busy = false;
+      S.busyKeys[bkey] = false;
       try { body.innerHTML = (window.marked ? marked.parse(full) : esc(full)); }
       catch (e) { body.innerHTML = esc(full); }
-      var d = document.createElement("div");
-      d.className = "p-disclaimer-line";
-      d.textContent = "以上解读基于传统命理文献与象征体系，仅供启发与自省；命盘中的短板与风险已如实指出，重大现实决策请以事实与专业意见为准。";
-      body.appendChild(d);
+      // 免责声明由后端在正文之后统一附加并计入落盘，前端不再重复追加（避免一次解读出现多条声明）。
+      // 用 .done 作为「流结束」信号，供测试与追问定位。
+      var card = $("#" + holderId);
+      if (card) card.classList.add("done");
       // 每一处解读都支持「继续追问」：有 hid（登录且已落盘）时在卡底挂追问条
-      if (hid) attachFollow($("#" + holderId), hid);
+      if (hid) attachFollow(card, hid);
       if (!noRefresh && S.feature === "profile") renderProfile();
     }
   }
@@ -1261,7 +1310,7 @@
     function ask() {
       var q = inp.value.trim();
       if (!q) { toast("请输入追问内容"); inp.focus(); return; }
-      if (S.busy) { toast("解读进行中，请稍候"); return; }
+      if (btn.disabled) { toast("追问进行中，请稍候"); return; }
       btn.disabled = true; inp.value = "";
       var url = "/api/history/followup?" + pfAuth() + "&id=" + hid + "&q=" + encodeURIComponent(q);
       streamToUrl(url, "追问", q, slot, true);
@@ -1273,13 +1322,13 @@
 
   /* ================= 个人中心 ================= */
   var PF_FEATS = [["bazi", "八字"], ["meihua", "梅花"], ["tarot", "塔罗"], ["huangli", "黄历"], ["ziwei", "紫微"]];
-  var pfState = { filter: "", items: [], editBirth: false, birth: null };
+  var pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false, birth: null };
 
   function pfAuth() {
     return "profile_id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token);
   }
   function renderProfile() {
-    var stage = $("#p-stage");
+    var stage = stageEl();
     if (!S.profile) {
       stage.innerHTML = hero("PROFILE", "个人中心", "登录后在此查看你的档案与全部历史提问。") +
         '<div class="p-card" style="text-align:center;padding:50px"><p>尚未登录</p><button class="p-primary" style="width:200px;margin-top:10px" onclick="document.getElementById(\'p-auth-btn\').click()">登录 / 注册</button></div>';
@@ -1288,17 +1337,22 @@
     stage.innerHTML = hero("PROFILE", "个人中心 · " + esc(S.profile.name), "你的出生档案与各功能的提问历史都保存在云端，随时回看、继续追问。") +
       '<div class="p-card" id="pf-body"><p>加载中…</p></div>';
     pfState.filter = "";
+    pfState.date = "";
     loadProfile();
   }
   function loadProfile() {
     var ap = pfAuth();
     var apP = "id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token);
+    var listUrl = "/api/history/list?" + ap + "&limit=60" +
+      (pfState.filter ? "&feature=" + pfState.filter : "") +
+      (pfState.date ? "&date=" + encodeURIComponent(pfState.date) : "");
     Promise.all([
       fetch("/api/history/stats?" + ap).then(function (r) { return r.json(); }),
-      fetch("/api/history/list?" + ap + "&limit=30" + (pfState.filter ? "&feature=" + pfState.filter : "")).then(function (r) { return r.json(); }),
+      fetch(listUrl).then(function (r) { return r.json(); }),
       fetch("/api/profile/get?" + apP).then(function (r) { return r.json(); })
     ]).then(function (res) {
       pfState.items = (res[1] && res[1].items) || [];
+      pfState.dates = (res[0] && res[0].dates) || [];
       paintProfile(res[0] || {}, res[1] || {}, res[2] || {});
     }).catch(function (e) {
       var body = $("#pf-body");
@@ -1317,13 +1371,17 @@
       return '<button type="button" class="p-stat p-stat-btn' + (on ? ' on' : '') + '" data-f="' + f[0] + '">' +
         '<div class="n">' + (by[f[0]] || 0) + '</div><div class="l">' + f[1] + '</div></button>';
     }).join("");
+    // 历史缩略卡：功能 + 日期 + 单行问题摘要；纵向列表在固定高度内上下滚动，点击查看详情/追问
     var items = pfState.items.map(function (h) {
-      return '<div class="p-hist-item"><span class="p-hist-feat">' + esc(h.feature_name) + '</span>' +
-        '<span class="p-hist-q">' + esc(h.question) + '</span>' +
-        '<span class="p-hist-ts">' + esc(h.ts) + '</span>' +
-        '<span class="p-hist-ops"><button class="p-navitem" style="width:auto;padding:3px 9px" data-hid="' + h.id + '">查看</button>' +
-        '<button class="p-navitem p-hist-del" style="width:auto;padding:3px 9px" data-del="' + h.id + '">删除</button></span></div>';
-    }).join("") || ('<p class="p-note">' + (cur ? "「" + cur[1] + "」还没有提问记录。" : "还没有提问记录，去各功能里问一句吧。") + '</p>');
+      var summary = String(h.question || "").replace(/\s+/g, " ");
+      if (summary.length > 54) summary = summary.slice(0, 54) + "…";
+      return '<button type="button" class="pf-hcard' + '" data-hid="' + h.id + '">' +
+        '<span class="pf-hcard-top"><span class="p-hist-feat">' + esc(h.feature_name) + '</span>' +
+        '<span class="pf-hcard-date">' + esc(h.ts || "") + '</span></span>' +
+        '<span class="pf-hcard-q">' + esc(summary) + '</span>' +
+        '<span class="pf-hcard-del" data-del="' + h.id + '" title="删除">×</span>' +
+        '</button>';
+    }).join("") || ('<p class="p-note">' + (pfState.date ? "这一天没有提问记录。" : (cur ? "「" + cur[1] + "」还没有提问记录。" : "还没有提问记录，去各功能里问一句吧。")) + '</p>');
     $("#pf-body").innerHTML =
       '<div class="p-profile-head"><div class="p-profile-avatar">' + esc(S.profile.name.charAt(0).toUpperCase()) + '</div>' +
       '<div><h3 style="margin:0;font-family:var(--serif);font-size:19px">' + esc(S.profile.name) + '</h3>' +
@@ -1336,14 +1394,27 @@
           '<div class="pf-birth-list">' + bSeg.map(function (x) {
             return '<div class="pf-birth-item"><span class="k">' + esc(x[0]) + '</span><span class="v">' + esc(x[1]) + '</span></div>';
           }).join("") + '</div>' +
-          '<p class="p-note pf-birth-tip">此处出生信息是八字、紫微、黄历共用的唯一来源；修改后各功能会同步更新。</p>') +
+          '<p class="p-note pf-hint pf-birth-tip">此处出生信息是八字、紫微、黄历共用的唯一来源；修改后各功能会同步更新。</p>') +
+      '</div>' +
+      '<div class="pf-account">' +
+        '<div class="pf-birth-h"><h3 style="font-family:var(--serif);font-size:15px;margin:0">账号设置</h3>' +
+          '<button type="button" class="p-navitem pf-account-toggle" style="width:auto;padding:4px 11px">' +
+            (pfState.editAccount ? "收起" : "修改") + '</button></div>' +
+        (pfState.editAccount ? pfAccountForm() : '<p class="p-note pf-hint">可修改用户名与登录密码，不影响你的历史对话。</p>') +
       '</div>' +
       '<div class="p-stat-row">' + cards + '</div>' +
-      '<p class="p-note pf-tip">点击卡片查看该功能的历史对话</p>' +
+      '<p class="p-note pf-hint pf-tip">点击卡片查看该功能的历史对话</p>' +
       '<div style="margin-top:22px"><div class="pf-hist-head"><h3 style="font-family:var(--serif);font-size:16px;margin:0">' +
         (cur ? esc(cur[1]) + ' · 历史对话' : '历史提问') + '</h3>' +
-        (cur ? '<button class="p-navitem pf-clear" style="width:auto;padding:3px 9px">显示全部</button>' : '') +
-      '</div>' + items + '</div>';
+        '<div class="pf-hist-tools">' +
+          (pfState.date ? '<button type="button" class="pf-dateclear" title="清除日期">' + esc(pfState.date) + ' ✕</button>' : '') +
+          '<button type="button" class="pf-date-btn" id="pf-date-btn">' + CAL_ICON + '<span>' + (pfState.date ? '更改日期' : '按日期查找') + '</span></button>' +
+          (cur || pfState.date ? '<button class="p-navitem pf-clear" style="width:auto;padding:4px 10px">清除筛选</button>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="pf-hscroll">' + items + '</div>' +
+      '<p class="p-note pf-hint">上下滚动查看更多；点击卡片查看完整解读并继续追问</p>' +
+      '</div>';
     $$(".p-stat-btn", $("#pf-body")).forEach(function (b) {
       b.onclick = function () {
         pfState.filter = pfState.filter === b.dataset.f ? "" : b.dataset.f;
@@ -1354,17 +1425,34 @@
     if (be) be.onclick = function () { pfState.editBirth = !pfState.editBirth; paintProfile(stats, list, prof); };
     var bs = $("#pf-birth-save", $("#pf-body"));
     if (bs) bs.onclick = function () { pfSaveBirth(birth); };
+    var at = $(".pf-account-toggle", $("#pf-body"));
+    if (at) at.onclick = function () { pfState.editAccount = !pfState.editAccount; paintProfile(stats, list, prof); };
+    var an = $("#pf-name-save", $("#pf-body"));
+    if (an) an.onclick = function () { pfSaveAccount("name"); };
+    var ap = $("#pf-pass-save", $("#pf-body"));
+    if (ap) ap.onclick = function () { pfSaveAccount("password"); };
     var clr = $(".pf-clear", $("#pf-body"));
-    if (clr) clr.onclick = function () { pfState.filter = ""; loadProfile(); };
-    $$("[data-hid]", $("#pf-body")).forEach(function (b) {
-      b.onclick = function () { toggleHistory(+b.dataset.hid, b); };
+    if (clr) clr.onclick = function () { pfState.filter = ""; pfState.date = ""; loadProfile(); };
+    // 日期查找：右侧按钮 → 弹出与出生日期同款的日历，选完按日期过滤历史
+    var db = $("#pf-date-btn", $("#pf-body"));
+    if (db) db.onclick = function () {
+      openDateLookup(pfState.date, function (y, m, d) {
+        pfState.date = y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+        loadProfile();
+      });
+    };
+    var dclr = $(".pf-dateclear", $("#pf-body"));
+    if (dclr) dclr.onclick = function () { pfState.date = ""; loadProfile(); };
+    // 缩略卡：点卡片查看；点卡内「×」删除（两步确认），并阻止冒泡到「查看」
+    $$(".pf-hcard", $("#pf-body")).forEach(function (card) {
+      card.onclick = function () { toggleHistory(+card.dataset.hid, card); };
     });
-    /* 删除历史：两步确认（第一次点变「确认删除」，4 秒内再点才真删），避免误触 */
-    $$("[data-del]", $("#pf-body")).forEach(function (b) {
-      b.onclick = function () {
+    $$(".pf-hcard-del", $("#pf-body")).forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
         if (!b.classList.contains("arm")) {
-          b.classList.add("arm"); b.textContent = "确认删除";
-          setTimeout(function () { b.classList.remove("arm"); b.textContent = "删除"; }, 4000);
+          b.classList.add("arm"); b.textContent = "确认?";
+          setTimeout(function () { b.classList.remove("arm"); b.textContent = "×"; }, 4000);
           return;
         }
         fetch("/api/history/delete", {
@@ -1372,10 +1460,7 @@
           body: JSON.stringify({ profile_id: S.profile.id, token: S.profile.token, id: +b.dataset.del })
         }).then(function (r) { return r.json(); }).then(function (d) {
           if (!d.ok) { toast(d.error || "删除失败"); return; }
-          toast("已删除");
-          var box = $("#pf-body").querySelector('[data-hbox="' + b.dataset.del + '"]');
-          if (box) box.remove();
-          loadProfile();
+          toast("已删除"); loadProfile();
         }).catch(function () { toast("删除失败，请稍后再试"); });
       };
     });
@@ -1459,47 +1544,83 @@
       loadProfile();
     }).catch(function () { toast("保存失败，请稍后再试"); });
   }
+  /* 账号设置表单：用户名 + 密码（改密码须填当前密码） */
+  function pfAccountForm() {
+    return '<div class="pf-acct-form">' +
+      '<div class="pf-acct-row"><div class="tf-field"><label>用户名</label>' +
+        '<input class="ti" id="pf-newname" value="' + esc(S.profile.name) + '" placeholder="2~24 位字母/数字/下划线" /></div>' +
+        '<button class="tool-submit" type="button" id="pf-name-save" style="flex:0 0 auto;width:auto;padding:9px 18px">保存用户名</button></div>' +
+      '<div class="pf-acct-sep"></div>' +
+      '<div class="pf-acct-row"><div class="tf-field"><label>当前密码</label>' +
+        '<input class="ti" type="password" id="pf-oldpass" placeholder="修改密码时必填" /></div>' +
+        '<div class="tf-field"><label>新密码</label>' +
+        '<input class="ti" type="password" id="pf-newpass" placeholder="至少 6 位" /></div>' +
+        '<button class="tool-submit" type="button" id="pf-pass-save" style="flex:0 0 auto;width:auto;padding:9px 18px">修改密码</button></div>' +
+      '<p class="p-note pf-hint">密码修改后会退出其他设备的登录状态。</p>' +
+      '</div>';
+  }
+  function pfSaveAccount(kind) {
+    var body = { profile_id: S.profile.id, token: S.profile.token };
+    if (kind === "name") {
+      var nm = (($("#pf-newname") || {}).value || "").trim();
+      if (!nm) { toast("请输入用户名"); return; }
+      body.name = nm;
+    } else {
+      var op = (($("#pf-oldpass") || {}).value || "");
+      var np = (($("#pf-newpass") || {}).value || "");
+      if (!op || !np) { toast("请填写当前密码与新密码"); return; }
+      if (np.length < 6) { toast("新密码至少 6 位"); return; }
+      body.old_password = op; body.new_password = np;
+    }
+    fetch("/api/profile/update", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) { toast(d.error || "保存失败"); return; }
+      if (kind === "name" && d.name) {
+        S.profile.name = d.name;
+        try { localStorage.setItem("zw-profile", JSON.stringify(S.profile)); } catch (e) {}
+        renderUser();
+      }
+      pfState.editAccount = false;
+      var opEl = $("#pf-oldpass"), npEl = $("#pf-newpass");
+      if (opEl) opEl.value = ""; if (npEl) npEl.value = "";
+      toast(kind === "name" ? "用户名已更新" : "密码已修改");
+      loadProfile();
+    }).catch(function () { toast("保存失败，请稍后再试"); });
+  }
   // 历史解读：同一项再点一次收起；切换项时先收起旧项，避免重复堆积
   function toggleHistory(id, btn) {
     var existing = $("#pf-body").querySelector('[data-hbox="' + id + '"]');
-    if (existing) { existing.remove(); btn.textContent = "查看"; return; }
+    if (existing) { existing.remove(); if (btn) btn.classList.remove("on"); return; }
     $$("#pf-body [data-hbox]").forEach(function (n) { n.remove(); });
-    $$("#pf-body [data-hid]").forEach(function (x) { x.textContent = "查看"; });
+    $$("#pf-body .pf-hcard").forEach(function (x) { x.classList.remove("on"); });
+    if (btn) btn.classList.add("on");
     var ap = pfAuth() + "&id=" + id;
     fetch("/api/history/detail?" + ap).then(function (r) { return r.json(); }).then(function (d) {
       if (!d.ok) { toast("未找到该记录"); return; }
       var it = d.item;
       var box = document.createElement("div");
       box.className = "p-card"; box.style.marginTop = "16px"; box.dataset.hbox = id;
-      box.innerHTML = '<div class="p-ai"><div class="p-ai-head"><span class="dot"></span>历史解读 · ' + esc(it.ts) + '</div>' +
+      // 历史详情的 AI 卡 + 追问条与解读页保持同一套结构（.p-ai/.ai-follow），
+      // 追问复用 attachFollow 统一渲染，格式、多轮能力、免责都一致。
+      var card = document.createElement("div");
+      card.className = "p-ai";
+      card.innerHTML = '<div class="p-ai-head"><span class="dot"></span>历史解读 · ' + esc(it.ts) + '</div>' +
         '<div class="p-ai-body"><p><b>问：</b>' + esc(it.question) + '</p><hr/>' +
-        (window.marked ? marked.parse(it.answer) : esc(it.answer)) + '</div></div>' +
-        '<div class="pf-follow" data-fc="' + id + '">' +
-          '<div class="pf-follow-row">' +
-            '<input class="ti" data-fq="' + id + '" placeholder="就在这次盘面/卦象上继续追问…" />' +
-            '<button class="p-primary pf-follow-btn" data-fb="' + id + '">继续提问</button>' +
-          '</div>' +
-          '<p class="p-note pf-follow-note">追问会沿用这一次的盘面/卦象/牌阵，不会重新起卦</p>' +
-        '</div>';
+        (window.marked ? marked.parse(it.answer) : esc(it.answer)) + '</div>';
+      box.appendChild(card);
+      box.className = "p-card p-hist-detail";
+      box.style.marginTop = "16px"; box.dataset.hbox = id;
       $("#pf-body").appendChild(box);
+      // 说明文字作为小字灰色备注，统一用 pf-hint（与备注类说明一致）
+      var note = document.createElement("p");
+      note.className = "p-note pf-hint pf-follow-note";
+      note.textContent = "追问会沿用这一次的盘面/卦象/牌阵，不会重新起卦";
+      card.appendChild(note);
+      attachFollow(card, id);
       box.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      var inp = box.querySelector("[data-fq]");
-      var sub = box.querySelector("[data-fb]");
-      var holder = box.querySelector('[data-fc="' + id + '"]');
-      function ask() {
-        var q = inp.value.trim();
-        if (!q) { toast("请输入追问内容"); inp.focus(); return; }
-        if (S.busy) { toast("解读进行中，请稍候"); return; }
-        sub.disabled = true;
-        var url = "/api/history/followup?" + pfAuth() + "&id=" + id + "&q=" + encodeURIComponent(q);
-        streamToUrl(url, "追问", q, holder, true);
-        inp.value = "";
-        setTimeout(function () { sub.disabled = false; }, 1200);
-      }
-      sub.onclick = ask;
-      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); ask(); } });
     });
-    btn.textContent = "收起";
   }
 
   /* ================= 紫微斗数：站内原生命盘（固定尺寸，无 iframe） =================
@@ -2093,7 +2214,7 @@
   }
 
   function renderZiweiEntry() {
-    $("#p-stage").innerHTML =
+    stageEl().innerHTML =
       toolHero("紫微斗数", "以命盘十二宫观人生格局：命宫、财帛、事业、姻缘一目了然；登录后自动带入档案出生信息。") +
       '<div id="zw-form-wrap"><div class="tool-card"><div class="tool-form" id="zw-form">' +
         '<div class="tf-group"><div class="tf-gt">基本信息</div>' +
@@ -2220,6 +2341,103 @@
   $("#p-modal-x").onclick = function () { $("#p-modal").classList.add("hidden"); };
   $("#p-modal").addEventListener("click", function (e) { if (e.target === this) this.classList.add("hidden"); });
 
+  /* ================= 管理员（口令存内存，不落盘；只看用户名与运行日志，不看任何对话内容） ================= */
+  var adminKey = "", adminTab = "users";
+  function adminHeaders() { return { "x-admin-key": adminKey }; }
+  function openAdmin() {
+    var modal = $("#p-admin-modal"), box = $("#p-admin-content");
+    modal.classList.remove("hidden");
+    if (adminKey) { adminPanel(); return; }
+    box.innerHTML = '<div class="ad-login"><h3>管理员登录</h3>' +
+      '<p class="p-note pf-hint">管理入口仅用于账号管理与运行日志，不提供任何用户对话内容的查看。</p>' +
+      '<div class="tf-field"><label>管理员口令</label><input class="ti" type="password" id="admin-key-in" placeholder="输入管理员口令" /></div>' +
+      '<button class="tool-submit" type="button" id="admin-login-btn" style="width:100%;margin-top:12px">进入管理台</button></div>';
+    $("#admin-login-btn").onclick = function () {
+      var k = (($("#admin-key-in") || {}).value || "").trim();
+      if (!k) { toast("请输入管理员口令"); return; }
+      fetch("/api/admin/list", { headers: { "x-admin-key": k } })
+        .then(function (r) { if (!r.ok) throw new Error("口令不正确"); return r.json(); })
+        .then(function (d) {
+          if (!d.ok) throw new Error("口令不正确");
+          adminKey = k; adminPanel();
+        }).catch(function (e) { toast(e.message || "验证失败"); });
+    };
+    var ki = $("#admin-key-in");
+    if (ki) ki.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); $("#admin-login-btn").click(); } };
+  }
+  function adminPanel() {
+    var box = $("#p-admin-content");
+    box.innerHTML = '<div class="ad-head"><h3>管理台</h3>' +
+      '<div class="ad-tabs">' +
+        '<button class="ad-tab' + (adminTab === "users" ? " on" : "") + '" data-tab="users">用户管理</button>' +
+        '<button class="ad-tab' + (adminTab === "logs" ? " on" : "") + '" data-tab="logs">运行日志</button>' +
+      '</div><button class="ad-logout" id="admin-logout">退出</button></div>' +
+      '<div id="admin-pane"><p class="p-note">加载中…</p></div>';
+    $$(".ad-tab", box).forEach(function (b) {
+      b.onclick = function () { adminTab = b.dataset.tab; adminPanel(); };
+    });
+    $("#admin-logout").onclick = function () { adminKey = ""; openAdmin(); };
+    if (adminTab === "users") adminLoadUsers(); else adminLoadLogs();
+  }
+  function adminLoadUsers() {
+    var pane = $("#admin-pane");
+    fetch("/api/admin/list", { headers: adminHeaders() })
+      .then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) { pane.innerHTML = '<p class="p-note">加载失败</p>'; return; }
+        var rows = (d.users || []).map(function (u) {
+          return '<div class="ad-user"><div class="ad-user-info"><b>' + esc(u.name) + '</b>' +
+            '<span>注册于 ' + esc(u.created) + '</span></div>' +
+            '<button class="ad-del" data-name="' + esc(u.name) + '">删除</button></div>';
+        }).join("") || '<p class="p-note">暂无用户</p>';
+        pane.innerHTML = '<p class="p-note pf-hint">共 ' + (d.users || []).length + ' 位用户；仅显示用户名与注册时间，不含任何对话或出生信息。</p>' +
+          '<div class="ad-users">' + rows + '</div>';
+        $$(".ad-del", pane).forEach(function (b) {
+          b.onclick = function () {
+            if (!b.classList.contains("arm")) {
+              b.classList.add("arm"); b.textContent = "确认删除?";
+              setTimeout(function () { b.classList.remove("arm"); b.textContent = "删除"; }, 4000);
+              return;
+            }
+            fetch("/api/admin/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+              body: JSON.stringify({ name: b.dataset.name })
+            }).then(function (r) { return r.json(); }).then(function (d) {
+              if (!d.ok) { toast(d.error || "删除失败"); return; }
+              adminLoadUsers(); toast("已删除用户");
+            }).catch(function () { toast("删除失败"); });
+          };
+        });
+      }).catch(function () { pane.innerHTML = '<p class="p-note">加载失败</p>'; });
+  }
+  function adminLoadLogs() {
+    var pane = $("#admin-pane");
+    fetch("/api/admin/logs?limit=200", { headers: adminHeaders() })
+      .then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) { pane.innerHTML = '<p class="p-note">加载失败</p>'; return; }
+        var rows = (d.items || []).map(function (x) {
+          var cls = x.status >= 500 ? "err" : (x.status >= 400 ? "warn" : "");
+          return '<div class="ad-log ' + cls + '"><span class="ad-log-ts">' + esc(x.ts) + '</span>' +
+            '<span class="ad-log-m">' + esc(x.method) + '</span>' +
+            '<span class="ad-log-p">' + esc(x.path) + '</span>' +
+            '<span class="ad-log-s">' + esc(x.status) + '</span>' +
+            '<span class="ad-log-t">' + x.ms + 'ms</span></div>';
+        }).join("") || '<p class="p-note">暂无日志</p>';
+        pane.innerHTML = '<p class="p-note pf-hint">仅记录访问方法与脱敏路径，已过滤问题、密码、出生信息等全部对话相关内容。</p>' +
+          '<div class="ad-logs">' + rows + '</div>';
+      }).catch(function () { pane.innerHTML = '<p class="p-note">加载失败</p>'; });
+  }
+  $("#p-admin-link").onclick = openAdmin;
+  $("#p-admin-x").onclick = function () { $("#p-admin-modal").classList.add("hidden"); };
+  $("#p-admin-modal").addEventListener("click", function (e) { if (e.target === this) this.classList.add("hidden"); });
+
+  // 归档解读卡：点标题展开/收起回看（事件委托，切页后仍有效）
+  document.addEventListener("click", function (e) {
+    var h = e.target.closest && e.target.closest(".p-ai-archived .p-ai-head");
+    if (!h) return;
+    var card = h.parentElement;
+    if (card) card.classList.toggle("p-ai-open");
+  });
   // 「关于本功能」开合：委托到 document，页面重渲染后依然有效
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest(".ad-toggle");
@@ -2245,7 +2463,7 @@
     renderUser();
     // 同步视图：个人中心刷新统计；八字页在变为登录态时重新带入档案并排盘
     if (S.feature === "profile") renderProfile();
-    else if (S.feature === "bazi" && wasNull && S.profile) navigate("bazi");
+    else if (S.feature === "bazi" && wasNull && S.profile) navigate("bazi", true);
   });
 
   renderUser();

@@ -12,7 +12,9 @@ import json
 import os
 import re
 import sys
+import time
 import uuid
+from collections import deque
 from datetime import date as _date
 from pathlib import Path
 
@@ -39,6 +41,36 @@ if not os.environ.get("CODEBUDDY_API_KEY"):
         os.environ["CODEBUDDY_API_KEY"] = keyfile.read_text().strip()
 
 app = FastAPI(title="紫微斗数 · 智能推演")
+
+# 管理员运行日志（内存环形缓冲）：只记方法/脱敏路径/状态/耗时/时间，
+# 绝不含 query string、问题、答案、出生信息、token——管理员也不接触对话内容。
+ADMIN_LOGS: deque = deque(maxlen=500)
+_SENSITIVE_Q = re.compile(r"(q|question|token|birth|password|pass_hash|answer)=[^&]*", re.I)
+
+
+@app.middleware("http")
+async def _admin_access_log(request: Request, call_next):
+    started = time.time()
+    try:
+        resp = await call_next(request)
+        status = resp.status_code
+    except Exception:
+        status = 500
+        raise
+    finally:
+        raw = request.url.query or ""
+        safe_q = _SENSITIVE_Q.sub(r"\1=***", raw)
+        path = request.url.path + (("?" + safe_q) if safe_q else "")
+        ADMIN_LOGS.append({
+            "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "method": request.method,
+            "path": path[:240],
+            "status": status,
+            "ms": int((time.time() - started) * 1000),
+            "client": (request.client.host if request.client else "") or "",
+        })
+    return resp
+
 
 # 命盘缓存: id -> {"chart":..., "history":[{role, content}], "profile_id": int|None}
 CHARTS: dict[str, dict] = {}
@@ -128,6 +160,15 @@ async def api_admin_list(request: Request):
 async def api_admin_delete(request: Request, body: AdminBody):
     _check_admin(request)
     return profile_store.admin_delete(body.name)
+
+
+@app.get("/api/admin/logs")
+async def api_admin_logs(request: Request, limit: int = Query(200, ge=1, le=500)):
+    """运行日志：仅方法/脱敏路径/状态/耗时，不含任何对话内容。"""
+    _check_admin(request)
+    items = list(ADMIN_LOGS)[-limit:]
+    items.reverse()  # 最新在前
+    return {"ok": True, "items": items, "total": len(ADMIN_LOGS)}
 
 
 @app.get("/api/chart")
