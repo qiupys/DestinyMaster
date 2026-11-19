@@ -1,0 +1,323 @@
+/**
+ * Destiny Master 全量端到端回归测试
+ * ------------------------------------------------------------------
+ * 覆盖：注册 / 登录 / 五功能排盘与 AI 解读 / 追问 / 切页后台继续 /
+ *       提问状态保留 / 个人中心（用户名·密码文案、历史、日期查找） / 管理员。
+ * 每个关键状态自动截图到 tests/screenshots/<RUN_ID>_*.png。
+ *
+ * 用法：
+ *   NODE_PATH=<playwright 所在 node_modules> node tests/e2e_regression.js
+ *
+ * 可选环境变量：
+ *   BASE_URL          门户地址（默认 http://localhost:8899；线上运行设为实际地址）
+ *   ZIWEI_ADMIN_KEY   管理员口令；提供则测试管理员登录并执行临时账号清理，
+ *                     不提供则只验证管理入口存在（口令不入库，仅运行时注入）。
+ *
+ * 说明：临时账号名/密码每次随机生成，测试结束若提供 ADMIN_KEY 会自动删除。
+ */
+const { chromium } = require('playwright');
+const path = require('path');
+const fs = require('fs');
+
+const BASE = process.env.BASE_URL || 'http://localhost:8899';
+const ADMIN_KEY = process.env.ZIWEI_ADMIN_KEY || '';
+const SHOT_DIR = path.join(__dirname, 'screenshots');
+const RUN_ID = new Date().toISOString().replace(/[:.]/g, '-');
+const USER = 'e2e_' + Date.now().toString(36);
+const PASS = 'E2e@' + Math.random().toString(36).slice(2, 10);
+const AI_TIMEOUT = 120000; // 单次 AI 解读最长等待
+
+if (!fs.existsSync(SHOT_DIR)) fs.mkdirSync(SHOT_DIR, { recursive: true });
+
+const results = [];
+function ok(name, detail) { results.push({ name, status: 'PASS', detail: detail || '' }); console.log('  PASS ' + name + (detail ? ' — ' + detail : '')); }
+function fail(name, detail) { results.push({ name, status: 'FAIL', detail: detail || '' }); console.log('  FAIL ' + name + (detail ? ' — ' + detail : '')); }
+function info(name, detail) { results.push({ name, status: 'INFO', detail: detail || '' }); console.log('  INFO ' + name + (detail ? ' — ' + detail : '')); }
+function section(t) { console.log('\n=== ' + t + ' ==='); }
+
+async function shot(page, name) {
+  try {
+    const file = path.join(SHOT_DIR, RUN_ID + '_' + name + '.png');
+    await page.screenshot({ path: file, fullPage: false });
+    return path.basename(file);
+  } catch (e) { return 'SHOT_FAIL:' + e.message; }
+}
+
+/** 等待某容器内新出现的 AI 解读卡完成（卡片加 .done = 流式结束标志） */
+async function waitAI(card, timeout) {
+  await card.waitFor({ state: 'visible', timeout: timeout || AI_TIMEOUT });
+  await pageWaitForDone(card, timeout || AI_TIMEOUT);
+}
+async function pageWaitForDone(card, timeout) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const cls = await card.getAttribute('class').catch(() => '');
+    if (cls && /(^|\s)done(\s|$)/.test(cls)) return;
+    await new Promise(r => setTimeout(r, 200));
+  }
+  throw new Error('等待解读完成超时（.done 未出现）');
+}
+
+/** 点击解读按钮后，拿到刚插入的顶层 .p-ai 卡（新提问插在最前） */
+function latestCard(page, containerSel) {
+  return page.locator(containerSel + ' > .p-ai').first();
+}
+
+(async () => {
+  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+  const page = await browser.newPage({ viewport: { width: 1365, height: 950 } });
+  const pageErrors = [];
+  page.on('pageerror', e => pageErrors.push(String(e)));
+  page.setDefaultTimeout(20000);
+
+  try {
+    section('0. 首页加载');
+    await page.goto(BASE + '/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(700);
+    const brand = await page.locator('.p-brand-mark svg').count();
+    brand ? ok('品牌 ∞ 图标渲染', 'svg=' + brand) : fail('品牌 ∞ 图标渲染', '未找到 svg');
+    await shot(page, '00_home');
+
+    section('1. UI 注册临时账号 ' + USER);
+    await page.click('#p-auth-btn');
+    await page.waitForTimeout(200);
+    await page.click('.p-auth-tabs button[data-t="reg"]');
+    await page.waitForTimeout(200);
+    await page.fill('#au-name', USER);
+    await page.fill('#au-pass', PASS);
+    await page.fill('#au-pass2', PASS);
+    await shot(page, '01_register_form');
+    await page.click('#au-submit');
+    // 等待弹层关闭 + 登录态写入
+    await page.waitForFunction(() => {
+      const m = document.getElementById('p-modal');
+      return m && m.classList.contains('hidden') && !!localStorage.getItem('zw-profile');
+    }, null, { timeout: 20000 });
+    const prof = await page.evaluate(() => JSON.parse(localStorage.getItem('zw-profile') || 'null'));
+    (prof && prof.name === USER) ? ok('注册并登录', 'id=' + prof.id) : fail('注册并登录', JSON.stringify(prof));
+    await shot(page, '02_logged_in');
+
+    section('2. 八字排盘 + AI 解读（含切页后台继续）+ 追问');
+    // 登录态下强制整页重载到八字页（加 query 确保新文档，而非仅 hash 变化）：
+    // renderBazi 会据档案出生信息自动排盘（stage 全新）
+    await page.goto(BASE + '/?e2e=' + Date.now() + '#/bazi', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForSelector('#bz-result', { state: 'visible', timeout: 25000 });
+    await page.waitForTimeout(800);
+    (await page.locator('#bz-result').innerText()).length > 30 ? ok('八字自动排盘') : fail('八字自动排盘');
+    await shot(page, '10_bazi_result');
+    await page.fill('#bz-q', '请分析这个八字的事业格局与性格特点');
+    await page.click('#bz-ai');
+    // 立即切到塔罗，验证解读在后台继续
+    await page.waitForTimeout(300);
+    await page.click('.p-navitem[data-feature="tarot"]');
+    await page.waitForTimeout(1200);
+    await shot(page, '11_bazi_background_switched');
+    await page.click('.p-navitem[data-feature="bazi"]');
+    const bzCard = latestCard(page, '#bz-ai-out');
+    try {
+      await waitAI(bzCard);
+      const txt = await bzCard.innerText();
+      txt.length > 60 ? ok('切页后 AI 解读在后台继续并完成', 'len=' + txt.length) : fail('切页后台继续', '内容过短');
+      // 免责声明只出现一次（前端不再重复追加）
+      const disclaimN = (txt.match(/命运始终掌握在自己手中/g) || []).length;
+      disclaimN === 1 ? ok('免责声明仅出现一次') : fail('免责声明仅出现一次', '出现 ' + disclaimN + ' 次');
+    } catch (e) { fail('切页后 AI 解读在后台继续并完成', e.message.split('\n')[0]); }
+    await shot(page, '12_bazi_ai');
+    const bzFollow = bzCard.locator('.ai-follow-btn');
+    if (await bzFollow.count()) {
+      await bzCard.locator('.ai-follow input').fill('再具体说说事业方向');
+      await bzFollow.click();
+      try {
+        const followCard = bzCard.locator('.ai-follow-slot > .p-ai').first();
+        await followCard.waitFor({ state: 'visible', timeout: AI_TIMEOUT });
+        await pageWaitForDone(followCard, AI_TIMEOUT);
+        ok('八字追问', '追问结果已返回');
+      } catch (e) { fail('八字追问', e.message.split('\n')[0]); }
+      await shot(page, '13_bazi_follow');
+    } else fail('八字追问', '未出现追问条（hid 缺失？）');
+
+    section('3. 提问状态保留（切页不抹掉）');
+    await page.fill('#bz-q', '这是一条切页保留测试内容');
+    await page.click('.p-navitem[data-feature="meihua"]');
+    await page.waitForTimeout(300);
+    await page.click('.p-navitem[data-feature="bazi"]');
+    await page.waitForTimeout(300);
+    (await page.inputValue('#bz-q')) === '这是一条切页保留测试内容'
+      ? ok('切页后提问框内容保留') : fail('切页后提问框内容保留');
+
+    section('4. 梅花易数（起卦 + AI 解卦 + 追问）');
+    // 当前在梅花之前需重新切过去
+    await page.click('.p-navitem[data-feature="meihua"]');
+    await page.waitForSelector('#mh-q', { state: 'visible' });
+    await page.fill('#mh-q', '我是否应该接受这个新的工作机会');
+    await page.click('#mh-calc');
+    await page.waitForFunction(() => (document.getElementById('mh-result') || {}).innerText?.length > 20, null, { timeout: 15000 });
+    ok('梅花起卦', (await page.locator('#mh-result').innerText()).slice(0, 20).replace(/\n/g, ' '));
+    await shot(page, '30_meihua_gua');
+    await page.click('#mh-ai');
+    const mhCard = latestCard(page, '#mh-result');
+    try { await waitAI(mhCard); ok('梅花 AI 解卦', 'len=' + (await mhCard.innerText()).length); }
+    catch (e) { fail('梅花 AI 解卦', e.message.split('\n')[0]); }
+    await shot(page, '31_meihua_ai');
+
+    section('5. 紫微斗数（命格 AI 解读 + 追问）');
+    await page.click('.p-navitem[data-feature="ziwei"]');
+    await page.waitForSelector('#zw-result', { state: 'visible', timeout: 20000 });
+    // 命盘异步渲染：等内容足够长再判定，避免过早读到空容器
+    await page.waitForFunction(() => (document.getElementById('zw-result') || {}).innerText?.length > 200, null, { timeout: 20000 }).catch(() => {});
+    ok('紫微自动排盘', 'len=' + (await page.locator('#zw-result').innerText()).length);
+    await shot(page, '20_ziwei_plate');
+    // 切到「命格」视图：提问框 #zw-q 只在该视图渲染，等待其出现
+    const tabPattern = page.locator('.zw-tabs button[data-v="pattern"]');
+    if (await tabPattern.count()) { await tabPattern.click(); }
+    await page.waitForSelector('#zw-q', { state: 'visible', timeout: 15000 }).catch(() => {});
+    const zwQ = page.locator('#zw-q');
+    if (await zwQ.count()) {
+      await zwQ.fill('从命格看我的事业方向与性格禀赋');
+      await page.click('#zw-ask');
+      const zwCard = latestCard(page, '#zw-ai-out');
+      try { await waitAI(zwCard); ok('紫微命格 AI 解读', 'len=' + (await zwCard.innerText()).length); }
+      catch (e) { fail('紫微命格 AI 解读', e.message.split('\n')[0]); }
+      await shot(page, '21_ziwei_ai');
+      const zwFollow = zwCard.locator('.ai-follow-btn');
+      if (await zwFollow.count()) {
+        await zwCard.locator('.ai-follow input').fill('再说说需要注意的短板');
+        await zwFollow.click();
+        try {
+          const zwFollowCard = zwCard.locator('.ai-follow-slot > .p-ai').first();
+          await zwFollowCard.waitFor({ state: 'visible', timeout: AI_TIMEOUT });
+          await pageWaitForDone(zwFollowCard, AI_TIMEOUT);
+          ok('紫微追问');
+        } catch (e) { fail('紫微追问', e.message.split('\n')[0]); }
+      } else fail('紫微追问', '未出现追问条');
+    } else fail('紫微命格视图', '未找到 #zw-q');
+
+    section('6. 塔罗（写问题 + 抽牌 + AI 解读）');
+    await page.click('.p-navitem[data-feature="tarot"]');
+    await page.waitForSelector('#tr-q', { state: 'visible' });
+    await page.fill('#tr-q', '创业还是留在大公司更适合我');
+    await page.click('#tr-draw');
+    await page.waitForFunction(() => (document.getElementById('tr-result') || {}).innerText?.length > 20, null, { timeout: 15000 });
+    ok('塔罗抽牌', 'len=' + (await page.locator('#tr-result').innerText()).length);
+    await shot(page, '40_tarot_draw');
+    await page.click('#tr-ai');
+    const trCard = latestCard(page, '#tr-result');
+    try { await waitAI(trCard); ok('塔罗 AI 解读', 'len=' + (await trCard.innerText()).length); }
+    catch (e) { fail('塔罗 AI 解读', e.message.split('\n')[0]); }
+    await shot(page, '41_tarot_ai');
+
+    section('7. 黄历（日历 + AI 择日答疑）');
+    await page.click('.p-navitem[data-feature="huangli"]');
+    await page.waitForSelector('#hl-day', { state: 'visible', timeout: 20000 });
+    await page.waitForTimeout(600);
+    ok('黄历日历与历注', 'len=' + (await page.locator('#hl-day').innerText()).length);
+    await shot(page, '50_huangli');
+    await page.fill('#hl-q', '这天适合搬家吗');
+    await page.click('#hl-ai');
+    const hlCard = latestCard(page, '#hl-result');
+    try { await waitAI(hlCard); ok('黄历 AI 答疑', 'len=' + (await hlCard.innerText()).length); }
+    catch (e) { fail('黄历 AI 答疑', e.message.split('\n')[0]); }
+    await shot(page, '51_huangli_ai');
+
+    section('8. 个人中心（用户名/密码文案 + 历史 + 日期查找）');
+    await page.goto(BASE + '/?e2e=' + Date.now() + '#/profile', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(900);
+    await page.waitForSelector('#pf-body', { state: 'visible', timeout: 15000 });
+    ok('个人中心加载', '历史卡=' + (await page.locator('.pf-hcard').count()));
+    await shot(page, '70_profile');
+    const acctToggle = page.locator('.pf-account-toggle');
+    if (await acctToggle.count()) {
+      await acctToggle.click();
+      await page.waitForTimeout(300);
+      const acctText = await page.locator('.pf-acct-form').innerText();
+      const hasUser = /用户名/.test(acctText), hasPass = /密码/.test(acctText);
+      const noNick = !/昵称/.test(acctText), noPasswdWord = !/口令/.test(acctText);
+      (hasUser && hasPass && noNick && noPasswdWord)
+        ? ok('账号设置文案为「用户名/密码」', '用户名=' + hasUser + ' 密码=' + hasPass + ' 无昵称=' + noNick + ' 无口令=' + noPasswdWord)
+        : fail('账号设置文案为「用户名/密码」', acctText.replace(/\n/g, ' ').slice(0, 120));
+      await shot(page, '71_profile_account');
+    } else fail('账号设置区', '未找到展开按钮');
+    // 日期查找：右侧按钮存在，点击弹出与出生日期同款日历
+    if (await page.locator('#pf-date-btn').count()) {
+      await page.click('#pf-date-btn');
+      await page.waitForTimeout(300);
+      const calVisible = await page.locator('.dp-modal').isVisible().catch(() => false);
+      calVisible ? ok('按日期查找弹日历（同出生日期样式）') : fail('按日期查找弹日历（同出生日期样式）');
+      await shot(page, '72_profile_datepicker');
+      // 关闭日历弹窗
+      const dpX = page.locator('.dp-mask:not(.hidden) .dp-x');
+      if (await dpX.count()) await dpX.click();
+      else await page.keyboard.press('Escape');
+    } else fail('按日期查找按钮存在');
+    // 历史卡：纵向滚动容器（max-height + overflow-y auto）
+    const hscrollStyle = await page.locator('.pf-hscroll').evaluate(el => ({
+      dir: getComputedStyle(el).flexDirection, oy: getComputedStyle(el).overflowY
+    })).catch(() => ({}));
+    (hscrollStyle.dir === 'column' && hscrollStyle.oy === 'auto')
+      ? ok('历史卡上下滚动（纵向）') : fail('历史卡上下滚动（纵向）', JSON.stringify(hscrollStyle));
+    // 展开一条历史：追问条应为 AI 解读同款 .ai-follow 结构
+    if (await page.locator('.pf-hcard').count()) {
+      await page.locator('.pf-hcard').first().click();
+      await page.waitForTimeout(500);
+      const aiFollowN = await page.locator('[data-hbox] .ai-follow .ai-follow-btn').count();
+      aiFollowN ? ok('历史追问条与 AI 解读同款格式') : fail('历史追问条与 AI 解读同款格式');
+      await shot(page, '73_profile_history_follow');
+    }
+
+    section('9. 管理员');
+    if (await page.locator('#p-admin-link').count()) ok('管理入口存在');
+    else fail('管理入口存在');
+    await page.click('#p-admin-link');
+    await page.waitForTimeout(300);
+    await shot(page, '80_admin_login');
+    if (ADMIN_KEY) {
+      await page.fill('#admin-key-in', ADMIN_KEY);
+      await page.click('#admin-login-btn');
+      await page.waitForTimeout(800);
+      const userPane = await page.locator('#admin-pane').innerText().catch(() => '');
+      /位用户/.test(userPane) ? ok('管理员用户管理', userPane.replace(/\n/g, ' ').slice(0, 80)) : fail('管理员用户管理', userPane.slice(0, 80));
+      await shot(page, '81_admin_users');
+      const logsTab = page.locator('.ad-tab[data-tab="logs"]');
+      if (await logsTab.count()) {
+        await logsTab.click();
+        await page.waitForTimeout(600);
+        ok('管理员运行日志', '条目=' + (await page.locator('.ad-log').count()));
+        await shot(page, '82_admin_logs');
+      }
+      // 看不到对话内容：管理界面文本不应含测试问题关键词
+      const adminAll = await page.locator('#p-admin-content').innerText();
+      const leaked = /事业格局|新的工作机会|适合搬家|创业还是/.test(adminAll);
+      leaked ? fail('管理员看不到对话内容', '疑似泄露问题文本') : ok('管理员看不到对话内容');
+    } else {
+      info('管理员登录', '未提供 ZIWEI_ADMIN_KEY，仅验证入口与登录表单');
+    }
+
+    section('10. 页面错误检查');
+    pageErrors.length ? fail('无前端 JS 报错', pageErrors.slice(0, 3).join(' | ')) : ok('无前端 JS 报错');
+  } catch (e) {
+    fail('测试流程中断', e.message.split('\n')[0]);
+    await shot(page, '99_aborted').catch(() => {});
+  } finally {
+    section('汇总');
+    const pass = results.filter(r => r.status === 'PASS').length;
+    const fl = results.filter(r => r.status === 'FAIL').length;
+    console.log('PASS=' + pass + '  FAIL=' + fl + '  INFO=' + results.filter(r => r.status === 'INFO').length);
+    const report = { runId: RUN_ID, base: BASE, user: USER, screenshots: fs.readdirSync(SHOT_DIR).filter(f => f.startsWith(RUN_ID)), results };
+    fs.writeFileSync(path.join(SHOT_DIR, RUN_ID + '_report.json'), JSON.stringify(report, null, 2));
+    console.log('REPORT=' + path.join(SHOT_DIR, RUN_ID + '_report.json'));
+
+    // 清理临时账号（仅当提供管理员口令）
+    if (ADMIN_KEY) {
+      try {
+        const r = await fetch(BASE + '/api/admin/delete', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+          body: JSON.stringify({ name: USER })
+        });
+        const d = await r.json();
+        d.ok ? ok('清理临时账号', USER) : fail('清理临时账号', JSON.stringify(d));
+      } catch (e) { fail('清理临时账号', e.message); }
+    }
+    await browser.close();
+    process.exit(results.some(r => r.status === 'FAIL') ? 1 : 0);
+  }
+})();
