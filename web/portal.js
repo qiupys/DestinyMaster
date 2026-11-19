@@ -1303,7 +1303,7 @@
     wrap.className = "ai-follow";
     wrap.innerHTML = '<div class="ai-follow-row">' +
       '<input class="ti" placeholder="就这次解读继续追问…" />' +
-      '<button class="p-primary ai-follow-btn" type="button">追问</button></div>' +
+      '<button class="ai-follow-btn" type="button">追问</button></div>' +
       '<div class="ai-follow-slot"></div>';
     card.appendChild(wrap);
     var inp = $("input", wrap), btn = $(".ai-follow-btn", wrap), slot = $(".ai-follow-slot", wrap);
@@ -1375,12 +1375,12 @@
     var items = pfState.items.map(function (h) {
       var summary = String(h.question || "").replace(/\s+/g, " ");
       if (summary.length > 54) summary = summary.slice(0, 54) + "…";
-      return '<button type="button" class="pf-hcard' + '" data-hid="' + h.id + '">' +
-        '<span class="pf-hcard-top"><span class="p-hist-feat">' + esc(h.feature_name) + '</span>' +
-        '<span class="pf-hcard-date">' + esc(h.ts || "") + '</span></span>' +
+      return '<div class="pf-hcard" data-hid="' + h.id + '" role="button" tabindex="0">' +
+        '<div class="pf-hcard-top"><span class="p-hist-feat">' + esc(h.feature_name) + '</span>' +
+        '<span class="pf-hcard-tools"><span class="pf-hcard-date">' + esc(h.ts || "") + '</span>' +
+        '<button type="button" class="p-hist-del" data-del="' + h.id + '">删除</button></span></div>' +
         '<span class="pf-hcard-q">' + esc(summary) + '</span>' +
-        '<span class="pf-hcard-del" data-del="' + h.id + '" title="删除">×</span>' +
-        '</button>';
+        '</div>';
     }).join("") || ('<p class="p-note">' + (pfState.date ? "这一天没有提问记录。" : (cur ? "「" + cur[1] + "」还没有提问记录。" : "还没有提问记录，去各功能里问一句吧。")) + '</p>');
     $("#pf-body").innerHTML =
       '<div class="p-profile-head"><div class="p-profile-avatar">' + esc(S.profile.name.charAt(0).toUpperCase()) + '</div>' +
@@ -1443,16 +1443,16 @@
     };
     var dclr = $(".pf-dateclear", $("#pf-body"));
     if (dclr) dclr.onclick = function () { pfState.date = ""; loadProfile(); };
-    // 缩略卡：点卡片查看；点卡内「×」删除（两步确认），并阻止冒泡到「查看」
+    // 缩略卡：点卡片查看；点卡内「删除」按钮两步确认，并阻止冒泡到「查看」
     $$(".pf-hcard", $("#pf-body")).forEach(function (card) {
       card.onclick = function () { toggleHistory(+card.dataset.hid, card); };
     });
-    $$(".pf-hcard-del", $("#pf-body")).forEach(function (b) {
+    $$(".p-hist-del", $("#pf-body")).forEach(function (b) {
       b.onclick = function (e) {
         e.stopPropagation();
         if (!b.classList.contains("arm")) {
-          b.classList.add("arm"); b.textContent = "确认?";
-          setTimeout(function () { b.classList.remove("arm"); b.textContent = "×"; }, 4000);
+          b.classList.add("arm"); b.textContent = "确认删除";
+          setTimeout(function () { b.classList.remove("arm"); b.textContent = "删除"; }, 4000);
           return;
         }
         fetch("/api/history/delete", {
@@ -1613,10 +1613,18 @@
       box.className = "p-card p-hist-detail";
       box.style.marginTop = "16px"; box.dataset.hbox = id;
       $("#pf-body").appendChild(box);
-      // 说明文字作为小字灰色备注，统一用 pf-hint（与备注类说明一致）
+      // 小字灰色备注：按功能给出准确说法（塔罗是「牌阵」、不重新抽牌；梅花才叫「起卦」）
+      // 不用 .pf-hint——它会加「说明：」前缀，与本条备注语义重复。
+      var FOLLOW_NOTE = {
+        bazi: "追问会沿用这一次的八字盘，不会重新排盘",
+        meihua: "追问会沿用这一次的卦象，不会重新起卦",
+        tarot: "追问会沿用这一次的牌阵与抽牌结果，不会重新抽牌",
+        huangli: "追问会沿用这一次的黄历信息，不会重新查询",
+        ziwei: "追问会沿用这一次的命盘，不会重新排盘"
+      };
       var note = document.createElement("p");
-      note.className = "p-note pf-hint pf-follow-note";
-      note.textContent = "追问会沿用这一次的盘面/卦象/牌阵，不会重新起卦";
+      note.className = "p-note pf-follow-note";
+      note.textContent = FOLLOW_NOTE[it.feature] || "追问会沿用这一次的解读内容，不会重新推演";
       card.appendChild(note);
       attachFollow(card, id);
       box.scrollIntoView({ behavior: "smooth", block: "nearest" });
