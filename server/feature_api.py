@@ -201,6 +201,9 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                     payload = locked
 
             pid = _auth(profile_id, token)
+            # AI 解读/问答要求登录（与前端门禁一致；未登录直接拒绝，不消耗模型额度）
+            if not pid:
+                return {"ok": False, "error": "请先登录后再使用 AI 解读与追问"}
             key = _dedupe_key(pid, feature, payload, question)
             if pid and not force:
                 cached = history.find_cached_entry(pid, feature, key)

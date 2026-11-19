@@ -120,6 +120,39 @@ html[data-theme="dark"] .p-nav { background: #0a0a0a; border-right-color: var(--
 .p-hero h1 { font-family: var(--serif); font-size: 34px; margin: 0 0 12px; letter-spacing: 2px; }
 .p-hero p { color: var(--ink-2); font-size: 14px; line-height: 1.8; margin: 0 auto; max-width: 620px; }
 
+/* ---------- 落地首页 ---------- */
+.home-page { max-width: 940px; margin: 0 auto; }
+.home-hero { text-align: center; padding: 26px 0 44px; }
+.home-mark {
+  display: inline-grid; place-items: center; width: 56px; height: 56px; margin-bottom: 22px;
+  border: 1px solid var(--line); border-radius: 14px; color: var(--ink);
+}
+.home-mark svg { width: 34px; height: 34px; display: block; }
+.home-hero h1 { font-family: var(--serif); font-size: 30px; font-weight: 700; letter-spacing: 3px; margin: 0 0 14px; color: var(--ink); }
+.home-hero p { font-size: 14px; line-height: 1.9; color: var(--ink-2); max-width: 520px; margin: 0 auto; }
+.home-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 900px) { .home-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .home-grid { grid-template-columns: 1fr; } }
+.home-card {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start;
+  text-align: left; padding: 22px 22px 26px; min-height: 168px; box-sizing: border-box;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  color: var(--ink); font-family: inherit; cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.home-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow); transform: translateY(-2px); }
+.home-card-ic {
+  width: 38px; height: 38px; display: grid; place-items: center; border-radius: 9px;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); margin-bottom: 16px;
+}
+.home-card-ic .ic { width: 20px; height: 20px; }
+.home-card-tag { font-size: 10.5px; letter-spacing: 1px; color: var(--ink-3); margin-bottom: 5px; }
+.home-card-name { font-family: var(--serif); font-size: 18px; font-weight: 700; letter-spacing: .5px; margin-bottom: 9px; }
+.home-card-desc { font-size: 12.5px; line-height: 1.75; color: var(--ink-2); padding-right: 12px; }
+.home-card-go { position: absolute; right: 20px; top: 22px; font-size: 18px; color: var(--ink-3); transition: transform .15s, color .15s; }
+.home-card:hover .home-card-go { transform: translateX(3px); color: var(--ink); }
+.home-footnote { text-align: center; font-size: 11px; color: var(--ink-3); margin: 30px 0 0; letter-spacing: .3px; }
+.p-navhome { margin-bottom: 4px; }
+
 .p-sec { margin: 0 0 30px; }
 .p-sec-h { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; }
 .p-sec-no {
@@ -234,6 +267,41 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .p-yiji-box .t { font-family: var(--serif); font-size: 16px; margin-bottom: 8px; }
 .p-yi .t { color: var(--br-good); } .p-ji .t { color: var(--cinnabar); }
 .p-yiji-box .items { font-size: 13px; line-height: 1.9; color: var(--ink-2); }
+
+/* ---------- AI 登录门禁（未登录时替代 AI 提问区） ---------- */
+.ai-gate-host { max-width: 720px; margin: 14px auto 0; }
+/* 黄历、紫微页整体是 760 宽，门禁卡跟随内容卡宽度 */
+#p-stage-huangli .ai-gate-host,
+#p-stage-ziwei .ai-gate-host { max-width: 760px; }
+.ai-gate {
+  position: relative; min-height: 176px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel-2); overflow: hidden; display: flex; align-items: center; justify-content: center;
+}
+/* 背景：模糊的假提问框，营造"此处需登录解锁"的观感（对齐参考图） */
+.ag-fake { position: absolute; inset: 16px 18px; filter: blur(5px); opacity: .5; pointer-events: none; }
+.ag-fake-chip { height: 26px; border: 1px solid var(--line-strong); border-radius: 14px; margin-bottom: 12px; background: var(--panel); }
+.ag-fake-short { width: 46%; }
+.ag-fake-row { display: flex; gap: 10px; }
+.ag-fake-row span { flex: 1; height: 42px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); }
+.ag-fake-row b { width: 96px; height: 42px; border-radius: 8px; background: var(--ink); opacity: .85; }
+/* 前景：锁 + 标题 + 说明 + 登录按钮 */
+.ag-front { position: relative; text-align: center; padding: 20px 24px; z-index: 1; }
+.ag-lock { display: block; width: 22px; height: 22px; margin: 0 auto 8px; color: var(--ink); }
+.ag-title { font-family: var(--serif); font-size: 15px; font-weight: 700; color: var(--ink); }
+.ag-desc { font-size: 12px; color: var(--ink-2); margin: 6px 0 14px; }
+.ag-btn {
+  border: 0; border-radius: 8px; background: var(--ink); color: var(--bg); cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 600; padding: 10px 22px;
+}
+.ag-btn:hover { filter: brightness(1.15); }
+/* 未登录：隐藏各功能真正的 AI 提问框/按钮，只留门禁卡 */
+.stage-locked .bz-ask, .stage-locked .zw-ask, .stage-locked .zw-d-ask,
+.stage-locked .ai-follow, .stage-locked #mh-ai, .stage-locked #tr-ai,
+.stage-locked #hl-ai, .stage-locked #bz-ai, .stage-locked #zw-ask,
+.stage-locked #zw-dask { display: none !important; }
+/* 黄历的 AI 区是整张独立提问卡（输入框/快捷问题/八字开关），未登录时整张隐藏，
+   否则门禁卡上方会残留一个用不了的提问框。门禁卡由 applyGate 插在结果卡之后。 */
+.stage-locked .hl-ai-card { display: none !important; }
 
 /* ---------- AI 解读 ---------- */
 .p-ai { margin-top: 8px; border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
@@ -468,17 +536,19 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .tool-ai:hover { border-color: var(--wx-jin); color: var(--wx-jin); }
 @media (max-width: 640px){ .tool-card { padding: 24px 18px; } .tf-grid, .tf-grid3 { grid-template-columns: 1fr; } .tool-hero h1 { font-size: 26px; } }
 
-/* 结果区标题（无编号） */
-.result-title { max-width: 720px; margin: 34px auto 14px; font-size: 15px; font-weight: 600; color: var(--ink); }
+/* 结果区标题（无编号）：上下间距统一 14px，与命盘 tabs、卡片间距一致 */
+.result-title { max-width: 720px; margin: 14px auto; font-size: 15px; font-weight: 600; color: var(--ink); }
 /* 结果标题 + 右侧来源提示同一行 */
-.result-head { max-width: 720px; margin: 34px auto 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.result-head { max-width: 720px; margin: 14px auto; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .result-head .result-title { margin: 0; max-width: none; }
 .result-aside { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
 .result-aside .link-btn { font-size: 11.5px; }
 .p-result .p-card { max-width: 720px; margin: 0 auto; }
 
-/* 折叠的使用说明 */
+/* 折叠的使用说明：宽度跟随各功能内容卡（黄历/紫微 760，其余 720） */
 .about-details { max-width: 720px; margin: 26px auto 0; border-top: 1px solid var(--line); padding-top: 14px; }
+#p-stage-huangli .about-details,
+#p-stage-ziwei .about-details { max-width: 760px; }
 .ad-toggle { list-style: none;
   display: inline-flex; align-items: center; gap: 8px; width: 100%;
   appearance: none; border: 0; background: transparent; padding: 0;
@@ -925,7 +995,7 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 /* ================= 紫微：盘区（无卡片嵌套）+ 三视图切换 ================= */
 /* 与八字一致：视图切换靠左，档案来源提示靠右 */
 .zw-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  max-width: 760px; margin: 4px auto 14px; }
+  max-width: 760px; margin: 14px auto 0; }
 .zw-tabs { flex: 0 0 auto; display: inline-flex; gap: 2px; padding: 3px; background: var(--panel-2);
   border: 1px solid var(--line); border-radius: 11px; width: auto !important; flex-wrap: nowrap; }
 .zw-tabs button { flex: 0 0 auto; min-width: 86px; white-space: nowrap; padding: 7px 16px; font: inherit;
@@ -948,6 +1018,8 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 }
 
 /* ================= 紫微：站内原生命盘（固定尺寸，三等分视图） ================= */
+/* 紫微基本信息卡与下方命盘/结果卡统一 760 宽（默认 .tool-card 是 720） */
+#p-stage-ziwei .tool-card { max-width: 760px; }
 .zw-body { margin-top: 14px; }
 /* 本命盘 / 运势盘的所有区块统一宽度并居中，与命格页卡片对齐 */
 .zw-plate, .zw-detail, .zw-pick, .zw-detail-hint { max-width: 760px; margin-left: auto; margin-right: auto; }

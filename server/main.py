@@ -275,6 +275,10 @@ async def api_deduce(
         if session0:
             pid = session0.get("profile_id")
 
+    # AI 推演要求登录（与前端门禁一致；未登录直接拒绝，不消耗模型额度）
+    if not pid:
+        return {"ok": False, "error": "请先登录后再使用 AI 解读与追问"}
+
     # 缓存复用：同 key（档案+视图+宫位+问题）且未强制刷新时，直接回放上次回答。
     # 必须在命盘会话校验之前：服务重启会清空 CHARTS，但已落盘的推演缓存仍然有效。
     # 优先查统一 feature_history（带 hid，可追问），回落查旧 messages 缓存（紫微历史缓存）。

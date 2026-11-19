@@ -77,6 +77,67 @@ function latestCard(page, containerSel) {
     const brand = await page.locator('.p-brand-mark svg').count();
     brand ? ok('品牌 ∞ 图标渲染', 'svg=' + brand) : fail('品牌 ∞ 图标渲染', '未找到 svg');
     await shot(page, '00_home');
+    // 默认进入应显示落地首页 + 五大功能入口卡片
+    const homeCards = await page.locator('.home-page .home-card').count();
+    const crumbHome = await page.locator('#p-crumb').innerText().catch(() => '');
+    (homeCards === 5 && crumbHome === '首页') ? ok('默认显示首页与五大入口', 'cards=' + homeCards + ' crumb=' + crumbHome)
+      : fail('默认显示首页', 'cards=' + homeCards + ' crumb=' + crumbHome);
+    // 点功能卡片进入对应页；再点品牌区应返回首页
+    await page.locator('.home-card[data-feature="bazi"]').click();
+    await page.waitForTimeout(500);
+    const enteredBazi = (await page.locator('#p-crumb').innerText().catch(() => '')) === '八字排盘';
+    await page.locator('.p-brand').click();
+    await page.waitForTimeout(500);
+    const backHome = (await page.locator('.home-page .home-card').count()) === 5;
+    (enteredBazi && backHome) ? ok('入口卡片跳转 + 品牌区返回首页', 'enter=' + enteredBazi + ' back=' + backHome)
+      : fail('首页跳转/返回', 'enter=' + enteredBazi + ' back=' + backHome);
+
+    section('0b. 未登录 AI 门禁');
+    // 未登录进入功能页：应出现门禁卡（锁 + 标题 + 登录按钮），真正的 AI 按钮被隐藏
+    await page.goto(BASE + '/?gate=' + Date.now() + '#/tarot', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(600);
+    const gateN = await page.locator('.ai-gate .ag-btn').count();
+    const locked = await page.locator('#p-content .stage-locked').count();
+    (gateN > 0 && locked > 0) ? ok('未登录显示 AI 登录门禁') : fail('未登录显示 AI 登录门禁', 'gate=' + gateN + ' locked=' + locked);
+    await shot(page, '00b_gate');
+    // 点门禁按钮应弹登录框
+    if (gateN) {
+      await page.locator('.ai-gate .ag-btn').first().click();
+      await page.waitForTimeout(300);
+      const modalOpen = await page.evaluate(() => { const m = document.getElementById('p-modal'); return m && !m.classList.contains('hidden'); });
+      modalOpen ? ok('门禁按钮打开登录框') : fail('门禁按钮打开登录框');
+      await page.click('#p-modal .p-modal-x').catch(() => {});
+      await page.waitForTimeout(200);
+    }
+    // 黄历：未登录时整张 AI 提问卡（输入框/快捷问题/八字开关）应隐藏，只留门禁卡
+    await page.goto(BASE + '/?gateHL=' + Date.now() + '#/huangli', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(700);
+    const hlGate = await page.evaluate(() => {
+      const card = document.querySelector('.hl-ai-card');
+      const q = document.querySelector('#hl-q');
+      // 父卡 display:none 时子元素 computedStyle 仍为 block，须用 offsetParent 判真实可见性
+      return { cardVisible: !!(card && card.offsetParent !== null),
+        gate: document.querySelectorAll('#p-stage-huangli .ai-gate .ag-btn').length,
+        q: !!(q && q.offsetParent !== null) };
+    });
+    (!hlGate.cardVisible && !hlGate.q && hlGate.gate > 0)
+      ? ok('黄历未登录仅显示门禁卡、隐藏提问卡')
+      : fail('黄历未登录隐藏提问卡', JSON.stringify(hlGate));
+
+    // 各功能页：门禁卡、分割行（关于本功能）、内容卡三者宽度应一致（八字720，黄历/紫微760）
+    const widthRows = [];
+    for (const wf of ['bazi', 'meihua', 'tarot', 'huangli', 'ziwei']) {
+      await page.goto(BASE + '/?wid=' + wf + Date.now() + '#/' + wf, { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(500);
+      widthRows.push(await page.evaluate((f) => {
+        const st = document.querySelector('#p-stage-' + f);
+        const cw = (s) => { const e = st && st.querySelector(s); return e ? Math.round(e.getBoundingClientRect().width) : null; };
+        return { feat: f, gate: cw('.ai-gate-host'), about: cw('.about-details'), card: cw('.tool-card') };
+      }, wf));
+    }
+    const widthOK = widthRows.every(r => r.gate && r.gate === r.about && (!r.card || r.card === r.gate));
+    widthOK ? ok('五功能门禁卡/分割行/内容卡宽度统一', JSON.stringify(widthRows))
+      : fail('五功能宽度统一', JSON.stringify(widthRows));
 
     section('1. UI 注册临时账号 ' + USER);
     await page.click('#p-auth-btn');
@@ -204,6 +265,14 @@ function latestCard(page, containerSel) {
     const trCard = latestCard(page, '#tr-result');
     try { await waitAI(trCard); ok('塔罗 AI 解读', 'len=' + (await trCard.innerText()).length); }
     catch (e) { fail('塔罗 AI 解读', e.message.split('\n')[0]); }
+    // 解读卡应排在牌面结果卡之后（DOM 顺序：.p-result 在 .p-ai 之前）
+    const orderOK = await page.evaluate(() => {
+      const c = document.getElementById('tr-result');
+      if (!c) return false;
+      const res = c.querySelector(':scope > .p-result'), ai = c.querySelector(':scope > .p-ai');
+      return !!(res && ai && res.compareDocumentPosition(ai) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    orderOK ? ok('AI 解读在牌面下方展开') : fail('AI 解读在牌面下方展开');
     await shot(page, '41_tarot_ai');
 
     section('7. 黄历（日历 + AI 择日答疑）');
@@ -267,9 +336,12 @@ function latestCard(page, containerSel) {
       // 追问按钮应为描边样式（.tool-ai 同款），不是深色 .p-primary
       const fbtnCls = await page.locator('[data-hbox] .ai-follow-btn').first().getAttribute('class').catch(() => '');
       (!/p-primary/.test(fbtnCls)) ? ok('追问按钮为描边样式（非深色主按钮）') : fail('追问按钮为描边样式（非深色主按钮）', fbtnCls);
-      // 备注文案：按功能准确，不能出现通用「说明：」前缀；塔罗卡不应写「起卦」
+      // 备注应位于追问条内部（输入框上方），且不出现「说明：」前缀
+      const noteInFollow = await page.locator('[data-hbox] .ai-follow .pf-follow-note').count();
       const noteTxt = await page.locator('[data-hbox] .pf-follow-note').first().innerText().catch(() => '');
-      (!/说明：/.test(noteTxt)) ? ok('追问备注无「说明：」前缀', noteTxt.slice(0, 40)) : fail('追问备注无「说明：」前缀', noteTxt);
+      (noteInFollow > 0 && !/说明：/.test(noteTxt))
+        ? ok('追问备注在追问条内且无「说明：」前缀', noteTxt.slice(0, 40))
+        : fail('追问备注位置/文案', 'inFollow=' + noteInFollow + ' txt=' + noteTxt);
       await shot(page, '73_profile_history_follow');
     }
 
@@ -301,7 +373,55 @@ function latestCard(page, containerSel) {
       info('管理员登录', '未提供 ZIWEI_ADMIN_KEY，仅验证入口与登录表单');
     }
 
-    section('10. 页面错误检查');
+    section('10. 退出登录清除前端缓存');
+    // 关闭可能仍打开的管理弹层，避免遮罩挡住后续点击
+    await page.evaluate(() => {
+      const am = document.getElementById('p-admin-modal');
+      if (am && !am.classList.contains('hidden')) am.classList.add('hidden');
+      const pm = document.getElementById('p-modal');
+      if (pm && !pm.classList.contains('hidden')) pm.classList.add('hidden');
+    });
+    // 不经整页重载，直接点导航切到塔罗（保留内存里此前各功能舞台的解读卡）
+    await page.click('.p-navitem[data-feature="tarot"]');
+    await page.waitForTimeout(400);
+    const beforeLogout = await page.evaluate(() => ({
+      profile: !!localStorage.getItem('zw-profile'),
+      cachedAI: document.querySelectorAll('#p-content .p-ai').length
+    }));
+    // 点右上角「退出」
+    await page.click('#p-logout');
+    await page.waitForTimeout(600);
+    const afterLogout = await page.evaluate(() => ({
+      profile: !!localStorage.getItem('zw-profile'),
+      aiCards: document.querySelectorAll('#p-content .p-ai').length,
+      gate: document.querySelectorAll('.ai-gate .ag-btn').length,
+      zwCache: !!sessionStorage.getItem('zw-chart-v1')
+    }));
+    (beforeLogout.cachedAI > 0 && !afterLogout.profile && !afterLogout.zwCache && afterLogout.gate > 0 && afterLogout.aiCards === 0)
+      ? ok('退出清空档案/命盘缓存/对话并恢复门禁', 'beforeAI=' + beforeLogout.cachedAI + ' after=' + JSON.stringify(afterLogout))
+      : fail('退出清空缓存', 'before=' + JSON.stringify(beforeLogout) + ' after=' + JSON.stringify(afterLogout));
+    await shot(page, '90_after_logout');
+
+    // 跨功能登录：在塔罗登录后，切到八字不应残留"未登录态"的门禁
+    await page.click('#p-auth-btn');
+    await page.waitForTimeout(200);
+    await page.fill('#au-name', USER);
+    await page.fill('#au-pass', PASS);
+    await page.click('#au-submit');
+    await page.waitForTimeout(1200);
+    await page.click('.p-navitem[data-feature="bazi"]');
+    await page.waitForTimeout(600);
+    const crossGate = await page.evaluate(() => ({
+      prof: !!localStorage.getItem('zw-profile'),
+      gate: document.querySelectorAll('#p-stage-bazi .ai-gate').length,
+      locked: document.querySelectorAll('#p-stage-bazi.stage-locked').length
+    }));
+    (crossGate.prof && crossGate.gate === 0 && crossGate.locked === 0)
+      ? ok('跨功能登录后门禁不残留')
+      : fail('跨功能登录后门禁不残留', JSON.stringify(crossGate));
+    await shot(page, '91_relogin_cross_feature');
+
+    section('11. 页面错误检查');
     pageErrors.length ? fail('无前端 JS 报错', pageErrors.slice(0, 3).join(' | ')) : ok('无前端 JS 报错');
   } catch (e) {
     fail('测试流程中断', e.message.split('\n')[0]);
