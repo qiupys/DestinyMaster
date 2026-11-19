@@ -224,6 +224,9 @@ function latestCard(page, containerSel) {
     await page.waitForTimeout(900);
     await page.waitForSelector('#pf-body', { state: 'visible', timeout: 15000 });
     ok('个人中心加载', '历史卡=' + (await page.locator('.pf-hcard').count()));
+    // 删除按钮：应为带边框的「删除」文字按钮，不再是裸 ×
+    const delText = await page.locator('.pf-hcard .p-hist-del').first().innerText().catch(() => '');
+    (delText.trim() === '删除') ? ok('历史删除按钮为「删除」文字按钮') : fail('历史删除按钮为「删除」文字按钮', JSON.stringify(delText));
     await shot(page, '70_profile');
     const acctToggle = page.locator('.pf-account-toggle');
     if (await acctToggle.count()) {
@@ -261,6 +264,12 @@ function latestCard(page, containerSel) {
       await page.waitForTimeout(500);
       const aiFollowN = await page.locator('[data-hbox] .ai-follow .ai-follow-btn').count();
       aiFollowN ? ok('历史追问条与 AI 解读同款格式') : fail('历史追问条与 AI 解读同款格式');
+      // 追问按钮应为描边样式（.tool-ai 同款），不是深色 .p-primary
+      const fbtnCls = await page.locator('[data-hbox] .ai-follow-btn').first().getAttribute('class').catch(() => '');
+      (!/p-primary/.test(fbtnCls)) ? ok('追问按钮为描边样式（非深色主按钮）') : fail('追问按钮为描边样式（非深色主按钮）', fbtnCls);
+      // 备注文案：按功能准确，不能出现通用「说明：」前缀；塔罗卡不应写「起卦」
+      const noteTxt = await page.locator('[data-hbox] .pf-follow-note').first().innerText().catch(() => '');
+      (!/说明：/.test(noteTxt)) ? ok('追问备注无「说明：」前缀', noteTxt.slice(0, 40)) : fail('追问备注无「说明：」前缀', noteTxt);
       await shot(page, '73_profile_history_follow');
     }
 
