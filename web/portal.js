@@ -681,6 +681,54 @@
   }
   function dpClose() { if (dpEl) dpEl.classList.add("hidden"); dpOnPick = null; }
 
+  /* ================= 统一「日期时间选择」组件（架构约定 · 所有需选公历时刻的功能共用） =================
+     契约：任何“选一个公历日期 + 时分”的场景（出生资料、梅花指定起卦时刻、择日参照等）
+     必须复用本组件与同一个日历弹窗 openDateLookup，禁止再各自造原生 <input type="datetime-local">。
+     出生资料 birthFieldsHTML 是本组件在「出生」语境的扩展（额外含农历/八字输入/know_time 开关）。
+       dateTimeHTML(pfx, opts)    渲染「日期按钮 + 时/分下拉」，视觉复用 .bf-datebtn / .bf-time
+       dateTimeBind(pfx, init)    绑定行为；日期按钮走 openDateLookup 回调回填，不写任何出生字段
+       dateTimeCollect(pfx)       {year,month,day,hour,minute,when(ISO)}
+     新增功能需要选时刻时，直接调用这三个函数即可，无需再实现日历。 */
+  function dateTimeHTML(pfx, opts) {
+    opts = opts || {};
+    var hours = "", mins = "";
+    for (var h = 0; h < 24; h++) hours += '<option value="' + h + '">' + h + '时</option>';
+    for (var m = 0; m < 60; m++) mins += '<option value="' + m + '">' + m + '分</option>';
+    return '<div class="dt-field">' +
+      '<div class="bf-grid" style="grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)">' +
+        '<div><label class="bf-lab">' + (opts.dateLabel || "日期") + '</label>' +
+          '<button type="button" class="bf-datebtn" id="' + pfx + '-dtbtn"><span id="' + pfx + '-dtbtn-t">选择日期</span><i>' + CAL_ICON + '</i></button>' +
+          '<input type="hidden" id="' + pfx + '-date" /></div>' +
+        '<div><label class="bf-lab">' + (opts.timeLabel || "时间") + '</label>' +
+          '<div class="bf-time" id="' + pfx + '-dttime"><select class="ti" id="' + pfx + '-hour">' + hours + '</select>' +
+          '<select class="ti" id="' + pfx + '-minute">' + mins + '</select></div></div>' +
+      '</div></div>';
+  }
+  function dateTimeSet(pfx, y, m, d) {
+    $("#" + pfx + "-date").value = y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+    var t = $("#" + pfx + "-dtbtn-t");
+    if (t) t.textContent = y + "年" + m + "月" + d + "日";
+  }
+  function dateTimeBind(pfx, init) {
+    var d = init || {};
+    if (d.year && d.month && d.day) dateTimeSet(pfx, d.year, d.month, d.day);
+    if (d.hour != null) $("#" + pfx + "-hour").value = String(d.hour);
+    if (d.minute != null) $("#" + pfx + "-minute").value = String(d.minute);
+    $("#" + pfx + "-dtbtn").onclick = function () {
+      var v = ($("#" + pfx + "-date").value || "").split("-");
+      var initial = v.length === 3 ? v.join("-") : "";
+      openDateLookup(initial, function (yy, mm, dd) { dateTimeSet(pfx, yy, mm, dd); });
+    };
+  }
+  function dateTimeCollect(pfx) {
+    var v = ($("#" + pfx + "-date").value || "").split("-");
+    var y = +v[0], m = +v[1], d = +v[2];
+    var h = +$("#" + pfx + "-hour").value || 0, mi = +$("#" + pfx + "-minute").value || 0;
+    return { year: y, month: m, day: d, hour: h, minute: mi,
+      when: y ? (y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0") +
+        " " + String(h).padStart(2, "0") + ":" + String(mi).padStart(2, "0")) : "" };
+  }
+
   /* ---------------- 「选择农历日期」弹窗（年份/月份/日期 三下拉 + 确认） ---------------- */
   var lpEl = null, lpPfx = null;
   function openLunarPicker(pfx) {
@@ -1139,13 +1187,15 @@
           '<div class="tf-field"><label>下卦之数（第一个数字）</label><input class="ti" id="mh-n1" type="number" value="23" /></div>' +
           '<div class="tf-field"><label>上卦之数（第二个数字）</label><input class="ti" id="mh-n2" type="number" value="45" /></div></div>';
       } else if (m === "time") {
-        // 指定时间默认填入当前时刻，避免出现空白输入框
-        var nw = new Date(), pd = function (n) { return (n < 10 ? "0" : "") + n; };
-        var dflt = nw.getFullYear() + "-" + pd(nw.getMonth() + 1) + "-" + pd(nw.getDate()) +
-          "T" + pd(nw.getHours()) + ":" + pd(nw.getMinutes());
+        // 指定时间复用统一的日期时间组件（与个人资料同一个日历弹窗），默认填当前时刻
+        var nw = new Date();
         box.innerHTML = '<div class="tf-field" style="margin-top:12px"><div class="mh-tt-line"><label>起卦时间</label>' +
           '<div class="mh-ttabs" id="mh-ttabs"><button class="on" data-v="now">此刻</button><button data-v="spec">指定时间</button></div></div>' +
-          '<input class="ti" id="mh-when" type="datetime-local" value="' + dflt + '" style="display:none;margin-top:8px" /></div>';
+          '<div id="mh-when" style="display:none;margin-top:10px">' +
+            dateTimeHTML("mhw", { dateLabel: "起卦日期", timeLabel: "起卦时刻" }) +
+          '</div></div>';
+        dateTimeBind("mhw", { year: nw.getFullYear(), month: nw.getMonth() + 1, day: nw.getDate(),
+          hour: nw.getHours(), minute: nw.getMinutes() });
       } else if (m === "manual") {
         box.innerHTML = '<div class="tf-group" style="margin-top:12px"><div class="tf-gt">卦象预览</div>' +
           '<p class="p-note" id="mh-mhint" style="margin:0 0 8px">点爻线切换阴阳，点“不变/动爻”指定变爻</p>' +
@@ -1166,7 +1216,9 @@
     function mhParams() {
       var m = segVal($("#mh-method")), p = "method=" + m;
       if (m === "number") p += "&num1=" + ($("#mh-n1").value || 1) + "&num2=" + ($("#mh-n2").value || 1);
-      if (m === "time" && segVal($("#mh-ttabs")) === "spec" && $("#mh-when").value) p += "&when=" + encodeURIComponent($("#mh-when").value);
+      if (m === "time" && segVal($("#mh-ttabs")) === "spec" && $("#mhw-date") && $("#mhw-date").value) {
+        p += "&when=" + encodeURIComponent(dateTimeCollect("mhw").when);
+      }
       if (m === "manual") {
         var bits = manualYaos.map(String).join("");
         var upBits = bits.slice(3).split("").reverse().join(""), loBits = bits.slice(0, 3).split("").reverse().join("");
@@ -1474,13 +1526,16 @@
       var planets = (d.planets || []).filter(function (p) { return p.key !== "sun" && p.key !== "moon"; })
         .map(function (p) {
           return '<div class="as-planet"><b>' + esc(p.name) + '</b><span>' + signSym(p.sign) + ' ' + esc(p.sign) + ' ' + esc(p.degree) + '</span>' +
-            '<em>第' + (p.house || "—") + '宫' + (p.retro ? ' · 逆行' : '') + '</em></div>';
+            '<em>第' + (p.house || "—") + '宫' + (p.retro ? ' · 逆行' : '') + '</em>' +
+            (p.meaning ? '<div class="as-mean">主管' + esc(p.meaning) + '，落在' + esc(p.sign) + '使这一主题带上该星座的表达方式</div>' : '') +
+          '</div>';
         }).join("");
       var houses = (d.houses || []).map(function (h) {
-        return '<div class="as-house"><i>' + h.num + '</i><span>' + signSym(h.sign) + ' ' + esc(h.sign) + '</span><em>' + esc(h.degree) + '</em></div>';
+        return '<div class="as-house"' + (h.meaning ? ' title="第' + h.num + '宫：' + esc(h.meaning) + '"' : '') + '><i>' + h.num + '</i><span>' + signSym(h.sign) + ' ' + esc(h.sign) + '</span><em>' + esc(h.degree) + '</em></div>';
       }).join("");
       var aspects = (d.aspects || []).map(function (a) {
-        return '<div class="as-aspect"><b>' + esc(a.name) + '</b><span>' + esc(a.a) + ' — ' + esc(a.b) + '</span><em>容许 ' + a.orb + '°</em></div>';
+        return '<div class="as-aspect"><b>' + esc(a.name) + '</b><span>' + esc(a.a) + ' — ' + esc(a.b) + '</span><em>容许 ' + a.orb + '°</em>' +
+          (a.tone ? '<div class="as-mean">' + esc(a.tone) + '</div>' : '') + '</div>';
       }).join("") || '<p class="p-note">主要相位较少</p>';
       var elem = d.element || {};
       var elemLine = ['火','土','风','水'].map(function (k) { return k + (elem[k] || 0); }).join(' · ');
@@ -1577,10 +1632,21 @@
           '<p class="p-note" style="margin:0">结合上方所选日期的完整历注，解释宜忌与你所想之事的关系。</p>' +
         '</div>' +
         '<div class="tf-field"><label>你想问什么？（结合上方所选日期）</label>' +
-          '<textarea class="ti ta" id="hl-q" placeholder="例如：这天适合搬家吗？"></textarea>' +
+          '<input class="ti" id="hl-q" placeholder="例如：这天适合搬家吗？" />' +
           '<div class="p-suggest"><button data-q="今天适合做什么事情？">今天适合做什么</button><button data-q="这周哪天最适合搬家？">本周搬家吉日</button><button data-q="这天适合签约开业吗？">签约开业</button></div>' +
         '</div>' +
         '<label class="p-switch hl-bazi-switch"><input type="checkbox" id="hl-bazi"' + (S.profile ? ' checked' : ' disabled') + ' /><span>导入本人八字信息</span></label>' +
+        '<div class="hl-p2">' +
+          '<label class="p-switch hl-p2-switch"><input type="checkbox" id="hl-p2-on" /><span>添加第二人八字（合婚 / 双人择日）</span></label>' +
+          '<div id="hl-p2-fields" style="display:none;margin-top:10px">' +
+            '<div class="tf-field" style="margin-bottom:8px"><label>称谓（选填，如：伴侣姓名）</label>' +
+              '<input class="ti" id="hl-p2-name" placeholder="例如：伴侣 / 张先生" /></div>' +
+            dateTimeHTML("hlp2", { dateLabel: "出生日期", timeLabel: "出生时间" }) +
+            '<div class="tf-field" style="margin-top:8px"><label>性别</label>' +
+              '<select class="ti" id="hlp2-gender"><option>男</option><option>女</option></select></div>' +
+            '<p class="p-note" style="margin:8px 0 0">填入第二人的出生信息，AI 会同时核对所选日子与两人的生克合冲，判断对双方是否都相宜（如订婚、结婚择日）。</p>' +
+          '</div>' +
+        '</div>' +
         '<button class="tool-ai" id="hl-ai">AI 择日答疑</button>' +
         '<div class="p-err" id="hl-err"></div>' +
       '</div></div>' +
@@ -1752,8 +1818,23 @@
       if (!q) { toast("请先写下想问的事"); $("#hl-q").focus(); return; }
       // 勾选「导入本人八字信息」时，把档案八字一并交给 AI 作为择日参考
       var useBazi = $("#hl-bazi") && $("#hl-bazi").checked && S.profile ? "&use_bazi=1" : "";
-      streamAI("huangli", hlParam() + "&q=" + encodeURIComponent(q) + useBazi + authParam(), q, $("#hl-result"), "day|" + sel.y + "-" + sel.m + "-" + sel.d);
+      // 添加第二人八字（合婚/双人择日）：复用统一日期时间组件取值
+      var p2 = "";
+      if ($("#hl-p2-on") && $("#hl-p2-on").checked) {
+        var dt = dateTimeCollect("hlp2");
+        if (!dt.year) { toast("请填写第二人的出生日期"); return; }
+        p2 = "&p2_name=" + encodeURIComponent(($("#hl-p2-name").value || "对方").trim()) +
+          "&p2_year=" + dt.year + "&p2_month=" + dt.month + "&p2_day=" + dt.day +
+          "&p2_hour=" + dt.hour + "&p2_minute=" + dt.minute +
+          "&p2_gender=" + encodeURIComponent($("#hlp2-gender").value);
+      }
+      streamAI("huangli", hlParam() + "&q=" + encodeURIComponent(q) + useBazi + p2 + authParam(), q, $("#hl-result"), "day|" + sel.y + "-" + sel.m + "-" + sel.d);
     };
+
+    // 统一日期时间组件：第二人出生信息复用与个人资料同一个日历弹窗
+    dateTimeBind("hlp2", { year: 1990, month: 1, day: 1, hour: 12, minute: 0 });
+    var p2On = $("#hl-p2-on"), p2Fields = $("#hl-p2-fields");
+    if (p2On) p2On.onchange = function () { p2Fields.style.display = p2On.checked ? "" : "none"; };
 
     renderCal();
     loadDay();   // 打开页面默认直接给出今日历注
@@ -1790,6 +1871,9 @@
     return node;
   }
   /* 把 container 当前一轮（结果卡 + 解读卡 + 追问链）打包折叠归档，并清空 container。返回归档节点数。
+     原子记录定义：一条可归档/可保存的记录 = AI 解读 + 功能 + 个人信息 + 问题。
+     因此【仅抽卡/起卦/排盘、尚未 AI 解读】的纯结果轮不算一条记录——直接丢弃，不产生归档项。
+     这与后端一致：history.save 只在 deduce（AI 解读）落库，calc（抽牌/起卦/排盘）从不落库。
      rk = 本轮确定性结果身份（牌阵|牌面 / 卦象 / 日期 / 命盘），同问题不同结果身份 = 不同轮，
      必须归档成平级的独立轮，绝不能塞进同一个旧轮造成嵌套。 */
   function archiveRound(container, question, rk) {
@@ -1798,6 +1882,12 @@
       return n.classList && (n.classList.contains("p-result") || n.classList.contains("p-ai"));
     });
     if (!nodes.length) return 0;
+    // 原子记录门禁：没有 AI 解读卡（.p-ai）的纯抽卡/起卦轮不归档，直接丢弃旧节点。
+    // 用整棵子树查询：塔罗/梅花解读卡是结果容器的直接子节点，八字/占星则在嵌套的 #*-ai-out 内。
+    if (!container.querySelector(".p-ai")) {
+      nodes.forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
+      return 0;
+    }
     // 若旧轮本身没有 rk（老数据），尝试从容器补一个，避免归档项无身份导致跨轮误判
     var host = archiveHost(container);
     var item = document.createElement("div");

@@ -112,6 +112,28 @@ def _bazi_of_profile(pid: int) -> str:
         return ""
 
 
+def _bazi_of_params(y: int | None, m: int | None, d: int | None,
+                    h: int | None, mi: int | None, gender: str, name: str = "") -> str:
+    """从显式出生参数算一个人的四柱文本，供「添加第二人八字」场景（合婚择日）注入。
+    与 _bazi_of_profile 的区别：后者读登录档案，本函数读用户临时填写的第二人信息。"""
+    if not (y and m and d):
+        return ""
+    try:
+        hh = int(h) if h not in (None, "") else 12
+        gen = gender or "男"
+        if gen in ("male", "female"):
+            gen = "男" if gen == "male" else "女"
+        pl = bazi.chart(int(y), int(m), int(d), hh, int(mi or 0), gen)
+        p = pl["pillars"]
+        who = (name or "对方").strip()
+        return (f"第二人（{who}）八字：{p['year']} {p['month']} {p['day']} {p['hour']}"
+                f"（{gen}，日主{pl['day_master']}）。择日时请同时核对当日干支与两人的年柱/日柱"
+                f"的生克合冲——尤其关注与双方日主的关系，判断这一天对两人是否都相宜；"
+                f"若有冲突请明确指出，不可只偏袒一方。")
+    except Exception:
+        return ""
+
+
 def _star_of_profile(pid: int) -> tuple[str, bool]:
     """从档案生日换算太阳星座文本（塔罗用）。返回 (文本, 是否成功取到生日)。"""
     if not pid:
@@ -156,7 +178,10 @@ def _bazi_complete(pid: int) -> bool:
 
 
 def _augment_profile(pid: int | None, feature: str, up: str,
-                     *, use_bazi: int = 0, use_star: int = 0) -> tuple[str, str]:
+                     *, use_bazi: int = 0, use_star: int = 0,
+                     p2_y: int | None = None, p2_m: int | None = None, p2_d: int | None = None,
+                     p2_h: int | None = None, p2_mi: int | None = None,
+                     p2_gender: str = "", p2_name: str = "") -> tuple[str, str]:
     """按功能把八字/星座约束注入用户画像文本。
 
     返回 (注入后的 up, 注入说明文本)；注入说明会存入 payload，追问时原样复用，
@@ -182,6 +207,11 @@ def _augment_profile(pid: int | None, feature: str, up: str,
         star, _ok = _star_of_profile(pid)
         if star:
             extra = (extra + "\n" + star).strip()
+    # 黄历「添加第二人八字」：合婚/双人择日，与第二人四柱一并核对所选日子的宜忌
+    if feature == "huangli" and p2_y and p2_m and p2_d:
+        p2 = _bazi_of_params(p2_y, p2_m, p2_d, p2_h, p2_mi, p2_gender, p2_name)
+        if p2:
+            extra = (extra + "\n" + p2).strip()
     return ((up + "\n" + extra).strip() if extra else up), extra
 
 
@@ -278,6 +308,13 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             use_bazi: int = Query(0, description="1=把登录用户档案八字一并作为解读参考"),
             deck: str | None = Query(None, description="塔罗：前端抽牌结果，锁定同一副牌供 AI 解读"),
             use_star: int = Query(0, description="塔罗：1=把登录用户档案生日换算的太阳星座一并作为解读参考"),
+            p2_name: str = Query("", description="黄历：第二人称谓（如伴侣姓名）"),
+            p2_year: int | None = Query(None, description="黄历：第二人八字-出生年"),
+            p2_month: int | None = Query(None, description="黄历：第二人八字-出生月"),
+            p2_day: int | None = Query(None, description="黄历：第二人八字-出生日"),
+            p2_hour: int | None = Query(None, description="黄历：第二人八字-出生时"),
+            p2_minute: int | None = Query(None, description="黄历：第二人八字-出生分"),
+            p2_gender: str = Query("男", description="黄历：第二人性别"),
         ):
             question = (q or "").strip()
             if not question:
@@ -313,6 +350,9 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                 payload["_use_bazi"] = 1
             if use_star:
                 payload["_use_star"] = 1
+            # 黄历第二人八字：纳入 payload（=纳入去重身份），换第二人即新一轮，不覆盖旧解读
+            if feature == "huangli" and p2_year and p2_month and p2_day:
+                payload["_p2"] = [p2_name, p2_year, p2_month, p2_day, p2_hour, p2_minute, p2_gender]
             key = _dedupe_key(pid, feature, payload, question)
             if pid and not force:
                 cached = history.find_cached_entry(pid, feature, key)
@@ -329,6 +369,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             up, recent = _personalize(pid, feature)
             up, injected = _augment_profile(
                 pid, feature, up, use_bazi=use_bazi, use_star=use_star,
+                p2_y=p2_year, p2_m=p2_month, p2_d=p2_day, p2_h=p2_hour,
+                p2_mi=p2_minute, p2_gender=p2_gender, p2_name=p2_name,
             )
             # 把个人约束文本存入 payload：追问时原样复用，保证前后一致
             if injected:

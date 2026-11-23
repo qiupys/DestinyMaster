@@ -52,3 +52,53 @@
 - 一期实现：八字、梅花、塔罗、黄历 + 能力层（登录/档案/历史/个性化）；六爻、奇门二期。
 - 文献 RAG：64 卦经文、78 塔罗牌义、16 八字理论、黄历概览，均来自本站抓取，存 docs/kb/<domain>/。
 - 视觉沿用现有宣纸·墨·黛青主题（与参考站同调）。
+
+---
+
+## 七、本项目前端架构与扩展规范（工程约束 · 新增功能必须先读）
+
+> 这一章是**代码约定的唯一事实来源**。目的是让同类需求只在一处实现、全局复用，
+> 不再依赖截图逐个发现"独一档"。任何新增功能或改 UI 前，先对照本章的组件契约与清单。
+
+### 7.1 共用组件契约（portal.js，禁止重复造轮子）
+
+| 场景 | 统一入口 | 说明 |
+|---|---|---|
+| **出生日期时间选择**（年月日 + 时分 + 农历/八字切换） | `birthFieldsHTML(pfx, opts)` / `birthFieldsBind(pfx, init)` / `birthCollect(pfx)` | 出生资料唯一表单模板。用于八字、紫微、占星、个人中心档案、注册。 |
+| **任意公历日期时间选择**（选一个时刻，非出生资料） | `dateTimeHTML(pfx, opts)` / `dateTimeBind(pfx, init)` / `dateTimeCollect(pfx)` | 复用同一个日历弹窗 `openDateLookup`。用于梅花指定起卦时刻、黄历第二人八字等。**禁止再用原生 `<input type="datetime-local">`。** |
+| **日历弹窗** | `openDatePicker(pfx)`（写入出生字段）/ `openDateLookup(initial, onPick)`（回调，不写出生字段） | 全局唯一 `dpEl` 实例，两种模式由 `dpOnPick` 是否为空区分。 |
+| **出生地三级联动** | `placeFieldsHTML(pfx)` / `placeFieldsBind` / `placeCollect` | 国家→省/州→城市，含经纬度时区，数据源 `GEO_DATA`。 |
+| **提问卡（结果区下方）** | `.ask-card` 语义：`.bz-ask` / `.zw-ask` / `.zw-d-ask` / `.bz-ask.as-ask` | 统一 `max-width:720px; margin:16px auto 0`。**任何功能的结果提问卡都必须是这个宽度**，不要另设类。 |
+| **导入档案信息的提示框** | `.p-bazi-gate`（`.ok` / `.warn`），统一放表单**第一个子元素** | 梅花强制八字 / 塔罗太阳星座 / 黄历八字，样式与位置一致。 |
+| **AI 流式解读 + 追问** | `streamAI(feature, query, question, container, rk)` | 统一 SSE 渲染、免责声明由系统附加、落 `feature_history`、卡底挂 `attachFollow`。新功能不要自己写 fetch+渲染。 |
+
+### 7.2 数据模型：原子记录（不可拆分的最小历史单位）
+
+**一条可归档/可保存的记录 = AI 解读 + 功能 + 个人信息 + 问题**，四者缺一不可。
+
+- 后端：`history.save` **只在 `deduce`（AI 解读）时落库**；`calc`（抽牌/起卦/排盘/查历）从不落库。
+- 前端：`archiveRound` 只归档含 `.p-ai`（解读卡）的完整轮次；**仅抽卡/起卦、无 AI 解读的纯结果轮直接丢弃**，不产生历史项。
+- 追问（`followup`）沿用本轮落盘的 payload 与 `hid`，不产生新记录。
+- 用户临时注入的个人约束（八字/星座/第二人八字）存 `payload._injected`，追问原样复用，保证前后一致；开关状态纳入 `payload` → 纳入去重 key。
+
+### 7.3 视觉规范（避免"独一档"）
+
+- 结果卡 / 提问卡统一 `max-width:720px` 居中（紫微舞台 760px 例外也已让提问卡回落到 720）。
+- 单行输入统一 `.ti`（42px 高）；**提问框一律单行 input，不用 textarea**（曾出现黄历 textarea 高度独一档）。
+- 个人中心：基本信息 4 字段一行（`repeat(4,1fr)`）、功能统计 6 卡一行（`repeat(6,1fr)`），窄屏再折行。
+- 占星盘面每条数据附含义：行星/相位用 `.as-mean` 整行展示，十二宫格子用 `title` 悬浮，含义来自后端原子字段 `meaning`/`tone`。
+
+### 7.4 新增一个功能的标准步骤（Checklist）
+
+1. **后端引擎**：`server/<feat>.py` 写确定性 `derive/query/draw`，返回 `fact` + `rag_query` + `rag_extra`。
+2. **注册工厂**：`feature_api.FEATURES` 增项、`_calc_<feat>`、`_make_calc_and_deduce`；`history.FEATURE_NAMES`、`ai.FEATURE_GUIDES`、`rag_kb.DOMAIN_VOCAB` + `docs/kb/<feat>/` 语料。
+3. **前端入口**：`render<Feat>` + 首页入口 + `names`/`fn`/`QBOX_SEL`/`ROOT_SEL`/`PF_FEATS` 五处映射；提问卡用 7.1 统一类。
+4. **轮次身份**：定义一个确定性 `rk`（牌阵|牌面 / 卦象 / 日期 / 命盘），传给 `streamAI`；问题或 rk 任一变化即平级归档旧轮。
+5. **个人约束**：若需结合档案信息，走 `_augment_profile` 注入并写 `payload._injected`；需要选时刻时用 7.1 的统一时间组件。
+6. **测试**：`tests/e2e_new_features.js` 覆盖新功能关键断言；本地与线上各跑一遍。
+7. **部署**：改前端必须 bump `web/index.html` 的 `?v=`，scp→md5 校验→`systemctl restart ziwei`。
+
+### 7.5 命盘类 vs 占卜类（个人信息处理）
+
+- **命盘类（八字/紫微/占星）**：出生信息固定后，登录态自动出盘、收起表单、结果区直接提问；按出生信息缓存（`CHART_CACHE`），**信息不变不重排**，仅档案出生信息变更时清缓存重排。
+- **占卜类（梅花/塔罗/黄历）**：不自带命盘，导入个人信息 + 提问；档案信息提示框统一置顶。

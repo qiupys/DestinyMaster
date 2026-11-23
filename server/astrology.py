@@ -58,6 +58,27 @@ ASPECTS = [
 
 HOUSE_CUSPS = 12
 
+# ---- 行星 / 宫位核心含义（盘面 UI 逐条展示用；写入 payload，追问原样复用）----
+PLANET_MEANING = {
+    "sun": "核心自我、意志与生命力",
+    "moon": "情绪、安全感与内在需求",
+    "mercury": "思维、沟通与学习方式",
+    "venus": "情感、审美与关系模式",
+    "mars": "行动力、冲劲与欲望",
+    "jupiter": "扩张、信念与机遇",
+    "saturn": "责任、限制与长期考验",
+    "uranus": "变革、独立与突发变动",
+    "neptune": "想象、直觉与消融边界",
+    "pluto": "洞察、执念与深层转化",
+    "north_node": "此生发展方向与灵魂课题",
+}
+HOUSE_MEANING = {
+    1: "自我形象与外在呈现", 2: "金钱、价值与安全感", 3: "沟通、学习与短途",
+    4: "家庭、根基与内心归属", 5: "恋爱、创造与享乐", 6: "工作、日常与健康",
+    7: "伴侣与一对一关系", 8: "深度、转化与共有资源", 9: "信念、理想与远方",
+    10: "事业、声望与社会角色", 11: "朋友、社群与愿景", 12: "潜意识、隐忍与幕后",
+}
+
 
 def _sign_of(lon: float) -> int:
     """黄经 → 星座下标(0=白羊)。"""
@@ -215,6 +236,7 @@ def derive(year: int, month: int, day: int, hour: int, minute: int = 0,
             "degree": _fmt_deg(_deg_of(longitude)),
             "retro": bool(speed < 0),
             "orb": orb,
+            "meaning": PLANET_MEANING.get(key, ""),
         })
 
     # 宫位：Placidus 高纬度失效时回落整宫制
@@ -240,6 +262,7 @@ def derive(year: int, month: int, day: int, hour: int, minute: int = 0,
             "sign": SIGNS[_sign_of(c)]["name"],
             "symbol": SIGNS[_sign_of(c)]["symbol"],
             "degree": _fmt_deg(_deg_of(c)),
+            "meaning": HOUSE_MEANING.get(i + 1, ""),
         })
 
     # 主要相位（排除北交点参与，避免噪声；行星两两）
