@@ -392,9 +392,10 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .pf-hist-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; }
 .pf-clear { font-size:12px; color:var(--ink-3); background:none; border:1px solid var(--line); border-radius:6px; cursor:pointer; }
 .pf-clear:hover { color:var(--ink); border-color:var(--line-strong); }
-/* 历史区统一宽度：列表卡与展开的「历史解读」详情卡同用 var(--content-w) 居中，
-   杜绝「列表撑满外层 p-card、解读卡却锁 760」导致的左右边缘对不齐。 */
-.pf-hist-zone { max-width: var(--content-w); margin: 22px auto 0; }
+/* 历史区宽度（v90）：与个人中心上方卡片（个人记忆 / 统计卡）左对齐、同宽。
+   之前用 var(--content-w)=760 居中，导致历史区相对上方撑满卡片整体右缩进约 90px。
+   现在列表卡、展开的「历史解读」详情卡都跟随 #pf-body 内宽，三者左右边缘严格一致。 */
+.pf-hist-zone { margin: 22px 0 0; }
 .pf-hist-zone > .pf-hscroll { padding: 6px 0 10px; }
 /* 批量删除：工具区复选/计数 + 缩略卡勾选态 */
 .pf-selall { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--ink-2); cursor:pointer; white-space:nowrap; }
@@ -476,8 +477,9 @@ details.p-disclose .inner { padding-bottom: 12px; }
   .pf-birth-row { grid-template-columns:1fr; }
 }
 /* 历史详情：与解读页同构的 AI 卡 + 追问条；说明文字为小字灰色备注 */
-/* 历史解读：去掉外层卡 nesting 后，作为与问题卡同宽的平级 .p-ai 卡展示 */
-.p-ai.p-hist-detail { margin-top:16px; }
+/* 历史解读：去掉外层卡 nesting 后，作为与历史列表卡、上方卡片同宽的平级 .p-ai 卡展示。
+   覆盖全局 .p-ai 的 760 居中，改为跟随父容器内宽，与历史区左右边缘严格对齐。 */
+.p-ai.p-hist-detail { margin:16px 0 0; max-width:none; }
 .p-hist-detail .p-ai-body p:first-child { margin-top:0; }
 /* 追问已并入同一条历史：详情卡内按轮次铺开，追问之间用分隔线区分 */
 .pf-hist-fu { margin-top:16px; padding-top:14px; border-top:1px dashed var(--line); }
