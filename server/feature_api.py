@@ -72,12 +72,17 @@ def _birth_of_params(params: dict, payload: dict) -> dict | None:
     y, m, d = params.get("year"), params.get("month"), params.get("day")
     if not (y and m and d):
         return None
-    return {
+    birth = {
         "year": int(y), "month": int(m), "day": int(d),
         "hour": int(params.get("hour") or 0), "minute": int(params.get("minute") or 0),
         "gender": params.get("gender") or "男",
         "know_time": True, "calendar": params.get("calendar") or "solar",
     }
+    # 出生地（占星排盘必需）：与出生信息一并写回档案，供个人档案共用。
+    for k in ("country", "province", "city", "place", "lat", "lon", "tz"):
+        if params.get(k) is not None and params.get(k) != "":
+            birth[k] = params[k]
+    return birth
 
 
 def _bazi_of_profile(pid: int) -> str:
@@ -215,6 +220,9 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             lon: float | None = Query(None, description="占星：出生地经度"),
             tz: float = Query(8.0, description="占星：出生地时区(UTC偏移)"),
             place: str = Query("", description="占星：出生地名称"),
+            country: str = Query("", description="占星：出生地-国家"),
+            province: str = Query("", description="占星：出生地-省/州"),
+            city: str = Query("", description="占星：出生地-城市"),
             question: str = Query(""),
             profile_id: int | None = Query(None), token: str | None = Query(None),
             save: int = Query(0, description="1=把本次出生信息写回档案（用户主动修改时用）"),
@@ -225,7 +233,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           calendar=calendar, when=when,
                           pillar_year=pillar_year, pillar_month=pillar_month,
                           pillar_day=pillar_day, pillar_time=pillar_time,
-                          lat=lat, lon=lon, tz=tz, place=place)
+                          lat=lat, lon=lon, tz=tz, place=place,
+                          country=country, province=province, city=city)
             try:
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
@@ -260,6 +269,9 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             lon: float | None = Query(None, description="占星：出生地经度"),
             tz: float = Query(8.0, description="占星：出生地时区(UTC偏移)"),
             place: str = Query("", description="占星：出生地名称"),
+            country: str = Query("", description="占星：出生地-国家"),
+            province: str = Query("", description="占星：出生地-省/州"),
+            city: str = Query("", description="占星：出生地-城市"),
             q: str = Query(""),
             profile_id: int | None = Query(None), token: str | None = Query(None),
             force: int = Query(0),
@@ -276,7 +288,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           calendar=calendar, when=when,
                           pillar_year=pillar_year, pillar_month=pillar_month,
                           pillar_day=pillar_day, pillar_time=pillar_time,
-                          lat=lat, lon=lon, tz=tz, place=place)
+                          lat=lat, lon=lon, tz=tz, place=place,
+                          country=country, province=province, city=city)
             try:
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:

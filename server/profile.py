@@ -274,6 +274,14 @@ def normalize_birth(birth: dict) -> dict:
     if b.get("minute") is None:
         b["minute"] = 0
     b.setdefault("know_time", True)
+    # 出生地（国家/省/市 + 经纬度/时区）：占星排盘必需，个人档案统一维护。
+    # 旧档案无这些字段，补空串/None 供前端共用表单安全读取。
+    b.setdefault("country", "中国")
+    b.setdefault("province", "")
+    b.setdefault("city", "")
+    b.setdefault("lat", None)
+    b.setdefault("lon", None)
+    b.setdefault("tz", 8)
     return b
 
 

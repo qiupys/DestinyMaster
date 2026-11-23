@@ -1385,3 +1385,27 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
   .as-planets, .as-aspects { grid-template-columns: 1fr; }
   .as-houses { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ===================== 出生资料共用组件 / 三级出生地 ===================== */
+/* 占星页：档案带入标记 */
+.as-from-profile { font-size: 11px; font-weight: 400; color: var(--wx-jin); margin-left: 8px; }
+/* 三级出生地：沿用 bf-grid 的两列栅格，单独约束间距 */
+.place-fields { margin-top: 6px; }
+.place-fields .bf-grid { column-gap: 14px; row-gap: 8px; }
+.place-fields .bf-lab { font-size: 12px; color: var(--ink-3); }
+.place-fields .ti { width: 100%; }
+.place-fields .pl-hint { margin: 8px 0 0; }
+/* 个人档案编辑区里的出生资料组件间距 */
+.pf-birth-form .bf-wrap { margin-bottom: 4px; }
+
+/* ===================== 修复十二宫网格溢出 ===================== */
+/* 用 minmax(0,1fr) 允许列收缩到 0，配合 min-width:0 + 省略号，
+   避免 nowrap 的星座/度数内容把网格列撑破卡片边界（第 6 列溢出）。 */
+.as-houses { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.as-house { min-width: 0; overflow: hidden; }
+.as-house > i { flex: none; }
+.as-house > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-house > em { flex: none; margin-left: 0; }
+@media (max-width: 760px) {
+  .as-houses { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

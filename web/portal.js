@@ -322,8 +322,10 @@
     var gzOpts = GZ60.map(function (g) { return '<option>' + g + '</option>'; }).join("");
     var head = opts.title ?
       '<div class="bf-head"><span class="bf-title">' + opts.title + '</span>' +
-        '<span class="bf-modes">输入方式：<span class="p-seg bf-mode" id="' + pfx + '-mode">' +
-          '<button class="on" data-v="date">日期</button><button data-v="bazi">八字</button></span></span></div>' : "";
+        (opts.simple ? '' :
+          '<span class="bf-modes">输入方式：<span class="p-seg bf-mode" id="' + pfx + '-mode">' +
+            '<button class="on" data-v="date">日期</button><button data-v="bazi">八字</button></span></span>') +
+      '</div>' : "";
     var pillars = [["py","年柱"],["pm","月柱"],["pd","日柱"],["pt","时柱"]].map(function (it) {
       return '<div class="tf-field"><label>' + it[1] + '</label><select class="ti" id="' + pfx + '-' + it[0] + '">' + gzOpts + '</select></div>';
     }).join("");
@@ -333,7 +335,8 @@
           '<div class="bf-grid">' +
             '<div class="bf-a1"><label class="bf-lab">出生日期</label></div>' +
             '<div class="bf-b1"><label id="' + pfx + '-tlabel" class="bf-lab" for="' + pfx + '-hour">出生时间</label></div>' +
-            '<div class="bf-a2"><div class="p-seg bf-cal" id="' + pfx + '-cal"><button class="on" data-v="solar">阳历</button><button data-v="lunar">农历</button></div></div>' +
+            '<div class="bf-a2"><div class="p-seg bf-cal" id="' + pfx + '-cal"><button class="on" data-v="solar">阳历</button>' +
+              (opts.simple ? '' : '<button data-v="lunar">农历</button>') + '</div></div>' +
             '<div class="bf-b2"><label class="p-switch"><input type="checkbox" id="' + pfx + '-knowtime" checked /><span>我知道出生时间</span></label>' +
               '<p class="p-note bf-hint" id="' + pfx + '-kthint">如果不知道确切出生时间，可以不选择</p></div>' +
             '<div class="bf-a3">' +
@@ -397,15 +400,17 @@
     }
     $("#" + pfx + "-knowtime").onchange = applyTime;
     function applyMode() {
-      var v = segVal($("#" + pfx + "-mode")) || "date";
-      $("#" + pfx + "-mdate").style.display = v === "date" ? "" : "none";
-      $("#" + pfx + "-mbazi").style.display = v === "bazi" ? "" : "none";
+      var modeEl = $("#" + pfx + "-mode");
+      var v = modeEl ? (segVal(modeEl) || "date") : "date";  // simple 模式无切换器，固定日期
+      var mdate = $("#" + pfx + "-mdate"), mbazi = $("#" + pfx + "-mbazi");
+      if (mdate) mdate.style.display = v === "date" ? "" : "none";
+      if (mbazi) mbazi.style.display = v === "bazi" ? "" : "none";
     }
     $$("#" + pfx + "-mode button").forEach(function (b) {
       b.onclick = function () { segSet($("#" + pfx + "-mode"), b.dataset.v); applyMode(); };
     });
     if (init) {
-      if (init.mode) segSet($("#" + pfx + "-mode"), init.mode);
+      if (init.mode && $("#" + pfx + "-mode")) segSet($("#" + pfx + "-mode"), init.mode);
       segSet($("#" + pfx + "-cal"), cal);
       if (init.year) {
         if (cal === "lunar") birthSetLunar(pfx, init.year, init.month, init.day);
@@ -426,7 +431,8 @@
   // 收集控件组数值；日期方式 {mode:"date", calendar, year, month, day, hour, minute, know_time}
   // 八字方式 {mode:"bazi", pillar_year, pillar_month, pillar_day, pillar_time}
   function birthCollect(pfx) {
-    var mode = segVal($("#" + pfx + "-mode")) || "date";
+    var modeEl = $("#" + pfx + "-mode");
+    var mode = modeEl ? (segVal(modeEl) || "date") : "date";
     if (mode === "bazi") {
       return { mode: "bazi",
         pillar_year: $("#" + pfx + "-py").value, pillar_month: $("#" + pfx + "-pm").value,
@@ -447,6 +453,131 @@
     out.hour = kt ? (+$("#" + pfx + "-hour").value || 0) : 12;
     out.minute = kt ? (+$("#" + pfx + "-minute").value || 0) : 0;
     return out;
+  }
+
+  /* ---------------- 出生地三级联动（国家 / 省份 / 城市） ----------------
+     数据源：中国全部省级行政区（含港澳台）+ 主要城市，另含常见国家/地区。
+     每项 = [城市名, 纬度, 经度, 时区]；中国城市统一东八区。
+     与出生日期时间一起构成档案共用的出生信息，供八字/占星等排盘。 */
+  var GEO_DATA = {
+    "中国": {
+      "北京市": [["北京",39.9042,116.4074,8]],
+      "天津市": [["天津",39.3434,117.3616,8]],
+      "上海市": [["上海",31.2304,121.4737,8]],
+      "重庆市": [["重庆",29.5630,106.5516,8]],
+      "河北省": [["石家庄",38.0428,114.5149,8],["唐山",39.6305,118.1802,8],["保定",38.8740,115.4646,8]],
+      "山西省": [["太原",37.8706,112.5489,8],["大同",40.0768,113.3001,8]],
+      "辽宁省": [["沈阳",41.8057,123.4315,8],["大连",38.9140,121.6147,8],["鞍山",41.1086,122.9944,8]],
+      "吉林省": [["长春",43.8171,125.3235,8],["吉林",43.8379,126.5496,8]],
+      "黑龙江省": [["哈尔滨",45.8038,126.5349,8],["齐齐哈尔",47.3543,123.9181,8],["大庆",46.5891,125.1143,8]],
+      "江苏省": [["南京",32.0603,118.7969,8],["苏州",31.2989,120.5853,8],["无锡",31.4912,120.3119,8],["常州",31.8108,119.9736,8]],
+      "浙江省": [["杭州",30.2741,120.1551,8],["宁波",29.8683,121.5440,8],["温州",27.9938,120.6993,8],["嘉兴",30.7461,120.7554,8]],
+      "安徽省": [["合肥",31.8206,117.2272,8],["芜湖",31.3529,118.4334,8],["蚌埠",32.9170,117.3898,8]],
+      "福建省": [["福州",26.0745,119.2965,8],["厦门",24.4798,118.0894,8],["泉州",24.8742,118.6757,8]],
+      "江西省": [["南昌",28.6829,115.8581,8],["赣州",25.8315,114.9355,8],["九江",29.7127,116.0018,8]],
+      "山东省": [["济南",36.6512,117.1201,8],["青岛",36.0671,120.3826,8],["烟台",37.4636,121.4479,8],["潍坊",36.7070,119.1613,8]],
+      "河南省": [["郑州",34.7466,113.6254,8],["洛阳",34.6197,112.4540,8],["开封",34.7972,114.3116,8],["南阳",32.9906,112.5284,8]],
+      "湖北省": [["武汉",30.5928,114.3055,8],["宜昌",30.6919,111.2865,8],["襄阳",32.0090,112.1224,8]],
+      "湖南省": [["长沙",28.2282,112.9388,8],["株洲",27.8270,113.1339,8],["衡阳",26.8937,112.5715,8]],
+      "广东省": [["广州",23.1291,113.2644,8],["深圳",22.5431,114.0579,8],["珠海",22.2707,113.5767,8],["佛山",23.0218,113.1214,8],["东莞",23.0207,113.7518,8]],
+      "广西壮族自治区": [["南宁",22.8170,108.3669,8],["桂林",25.2736,110.2900,8],["柳州",24.3264,109.4287,8]],
+      "海南省": [["海口",20.0442,110.1999,8],["三亚",18.2528,109.5119,8]],
+      "四川省": [["成都",30.5728,104.0668,8],["绵阳",31.4674,104.6796,8],["宜宾",28.7667,104.6417,8]],
+      "贵州省": [["贵阳",26.6470,106.6302,8],["遵义",27.7259,106.9270,8]],
+      "云南省": [["昆明",25.0389,102.7183,8],["大理",25.6065,100.2676,8],["丽江",26.8721,100.2327,8]],
+      "西藏自治区": [["拉萨",29.6520,91.1721,8],["日喀则",29.2677,88.8812,8]],
+      "陕西省": [["西安",34.3416,108.9398,8],["咸阳",34.3297,108.7092,8],["宝鸡",34.3616,107.2363,8]],
+      "甘肃省": [["兰州",36.0611,103.8343,8],["天水",34.5809,105.7249,8]],
+      "青海省": [["西宁",36.6171,101.7782,8],["海东",36.5026,102.1041,8]],
+      "宁夏回族自治区": [["银川",38.4872,106.2309,8],["吴忠",37.9906,106.1990,8]],
+      "新疆维吾尔自治区": [["乌鲁木齐",43.8256,87.6168,8],["喀什",39.4704,75.9898,8],["伊犁",43.9219,81.3179,8]],
+      "内蒙古自治区": [["呼和浩特",40.8426,111.7492,8],["包头",40.6575,109.8403,8],["赤峰",42.2580,118.9565,8]],
+      "香港特别行政区": [["香港",22.3193,114.1694,8]],
+      "澳门特别行政区": [["澳门",22.1987,113.5439,8]],
+      "台湾省": [["台北",25.0330,121.5654,8],["高雄",22.6273,120.3014,8],["台中",24.1477,120.6736,8],["台南",23.0000,120.2000,8]]
+    },
+    "新加坡": { "新加坡": [["新加坡",1.3521,103.8198,8]] },
+    "日本": { "关东": [["东京",35.6895,139.6917,9],["横滨",35.4437,139.6380,9]], "关西": [["大阪",34.6937,135.5023,9],["京都",35.0116,135.7681,9]] },
+    "韩国": { "京畿道": [["首尔",37.5665,126.9780,9]], "庆尚南道": [["釜山",35.1796,129.0756,9]] },
+    "马来西亚": { "雪兰莪": [["吉隆坡",3.1390,101.6869,8]], "槟城": [["槟城",5.4141,100.3288,8]] },
+    "泰国": { "曼谷": [["曼谷",13.7563,100.5018,7]], "清迈": [["清迈",18.7883,98.9853,7]] },
+    "美国": { "加利福尼亚州": [["洛杉矶",34.0522,-118.2437,-8],["旧金山",37.7749,-122.4194,-8]], "纽约州": [["纽约",40.7128,-74.0060,-5]] },
+    "加拿大": { "安大略省": [["多伦多",43.6532,-79.3832,-5]], "不列颠哥伦比亚省": [["温哥华",49.2827,-123.1207,-8]] },
+    "英国": { "英格兰": [["伦敦",51.5074,-0.1278,0]], "苏格兰": [["爱丁堡",55.9533,-3.1883,0]] },
+    "澳大利亚": { "新南威尔士州": [["悉尼",-33.8688,151.2093,10]], "维多利亚州": [["墨尔本",-37.8136,144.9631,10]] }
+  };
+  function placeFieldsHTML(pfx, opts) {
+    opts = opts || {};
+    return '<div class="place-fields" id="' + pfx + '-place">' +
+      '<div class="bf-grid">' +
+        '<div class="bf-a1"><label class="bf-lab">国家 / 地区</label></div>' +
+        '<div class="bf-b1"><label class="bf-lab">省 / 州</label></div>' +
+        '<div class="bf-a2"><select class="ti" id="' + pfx + '-country"></select></div>' +
+        '<div class="bf-b2"><select class="ti" id="' + pfx + '-province"></select></div>' +
+        '<div class="bf-a3"><label class="bf-lab">城市</label></div>' +
+        '<div class="bf-b3"><select class="ti" id="' + pfx + '-city"></select></div>' +
+      '</div>' +
+      '<input type="hidden" id="' + pfx + '-lat" /><input type="hidden" id="' + pfx + '-lon" /><input type="hidden" id="' + pfx + '-tz" />' +
+      '<p class="p-note pl-hint">出生地决定占星的上升与宫位；列表未含的城市可选邻近城市或手动调整经纬度。</p>' +
+    '</div>';
+  }
+  // 绑定三级联动；init = {country, province, city, lat, lon, tz}
+  function placeFieldsBind(pfx, init) {
+    init = init || {};
+    var cEl = $("#" + pfx + "-country"), pEl = $("#" + pfx + "-province"), ctyEl = $("#" + pfx + "-city");
+    function fillProvinces(keep) {
+      var provs = GEO_DATA[cEl.value] || {};
+      var keys = Object.keys(provs);
+      pEl.innerHTML = keys.map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
+      if (keep && provs[keep]) pEl.value = keep;
+      fillCities(init && init.city);
+    }
+    function fillCities(keep) {
+      var cities = (GEO_DATA[cEl.value] || {})[pEl.value] || [];
+      ctyEl.innerHTML = cities.map(function (c) { return '<option value="' + esc(c[0]) + '" data-lat="' + c[1] + '" data-lon="' + c[2] + '" data-tz="' + c[3] + '">' + esc(c[0]) + '</option>'; }).join("");
+      var chosen = keep && ctyEl.querySelector('option[value="' + String(keep).replace(/"/g, '\\"') + '"]');
+      if (chosen) ctyEl.value = keep;
+      applyGeo();
+    }
+    function applyGeo() {
+      var o = ctyEl.options[ctyEl.selectedIndex];
+      $("#" + pfx + "-lat").value = o ? (o.dataset.lat || "") : "";
+      $("#" + pfx + "-lon").value = o ? (o.dataset.lon || "") : "";
+      $("#" + pfx + "-tz").value = o ? (o.dataset.tz || 8) : 8;
+    }
+    cEl.innerHTML = Object.keys(GEO_DATA).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
+    cEl.onchange = function () { init = null; fillProvinces(); };
+    pEl.onchange = function () { init = null; fillCities(); };
+    ctyEl.onchange = applyGeo;
+    // 回填档案：优先按名称精确匹配三级；匹配不到但有经纬度时，补一个"自定义"城市项
+    var country = init.country || "中国";
+    var prov = init.province || "", city = init.city || "";
+    if (!GEO_DATA[country]) country = "中国";
+    cEl.value = country;
+    var provs = GEO_DATA[country] || {};
+    if (!provs[prov]) prov = Object.keys(provs)[0] || "";
+    pEl.innerHTML = Object.keys(provs).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
+    pEl.value = prov;
+    var cities = provs[prov] || [];
+    var found = cities.some(function (c) { return c[0] === city; });
+    if (city && !found && init.lat != null && init.lon != null) {
+      cities = cities.slice();
+      cities.push([city, init.lat, init.lon, init.tz != null ? init.tz : 8]);
+    }
+    ctyEl.innerHTML = cities.map(function (c) { return '<option value="' + esc(c[0]) + '" data-lat="' + c[1] + '" data-lon="' + c[2] + '" data-tz="' + c[3] + '">' + esc(c[0]) + '</option>'; }).join("");
+    if (city && ctyEl.querySelector('option[value="' + String(city).replace(/"/g, '\\"') + '"]')) ctyEl.value = city;
+    if ((!city || !found) && init.lat != null && init.lon != null && city) {
+      ctyEl.value = city; // 自定义项已追加
+    }
+    applyGeo();
+  }
+  function placeCollect(pfx) {
+    var co = $("#" + pfx + "-country").value;
+    var pr = $("#" + pfx + "-province").value;
+    var city = $("#" + pfx + "-city").value;
+    var lat = $("#" + pfx + "-lat").value, lon = $("#" + pfx + "-lon").value, tz = $("#" + pfx + "-tz").value || 8;
+    return { country: co, province: pr, city: city, place: (co === "中国" ? pr.replace(/(省|市|自治区|特别行政区)$/, "") : co) + (city ? "·" + city : ""),
+             lat: lat === "" ? null : +lat, lon: lon === "" ? null : +lon, tz: +tz };
   }
 
   /* ---------------- 「选择日期」弹窗（年月下拉 + 周一起始月历网格） ---------------- */
@@ -1210,50 +1341,19 @@
   }
 
   /* ================= 占星命盘（完整本命盘） ================= */
-  // 常见出生城市（经纬度 + 时区），与后端 astrology.CITIES 对齐；自定义时手动填经纬度
-  var ASTRO_CITIES = [
-    ["北京",39.9042,116.4074,8],["上海",31.2304,121.4737,8],["广州",23.1291,113.2644,8],
-    ["深圳",22.5431,114.0579,8],["杭州",30.2741,120.1551,8],["成都",30.5728,104.0668,8],
-    ["武汉",30.5928,114.3055,8],["西安",34.3416,108.9398,8],["南京",32.0603,118.7969,8],
-    ["重庆",29.5630,106.5516,8],["天津",39.3434,117.3616,8],["苏州",31.2989,120.5853,8],
-    ["长沙",28.2282,112.9388,8],["郑州",34.7466,113.6254,8],["青岛",36.0671,120.3826,8],
-    ["厦门",24.4798,118.0894,8],["昆明",25.0389,102.7183,8],["香港",22.3193,114.1694,8],
-    ["台北",25.0330,121.5654,8],["新加坡",1.3521,103.8198,8]
-  ];
   var SIGN_SYM = { "白羊座":"♈","金牛座":"♉","双子座":"♊","巨蟹座":"♋","狮子座":"♌","处女座":"♍",
     "天秤座":"♎","天蝎座":"♏","射手座":"♐","摩羯座":"♑","水瓶座":"♒","双鱼座":"♓" };
   function signSym(n) { return SIGN_SYM[n] || "✦"; }
 
   function renderAstrology() {
-    // 登录用户：从档案预填出生日期与时间（历法已在写入端归一为公历）
-    var pre = { y: "", m: "", d: "", h: 12, mi: 0 };
-    if (S.profile && S.profileBirth && S.profileBirth.year) {
-      pre.y = S.profileBirth.year; pre.m = S.profileBirth.month; pre.d = S.profileBirth.day;
-      if (S.profileBirth.hour !== undefined && S.profileBirth.hour !== null) pre.h = S.profileBirth.hour;
-      pre.mi = S.profileBirth.minute || 0;
-    }
-    var cityOpts = ASTRO_CITIES.map(function (c) {
-      return '<option value="' + c[0] + '" data-lat="' + c[1] + '" data-lon="' + c[2] + '" data-tz="' + c[3] + '">' + c[0] + '</option>';
-    }).join("");
     stageEl().innerHTML =
-      toolHero("占星命盘 · 本命盘", "输入出生时间与出生地，排出你的完整本命盘：太阳、月亮、上升三大件，十大行星落座，十二宫宫位与主要相位。AI 将据此作一次结构化解读。") +
+      toolHero("占星命盘 · 本命盘", "使用与你个人档案共用的出生资料排出完整本命盘：太阳、月亮、上升三大件，十大行星落座，十二宫宫位与主要相位。AI 将据此作一次结构化解读。") +
       '<div class="tool-card"><div class="tool-form" id="as-form">' +
-        '<div class="tf-group"><div class="tf-gt">出生资料</div>' +
-          '<div class="tf-grid" style="margin:0 0 10px">' +
-            '<div class="tf-field"><label>出生日期（公历）</label><input class="ti" id="as-date" type="date" value="' +
-              (pre.y ? pre.y + "-" + String(pre.m).padStart(2,"0") + "-" + String(pre.d).padStart(2,"0") : "") + '" /></div>' +
-            '<div class="tf-field"><label>出生时间</label><input class="ti" id="as-time" type="time" value="' +
-              String(pre.h).padStart(2,"0") + ":" + String(pre.mi).padStart(2,"0") + '" /></div>' +
-          '</div>' +
-          '<div class="tf-field"><label>出生地</label>' +
-            '<select class="ti" id="as-city"><option value="">请选择城市…</option>' + cityOpts +
-              '<option value="__custom">自定义经纬度</option></select></div>' +
-          '<div class="tf-grid" id="as-geo" style="margin-top:10px;display:none">' +
-            '<div class="tf-field"><label>纬度（-90~90，北纬为正）</label><input class="ti" id="as-lat" type="number" step="0.0001" value="39.9042" /></div>' +
-            '<div class="tf-field"><label>经度（-180~180，东经为正）</label><input class="ti" id="as-lon" type="number" step="0.0001" value="116.4074" /></div>' +
-            '<div class="tf-field"><label>时区（UTC 偏移，中国为 8）</label><input class="ti" id="as-tz" type="number" step="0.5" value="8" /></div>' +
-          '</div>' +
-          '<p class="p-note" style="margin:8px 0 0">出生地决定上升与宫位；不知道精确时间时可用中午 12:00，但上升与宫位会有偏差。</p>' +
+        '<div class="tf-group"><div class="tf-gt">出生资料' +
+          (S.profile ? ' <span class="as-from-profile">已带入个人档案，排盘后自动同步</span>' : '') + '</div>' +
+          birthFieldsHTML("as", { simple: true, compact: true }) +
+          placeFieldsHTML("as") +
+          '<p class="p-note" style="margin:8px 0 0">出生地决定上升与宫位；不知道精确时间时可用中午 12:00，但上升与宫位会有偏差。此处信息与个人档案共用，登录后会自动保存。</p>' +
         '</div>' +
         '<div class="tf-group"><div class="tf-gt">你想问什么？</div>' +
           '<input class="ti" id="as-q" placeholder="例如：我现阶段适合怎样发展事业？" />' +
@@ -1270,36 +1370,30 @@
       ], "占星是一面象征之镜，帮助你理解性格倾向与人生课题；它提供视角而非答案，选择权始终在你手中。");
 
     $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#as-q"); }; });
-    $("#as-city").onchange = function () {
-      $("#as-geo").style.display = this.value === "__custom" ? "" : "none";
-    };
-    // 登录态异步（再）拉一次档案用于预填，幂等；覆盖 profileBirth 尚未缓存的情况
+    // 用共用组件绑定并预填：先看本地缓存，再异步拉档案覆盖（幂等）
+    function fillFromBirth(b) {
+      if (!b || !b.year) return;
+      birthFieldsBind("as", { calendar: "solar", year: b.year, month: b.month, day: b.day,
+        hour: b.hour != null ? b.hour : 12, minute: b.minute != null ? b.minute : 0,
+        know_time: b.know_time !== false });
+      placeFieldsBind("as", b);
+    }
+    if (S.profileBirth) fillFromBirth(S.profileBirth);
+    else { birthFieldsBind("as", { calendar: "solar" }); placeFieldsBind("as", {}); }
     if (S.profile) {
       fetch("/api/profile/get?id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token)).then(function (r) { return r.json(); }).then(function (d) {
         var b = (d.ok && d.profile && d.profile.birth) || {};
         S.profileBirth = b;
-        if (b.year && !$("#as-date").value) {
-          $("#as-date").value = b.year + "-" + String(b.month).padStart(2,"0") + "-" + String(b.day).padStart(2,"0");
-          if (b.hour != null) $("#as-time").value = String(b.hour).padStart(2,"0") + ":" + String(b.minute || 0).padStart(2,"0");
-        }
+        fillFromBirth(b);
       }).catch(function () {});
     }
 
     function asParams() {
-      var date = $("#as-date").value, time = $("#as-time").value || "12:00";
-      var y, m, d, h, mi;
-      if (date && date.split("-").length === 3) { var p2 = date.split("-"); y = +p2[0]; m = +p2[1]; d = +p2[2]; }
-      var tp = time.split(":"); h = +tp[0]; mi = +tp[1] || 0;
-      var cityVal = $("#as-city").value;
-      var place = "", lat = "", lon = "", tz = 8;
-      if (cityVal === "__custom") {
-        lat = $("#as-lat").value; lon = $("#as-lon").value; tz = $("#as-tz").value || 8;
-        place = "自定义(" + lat + "," + lon + ")";
-      } else if (cityVal) {
-        var opt = $("#as-city").options[$("#as-city").selectedIndex];
-        place = cityVal; lat = opt.dataset.lat; lon = opt.dataset.lon; tz = opt.dataset.tz;
-      }
-      return { y: y, m: m, d: d, h: h, mi: mi, place: place, lat: lat, lon: lon, tz: tz };
+      var b = birthCollect("as");
+      var pl = placeCollect("as");
+      return { y: b.year, m: b.month, d: b.day, h: b.hour, mi: b.minute,
+               country: pl.country, province: pl.province, city: pl.city,
+               place: pl.place, lat: pl.lat, lon: pl.lon, tz: pl.tz };
     }
     function posLine(label, sym, sign, deg, house) {
       return '<div class="as-pos"><span class="as-pos-sym">' + sym + '</span>' +
@@ -1315,12 +1409,14 @@
       var q = $("#as-q").value.trim();
       if (!q) { toast("请先写下你想问的事"); $("#as-q").focus(); return; }
       var pa = asParams();
-      if (!pa.y || !pa.m || !pa.d) { toast("请选择出生日期"); $("#as-date").focus(); return; }
-      if (!pa.place) { toast("请选择出生城市或填写经纬度"); $("#as-city").focus(); return; }
+      if (!pa.y || !pa.m || !pa.d) { toast("请在出生资料里选择出生日期"); return; }
+      if (pa.lat == null || pa.lon == null) { toast("请选择出生国家 / 省份 / 城市"); return; }
       asDrawing = true;
       $("#as-err").textContent = "";
       var qs = "year=" + pa.y + "&month=" + pa.m + "&day=" + pa.d + "&hour=" + pa.h + "&minute=" + pa.mi +
-        "&lat=" + pa.lat + "&lon=" + pa.lon + "&tz=" + pa.tz + "&place=" + encodeURIComponent(pa.place);
+        "&lat=" + pa.lat + "&lon=" + pa.lon + "&tz=" + pa.tz + "&place=" + encodeURIComponent(pa.place) +
+        "&country=" + encodeURIComponent(pa.country) + "&province=" + encodeURIComponent(pa.province) +
+        "&city=" + encodeURIComponent(pa.city) + (S.profile ? "&save=1&gender=" + encodeURIComponent((S.profileBirth && S.profileBirth.gender) || "男") : "");
       fetch("/api/astrology/calc?" + qs).then(function (r) { return r.json(); }).then(function (d) {
         asDrawing = false;
         if (!d.ok) { $("#as-err").textContent = d.error || "排盘失败"; return; }
@@ -1935,6 +2031,8 @@
     });
     var be = $(".pf-birth-edit", $("#pf-body"));
     if (be) be.onclick = function () { pfState.editBirth = !pfState.editBirth; paintProfile(stats, list, prof); };
+    // 编辑态：用共用组件回填档案出生资料（日期时间 + 三级出生地）
+    if (pfState.editBirth && $("#pfb-date")) pfBirthFormBind(birth);
     var bs = $("#pf-birth-save", $("#pf-body"));
     if (bs) bs.onclick = function () { pfSaveBirth(birth); };
     var at = $(".pf-account-toggle", $("#pf-body"));
@@ -1990,61 +2088,58 @@
     var knowTime = birth.know_time !== false;
     var hh = birth.hour != null ? birth.hour : null;
     var mm = birth.minute != null ? birth.minute : null;
+    var place = [birth.country, birth.province, birth.city].filter(function (x) { return !!x; }).join(" · ");
     return [
       ["出生日期", (y && m && d) ? (y + "年" + m + "月" + d + "日") : "未填写"],
       ["出生时间", knowTime ? (hh != null ? (hh + "时" + (mm || 0) + "分") : "未填写") : "未知（按午时排盘）"],
+      ["出生地", place || "未填写"],
       ["性别", g || "未填写"]
     ];
   }
-  /* 个人中心里的档案出生信息编辑表单 */
+  /* 个人中心里的档案出生信息编辑表单：与占星页共用同一套出生资料模板 */
   function pfBirthForm(birth) {
     birth = birth || {};
-    var seg = birthSegment(birth);
+    var g = birth.gender === "male" ? "男" : (birth.gender === "female" ? "女" : (birth.gender || "男"));
+    return '<div class="pf-birth-form">' +
+      birthFieldsHTML("pfb", { simple: true, compact: true }) +
+      '<div class="tf-field" style="margin-top:10px"><label>性别</label><select class="ti" id="pfb-gender">' +
+        '<option' + (g === "男" ? " selected" : "") + '>男</option>' +
+        '<option' + (g === "女" ? " selected" : "") + '>女</option></select></div>' +
+      placeFieldsHTML("pfb") +
+      '<div style="display:flex;gap:10px;align-items:center;margin-top:12px">' +
+        '<button class="tool-submit" type="button" id="pf-birth-save" style="flex:0 0 auto;width:auto;padding:9px 20px">保存到档案</button>' +
+        '<span class="p-note" style="margin:0">保存后八字、紫微、黄历、占星会同步使用这份出生信息</span>' +
+      '</div>' +
+    '</div>';
+  }
+  /* 渲染档案编辑表单后，用共用组件回填档案值 */
+  function pfBirthFormBind(birth) {
+    birth = birth || {};
     var y = birth.year, m = birth.month, d = birth.day;
     if (!(y && m && d) && birth.date) {
       var s = String(birth.date).split("-"); y = +s[0]; m = +s[1]; d = +s[2];
     }
-    y = y || 1990; m = m || 1; d = d || 1;
-    var hours = "", mins = "";
-    for (var h = 0; h < 24; h++) hours += '<option value="' + h + '"' + (birth.hour === h ? " selected" : "") + '>' + h + '时</option>';
-    for (var mi = 0; mi < 60; mi++) mins += '<option value="' + mi + '"' + (birth.minute === mi ? " selected" : "") + '>' + mi + '分</option>';
-    var g = birth.gender === "male" ? "男" : (birth.gender === "female" ? "女" : (birth.gender || "男"));
-    var know = birth.know_time !== false;
-    return '<div class="pf-birth-form">' +
-      '<div class="tf-field"><label>出生日期</label><input class="ti" type="date" id="pf-bd" value="' +
-        y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0") + '" /></div>' +
-      '<div class="pf-birth-row">' +
-        '<div class="tf-field"><label>出生时间</label><div class="pf-birth-time">' +
-          '<select class="ti" id="pf-bh">' + hours + '</select>' +
-          '<select class="ti" id="pf-bm">' + mins + '</select></div></div>' +
-        '<div class="tf-field"><label>性别</label><select class="ti" id="pf-bg">' +
-          '<option' + (g === "男" ? " selected" : "") + '>男</option>' +
-          '<option' + (g === "女" ? " selected" : "") + '>女</option></select></div>' +
-      '</div>' +
-      '<label class="p-switch" style="display:flex;align-items:center;gap:8px;margin:2px 0 12px">' +
-        '<input type="checkbox" id="pf-bkt"' + (know ? " checked" : "") + ' /><span>我知道出生时间</span></label>' +
-      '<div style="display:flex;gap:10px;align-items:center">' +
-        '<button class="tool-submit" type="button" id="pf-birth-save" style="flex:0 0 auto;width:auto;padding:9px 20px">保存到档案</button>' +
-        '<span class="p-note" style="margin:0">保存后八字、紫微、黄历会同步使用新的出生信息</span>' +
-      '</div>' +
-    '</div>';
+    birthFieldsBind("pfb", { calendar: "solar", year: y || 1990, month: m || 1, day: d || 1,
+      hour: birth.hour != null ? birth.hour : 12, minute: birth.minute != null ? birth.minute : 0,
+      know_time: birth.know_time !== false });
+    placeFieldsBind("pfb", birth);
   }
   /* 保存档案出生信息 */
   function pfSaveBirth(old) {
-    var dv = ($("#pf-bd") || {}).value || "";
-    var seg = dv.split("-");
-    if (seg.length !== 3 || !seg[0]) { toast("请选择出生日期"); return; }
-    var body = {
-      profile_id: S.profile.id, token: S.profile.token,
-      birth: {
-        year: +seg[0], month: +seg[1], day: +seg[2],
-        hour: +($("#pf-bh") || {}).value || 0,
-        minute: +($("#pf-bm") || {}).value || 0,
-        gender: ($("#pf-bg") || {}).value || "男",
-        know_time: !!($("#pf-bkt") || {}).checked,
-        calendar: "solar"
-      }
+    var b = birthCollect("pfb");
+    if (b.mode === "bazi") { toast("档案出生信息请用公历日期填写"); return; }
+    if (!b.year || !b.month || !b.day) { toast("请选择出生日期"); return; }
+    var pl = placeCollect("pfb");
+    var birth = {
+      year: b.year, month: b.month, day: b.day,
+      hour: b.hour, minute: b.minute,
+      gender: ($("#pfb-gender") || {}).value || "男",
+      know_time: b.know_time, calendar: b.calendar || "solar"
     };
+    ["country", "province", "city", "lat", "lon", "tz"].forEach(function (k) {
+      if (pl[k] != null && pl[k] !== "") birth[k] = pl[k];
+    });
+    var body = { profile_id: S.profile.id, token: S.profile.token, birth: birth };
     fetch("/api/profile/update", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
