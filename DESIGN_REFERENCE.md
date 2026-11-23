@@ -126,3 +126,11 @@
 - 个人中心是撑满 `#pf-body` 内宽的卡片流（个人记忆 / 统计卡均 `max-width:none`）。历史区此前误用 `max-width:var(--content-w)=760;margin:auto` 居中，导致相对上方卡片整体右缩进约 90px。
 - 修订：`.pf-hist-zone` 去掉 max-width 与 auto margin，改 `margin:22px 0 0` 跟随父容器内宽；`.p-ai.p-hist-detail` 覆盖全局 `.p-ai` 的 760 限制（`max-width:none;margin:16px 0 0`）。三者（个人记忆 / 统计 / 历史区）left 与 width 实测完全一致。
 - 注意：`--content-w:760` 仍用于**功能页**（盘面/提问/解读/归档），个人中心卡片流不在此列，勿混淆。
+
+### 7.9 卡片节奏 / 追问框沉底 / AI 画像管理（v91）
+- **卡片垂直节奏**：盘面卡→提问卡是 16px，提问卡→解读卡此前是 `.p-ai` 全局 8px，忽大忽小。用 `#as-ai-out > .p-ai:first-child` 等各功能 ai-out/结果容器首张解读卡统一到 16px（追问结果卡在 slot 内不受影响）。
+- **追问框沉底**：追问结果槽 `.ai-follow-slot` 与输入栏 `.ai-follow` 从「输入栏包含 slot」改为「slot 前置、输入栏紧随其后」的兄弟结构。多轮追问结果都追加进 slot，输入栏永远在所有追问结果最下方（`body → slot → 输入栏`）。追问结果卡仍不挂新输入框，始终只有一个输入栏。
+- **AI 画像管理（回答「删了历史 AI 为何还记得」）**：
+  - 用户画像 `profiles.user_profile` 与更早对话摘要 `summaries` 是 AI 从历次对话提炼的**长期记忆，独立于 `feature_history` 历史提问表**——删除历史提问不会清除。追问时 `_personalize → get_user_profile` 会把它重新注入 prompt，所以删历史后 AI 仍可能引用旧信息（如「八成上限两成现金零融资」）。
+  - 新增 `GET /api/profile/ai_profile`(profile_id,token) 读画像+摘要、`POST /api/profile/ai_profile/clear` 清空画像+摘要并把 `profile_upto`/`compressed_until` 水位推进到最新消息（避免旧消息被再次提炼重建）。`profile.get_ai_profile/clear_ai_profile` 实现。
+  - 个人中心新增「AI 记忆管理」卡（在个人记忆卡上方）：展示 AI 记住的内容 + 「清空 AI 画像」两步确认。让用户看清来源并自主清除。
