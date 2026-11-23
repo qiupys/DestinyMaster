@@ -72,7 +72,7 @@ def build_prompt(
     guide_block = FEATURE_GUIDES.get(feature, "")
     if guide_block:
         guide_block = "\n\n" + guide_block
-    profile_block = f"\n\n【用户画像（个性化参考）】\n{user_profile}" if user_profile else ""
+    profile_block = f"\n\n【个人记忆（用户手动维护的自我认知，个性化参考；据此调整语气与关注点，不要在回复中复述或宣称记得这些）】\n{user_profile}" if user_profile else ""
     hist_block = ""
     if history:
         lines = []

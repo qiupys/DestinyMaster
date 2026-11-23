@@ -717,10 +717,8 @@ async def api_history_followup(
         if kb:
             data["kb_block"] = ("【知识库摘录（星曜/宫位/格局释义，供引用增强解读；"
                                 "若与盘面数据冲突，以盘面数据为准）】\n" + "\n\n".join(kb) + "\n\n")
-        p = profile_store.get_profile(pid)
-        summary = (p.get("summary") or "")[:1800] if p else ""
-        prompt = ai.build_ziwei_prompt(data, question, prior,
-                                       profile_summary=summary, user_profile=up)
+        # 个性注入唯一来源=个人记忆（up 已是其文本）；旧的对话摘要已废弃，不再注入。
+        prompt = ai.build_ziwei_prompt(data, question, prior, user_profile=up)
     else:
         # 追问检索：塔罗按 slug 精确取文献并把追问聚焦的那张牌置顶；其余功能按关键词打分
         if feature == "tarot":

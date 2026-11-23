@@ -320,24 +320,18 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .p-ai-archived.p-ai-open .ai-follow { display: block; }
 .p-ai-archived.p-ai-open .p-ai-head::after { content: "收起"; }
 
-/* 整轮归档区：一次「提问」= 牌面/卦象结果卡 + AI 解读 + 追问链，作为一组折叠保留。
-   独立于结果容器之外（结果容器在重新抽牌/起卦时会被 innerHTML 重建），所以归档不会被冲掉。 */
+/* 整轮归档区：一次「提问」归档为【一张 .p-ai.p-ai-archived 卡】，与新提问解读卡完全同构
+   （卡头=问题，点按折叠/展开，卡体=解读正文），彻底避免「卡套卡」的嵌套感。
+   独立于结果容器之外（结果容器在重新抽牌/起卦/排盘时会被 innerHTML 重建），归档不会被冲掉。 */
 .round-archive { max-width: var(--content-w); margin: 22px auto 0; }
 #p-stage-huangli .round-archive,
 #p-stage-ziwei .round-archive { max-width: var(--content-w); }
 .round-archive-hd { font-size: 11px; color: var(--ink-3); margin: 0 2px 8px; letter-spacing: .5px; }
-.round-item { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; overflow: hidden; background: var(--panel); }
-.round-item-hd {
-  display: flex; align-items: center; gap: 9px; padding: 11px 16px; cursor: pointer;
-  background: linear-gradient(90deg, var(--accent-soft), transparent); font-size: 12.5px; color: var(--ink-2);
-}
-.round-item-hd .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); flex: 0 0 auto; }
-.round-item-hd .rq { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.round-item-hd .rsign { font-size: 11px; color: var(--ink-3); flex: 0 0 auto; }
-.round-item-bd { display: none; padding: 4px 12px 12px; }
-.round-item.open .round-item-bd { display: block; }
-.round-item.open .round-item-hd .rsign::after { content: ""; }
-.round-item-bd .p-ai { margin-top: 8px; }
+.round-archive > .p-ai-archived { margin-top: 0; margin-bottom: 12px; max-width: none; }
+/* 归档卡里并入的盘面事实摘要：弱化成引用块，不另起卡壳 */
+.pf-arch-fact { margin: 0 0 12px; padding: 8px 12px; background: var(--accent-soft);
+  border-radius: 8px; font-size: 12px; color: var(--ink-2); }
+.pf-arch-fact .p-card { border: none; background: none; padding: 0; margin: 0; }
 /* 归档轮只读：JS 归档时已移除 AI 解读按钮/快捷 chips/开关（防止用旧牌解读新问题）；
    追问框保留可用——在归档轮里追问仍沿用本轮旧牌/旧卦。这里 CSS 兜底隐藏解读类按钮。 */
 .round-item-bd .p-suggest, .round-item-bd .tool-ai, .round-item-bd .p-switch { display: none !important; }
@@ -441,14 +435,7 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .pf-btn:hover { border-color:var(--wx-jin); color:var(--wx-jin); background:var(--accent-soft); }
 .pf-acct-row .pf-btn { align-self:flex-end; }
 /* ===================== 个人记忆卡片 ===================== */
-/* AI 画像管理卡：展示 AI 从历史对话提炼的长期记忆，可清空 */
-.pf-aiup { margin-top:14px; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); }
-.pf-aiup-block { margin-top:12px; padding-top:11px; border-top:1px dashed var(--line); }
-.pf-aiup-k { font-size:11px; color:var(--wx-jin); margin-bottom:6px; letter-spacing:.3px; }
-.pf-aiup-v { font-size:12.5px; line-height:1.8; color:var(--ink-2); white-space:pre-wrap; }
-.pf-aiup-empty { margin:12px 0 2px; }
-.pf-aiup-clear.arm { color:#c0392b; border-color:#c0392b; }
-.pf-aiup-clear:disabled { opacity:.5; cursor:not-allowed; }
+/* 个性化记忆唯一来源=个人记忆卡（用户可编辑/删除，删除后即时不再注入 prompt） */
 .pf-memory { margin-top:14px; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); }
 .pf-mem-actions { display:inline-flex; gap:8px; }
 .pf-memory > .p-note { margin:8px 0 0; }

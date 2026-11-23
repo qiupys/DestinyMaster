@@ -9,6 +9,7 @@ import json
 from datetime import datetime
 
 import profile as profile_store
+import memory as memory_store
 
 FEATURES = ("bazi", "ziwei", "meihua", "liuyao", "qimen", "tarot", "huangli", "astrology")
 FEATURE_NAMES = {
@@ -208,9 +209,12 @@ def delete_many(profile_id: int, history_ids: list[int]) -> int:
 
 
 def personalization(profile_id: int, feature: str) -> dict:
-    """返回个性化上下文：用户画像 + 档案出生信息 + 本功能近期提问。
+    """返回个性化上下文：个人记忆 + 档案出生信息 + 本功能近期提问。
 
-    注入 AI prompt 实现千人千面；无数据时返回空结构，调用方安全降级。
+    「个性化记忆」唯一来源 = 用户手动维护的个人记忆卡（personal_memory）；
+    用户可随时编辑/删除，删除后即时不再注入。早期自动提炼的用户画像（user_profile）
+    已废弃不再读取，避免出现「删除历史后 AI 仍凭画像记得旧信息」。
+    无数据时返回空结构，调用方安全降级。
     """
     ctx: dict = {"user_profile": "", "birth": {}, "recent": []}
     if not profile_id:
@@ -218,10 +222,14 @@ def personalization(profile_id: int, feature: str) -> dict:
     try:
         p = profile_store.get_profile(profile_id)
         if p:
-            ctx["user_profile"] = profile_store.get_user_profile(profile_id) or ""
             ctx["birth"] = p.get("birth") or {}
     except Exception:
         pass
+    # 唯一个性化记忆源：个人记忆卡
+    try:
+        ctx["user_profile"] = memory_store.personalization_text(profile_id)
+    except Exception:
+        ctx["user_profile"] = ""
     ctx["recent"] = [
         {"ts": h["ts"], "question": h["question"], "answer": h.get("answer", "")}
         for h in list_history(profile_id, feature, limit=6)

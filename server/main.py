@@ -133,29 +133,6 @@ async def api_profile_update(body: ProfileUpdateBody):
     )
 
 
-@app.get("/api/profile/ai_profile")
-async def api_profile_ai_profile(
-    profile_id: int = Query(...),
-    token: str = Query(...),
-):
-    """读取 AI 从历史对话中提炼的长期画像与摘要，供个人中心展示与清除。"""
-    if not profile_store.auth(profile_id, token):
-        return {"ok": False, "error": "登录状态失效，请重新登录"}
-    if not profile_store.get_profile(profile_id):
-        return {"ok": False, "error": "档案不存在"}
-    return {"ok": True, **profile_store.get_ai_profile(profile_id)}
-
-
-@app.post("/api/profile/ai_profile/clear")
-async def api_profile_ai_profile_clear(body: dict):
-    """清空 AI 长期画像与摘要；历史提问记录本身保留。"""
-    pid, token = body.get("profile_id"), body.get("token")
-    if not profile_store.auth(pid or 0, token or ""):
-        return {"ok": False, "error": "登录状态失效，请重新登录"}
-    profile_store.clear_ai_profile(int(pid))
-    return {"ok": True}
-
-
 # ---------------- 管理员端点：口令在 server/.adminkey，可删用户、不可见用户资料 ----------------
 from fastapi import Request
 from fastapi import HTTPException
@@ -349,9 +326,8 @@ async def api_deduce(
             up = (up + "\n出生信息：" + str(b.get("year", "")) + "-" + str(b.get("month", ""))
                   + "-" + str(b.get("day", ""))).strip()
         recent = ctx["recent"]
-        p = profile_store.get_profile(pid)
-        if p:
-            up = (up + "\n既往推演摘要：" + (p.get("summary") or "")[:1800]).strip()
+        # 个性注入唯一来源=个人记忆（ctx["user_profile"] 已是其文本）；
+        # 旧的「对话摘要 summary」属已废弃的 AI 记忆管理，不再注入。
     prompt = ai.build_ziwei_prompt(ziwei_data, question, recent, user_profile=up)
 
     # 落盘 payload：保存结构化 prompt 数据 + 排盘参数，追问时无需内存 chart 即可重建
@@ -409,7 +385,7 @@ def _record(session: dict, question: str, full: str, key: str | None = None):
             profile_store.save_message(pid, session.get("chart_id") or "", "assistant", full,
                                        dedupe_key=key)
             asyncio.get_running_loop().create_task(maybe_compress_async(pid))
-            asyncio.get_running_loop().create_task(maybe_profile_async(pid))
+            # 自动画像已废弃：个性化记忆唯一来源改为用户手动维护的个人记忆（personal_memory）
         except Exception:
             pass
 
@@ -422,15 +398,6 @@ async def maybe_compress_async(pid: int):
             out += chunk
         return out.strip()
     await profile_store.maybe_compress(pid, compress_fn)
-
-
-async def maybe_profile_async(pid: int):
-    async def llm_fn(prompt):
-        out = ""
-        async for chunk in stream_deduce(prompt):
-            out += chunk
-        return out.strip()
-    await profile_store.maybe_update_user_profile(pid, llm_fn)
 
 
 app.include_router(feature_api.router)

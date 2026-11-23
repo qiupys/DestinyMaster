@@ -50,6 +50,25 @@ def list_items(profile_id: int) -> list[dict]:
     ]
 
 
+def personalization_text(profile_id: int) -> str:
+    """把用户手动维护的个人记忆拼成注入 prompt 的文本。
+
+    这是个性化的唯一来源：AI 记住什么完全由个人记忆卡决定，用户可随时编辑/删除，
+    删除后注入立即消失（不再有独立于用户控制之外的自动画像）。
+    """
+    items = list_items(profile_id)
+    if not items:
+        return ""
+    lines = []
+    for m in items:
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        cat = (m.get("category") or "").strip()
+        lines.append((f"[{cat}] {content}" if cat else content))
+    return "\n".join(lines)
+
+
 def add(profile_id: int, content: str, category: str = "综合", source: str = "手动添加") -> dict | None:
     content = (content or "").strip()
     if not content:

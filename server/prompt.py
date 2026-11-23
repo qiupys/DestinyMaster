@@ -324,8 +324,8 @@ def assemble_ziwei(data: dict, question: str, history: list | None = None,
     profile_block = ""
     if user_profile:
         profile_block += (
-            "【用户画像（从过往对话中沉淀的用户侧写，仅供参考；"
-            "据此调整语气与关注点，不要在回复中复述画像）】\n"
+            "【个人记忆（用户手动维护的自我认知，仅供参考；"
+            "据此调整语气与关注点，不要在回复中复述或宣称记得这些）】\n"
             + user_profile[:800] + "\n\n"
         )
     if profile_summary:

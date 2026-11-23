@@ -381,19 +381,12 @@ def build_digest_prompt(messages: list[dict]) -> str:
     )
 
 
-# ---------------- 用户画像（从对话中持续更新用户侧写） ----------------
-PROFILE_TRIGGER = 8          # 自上次画像以来新增 ≥8 条消息则更新
-_profiling: set[int] = set()
-
-
 def _ensure_profile_columns() -> None:
-    """SQLite 轻量迁移：profiles / messages 表补新列。"""
-    c = db()
-    cols = {r["name"] for r in c.execute("PRAGMA table_info(profiles)").fetchall()}
-    if "user_profile" not in cols:
-        c.execute("ALTER TABLE profiles ADD COLUMN user_profile TEXT DEFAULT ''")
-    if "profile_upto" not in cols:
-        c.execute("ALTER TABLE profiles ADD COLUMN profile_upto INTEGER DEFAULT 0")
+    """SQLite 轻量迁移：messages 表补 dedupe_key 列（去重历史消息用）。
+    早期 user_profile/profile_upto 画像列已废弃不再写入，旧库保留该列不影响。"""
+    c = _conn
+    if c is None:
+        return
     mcols = {r["name"] for r in c.execute("PRAGMA table_info(messages)").fetchall()}
     if "dedupe_key" not in mcols:
         c.execute("ALTER TABLE messages ADD COLUMN dedupe_key TEXT")
@@ -401,109 +394,16 @@ def _ensure_profile_columns() -> None:
     c.commit()
 
 
+# ---------------- 个性化记忆 ----------------
+# 自动用户画像已废弃：AI 记住什么完全由用户手动维护的个人记忆卡（personal_memory）决定。
+# 个人记忆的读取/拼接见 memory.personalization_text()，由 history.personalization() 注入 prompt。
 def get_user_profile(profile_id: int) -> str:
-    row = db().execute(
-        "SELECT user_profile FROM profiles WHERE id=?", (profile_id,)
-    ).fetchone()
-    return (row["user_profile"] or "") if row else ""
-
-
-def get_ai_profile(profile_id: int) -> dict:
-    """个人中心展示：AI 从对话中提炼的长期画像 + 更早对话摘要。
-
-    让用户看清「AI 到底记住了什么」——这些是独立于历史提问表的长期记忆，
-    删除历史提问不会自动清除，需用户显式清空。
-    """
-    _ensure_profile_columns()
-    row = db().execute(
-        "SELECT user_profile, profile_upto FROM profiles WHERE id=?", (profile_id,)
-    ).fetchone()
-    srow = db().execute(
-        "SELECT content, updated_at FROM summaries WHERE profile_id=?", (profile_id,)
-    ).fetchone()
-    return {
-        "user_profile": (row["user_profile"] or "") if row else "",
-        "summary": (srow["content"] or "") if srow else "",
-        "summary_updated_at": (srow["updated_at"] or "") if srow else "",
-    }
-
-
-def clear_ai_profile(profile_id: int) -> None:
-    """清空 AI 长期画像与对话摘要，并把画像/压缩水位推进到当前最新消息，
-    避免对旧消息的再次压缩/提炼把它重新生成。历史提问表本身不动。"""
-    _ensure_profile_columns()
-    c = db()
-    max_id = c.execute(
-        "SELECT COALESCE(MAX(id),0) AS m FROM messages WHERE profile_id=?", (profile_id,)
-    ).fetchone()["m"]
-    c.execute(
-        "UPDATE profiles SET user_profile='', profile_upto=?, compressed_until=? WHERE id=?",
-        (max_id, max_id, profile_id),
-    )
-    c.execute("DELETE FROM summaries WHERE profile_id=?", (profile_id,))
-    c.commit()
-
-
-def build_user_profile_prompt(old_profile: str, summary: str, messages: list[dict]) -> str:
-    convo = "\n".join(
-        f"{'用户' if m['role'] == 'user' else '命理师'}: {m['content'][:500]}"
-        for m in messages
-    )
-    old = f"【旧画像】\n{old_profile}\n\n" if old_profile else ""
-    summ = f"【更早对话摘要】\n{summary}\n\n" if summary else ""
-    return (
-        "你是命理馆的用户档案助理。根据推演对话，维护一份用户的侧写画像，"
-        "帮助命理师下次推演时更懂这位用户。只依据对话中明确流露的信息，不要臆测编造；"
-        "某栏没有线索就写「未知」。控制在 200 字以内，条目式输出，包含："
-        "年龄段/人生阶段；职业与工作状态；感情婚姻状况；家庭与子女；"
-        "当前最关心的领域（如事业/财运/感情/健康/学业）；提问风格与偏好"
-        "（喜欢直接结论还是详细推演、是否追问细节）；其他有用的背景。\n\n"
-        + old + summ + "【最近对话】\n" + convo
-    )
-
-
-async def maybe_update_user_profile(profile_id: int, llm_fn) -> None:
-    """自上次画像以来新增足够多消息时，滚动更新用户画像。
-
-    llm_fn(prompt)->str 为 async；失败静默（下次再试）。与压缩并发去重分离。
-    """
-    if profile_id in _profiling:
-        return
-    _profiling.add(profile_id)
+    """兼容旧调用：返回个人记忆文本（个性化记忆唯一来源）。"""
     try:
-        _ensure_profile_columns()
-        row = db().execute(
-            "SELECT user_profile, profile_upto, compressed_until FROM profiles WHERE id=?",
-            (profile_id,),
-        ).fetchone()
-        if not row:
-            return
-        last_id = row["profile_upto"] or 0
-        fresh = db().execute(
-            "SELECT id, role, content FROM messages WHERE profile_id=? AND id>? ORDER BY id",
-            (profile_id, last_id),
-        ).fetchall()
-        if len(fresh) < PROFILE_TRIGGER:
-            return
-        srow = db().execute(
-            "SELECT content FROM summaries WHERE profile_id=?", (profile_id,)
-        ).fetchone()
-        prompt = build_user_profile_prompt(
-            row["user_profile"] or "",
-            srow["content"] if srow else "",
-            [{"role": r["role"], "content": r["content"]} for r in fresh],
-        )
-        out = await llm_fn(prompt)
-        if out and out.strip():
-            db().execute(
-                "UPDATE profiles SET user_profile=?, profile_upto=? WHERE id=?",
-                (out.strip()[:800], fresh[-1]["id"], profile_id),
-            )
-            db().commit()
+        import memory as memory_store
+        return memory_store.personalization_text(profile_id)
     except Exception:
-        pass
-    finally:
-        _profiling.discard(profile_id)
+        return ""
 
 
 # ---------------- 管理员（可删用户，不可见用户资料） ----------------

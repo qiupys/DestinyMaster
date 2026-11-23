@@ -128,6 +128,7 @@
   /* 退出登录时清空本账号全部前端缓存：各功能舞台上的提问/解读/追问、命盘、
      紫微 session 缓存、个人中心的历史与出生信息。避免退出后仍能翻到上一个人的对话。 */
   function clearUserData() {
+    clearAllSnaps();
     dropStages();
     S.profileBirth = null;
     S.zw = null; S.zwFromProfile = false;
@@ -198,6 +199,76 @@
     if (locked) { toast("该功能在二期上线，敬请期待"); return; }
     location.hash = "/meihua" === ("/" + feat) ? feat : feat; // 统一 #/xxx
   }
+  /* ---------- 功能页会话快照（reload/重建后保留本会话提问） ----------
+     把每个功能的结果区 + 归档区 HTML 存进 sessionStorage。命盘类盘面本就有 chart 缓存，
+     但解读卡/追问链此前只活在内存 stage，reload 即丢。快照让它们跨 reload 存活，
+     等价于「切回功能页提问还在」。按 uid 隔离，退出登录清除。 */
+  var SNAP_PREFIX = "zs-snap-";
+  function snapKey(feat) { return SNAP_PREFIX + feat + "-" + (S.profile ? S.profile.id : "anon"); }
+  function saveStageSnap(feat) {
+    if (!S.profile) return;
+    var st = S.stageCache[feat];
+    if (!st) return;
+    var rootSel = ROOT_SEL[feat];
+    var root = rootSel ? $(rootSel, st) : null;
+    var arc = $(".round-archive", st);
+    if (!root && !arc) return;
+    try {
+      sessionStorage.setItem(snapKey(feat), JSON.stringify({
+        rootHtml: root ? root.innerHTML : null,
+        rootId: root ? root.id : null,
+        arcHtml: arc ? arc.innerHTML : null,
+        formHidden: (function () {
+          var fc = $(".tool-card[id$='-form-card']", st);
+          return fc ? fc.style.display === "none" : false;
+        })()
+      }));
+    } catch (e) {}
+  }
+  function restoreStageSnap(feat) {
+    if (!S.profile) return;
+    var raw;
+    try { raw = sessionStorage.getItem(snapKey(feat)); } catch (e) {}
+    if (!raw) return;
+    var snap;
+    try { snap = JSON.parse(raw); } catch (e) { return; }
+    var st = S.stageCache[feat];
+    if (!st || st.dataset.snapRestored === "1") return;
+    // 命盘类排盘是异步的（拉档案/算盘后 innerHTML 重建结果区）。等结果卡出现再恢复快照，
+    // 否则会被随后落地的排盘覆盖。最多等 ~2s；纯占卜类结果区同步生成，立即可恢复。
+    var rootSel = snap.rootId ? "#" + snap.rootId : (ROOT_SEL[feat] || null);
+    var tries = 0;
+    function attempt() {
+      if (!st.isConnected) return;                 // 已被销毁，放弃
+      if (st.dataset.snapRestored === "1") return;  // 已被别处恢复
+      var root = rootSel ? $(rootSel, st) : null;
+      // 结果区还没排盘（空）且是命盘类 → 再等
+      if (root && !root.querySelector(".p-result") && tries < 20 && ["bazi","astrology","ziwei"].indexOf(feat) >= 0) {
+        tries++; setTimeout(attempt, 100); return;
+      }
+      var restored = false;
+      if (snap.rootHtml != null && root) { root.innerHTML = snap.rootHtml; restored = true; }
+      if (snap.arcHtml != null) {
+        var arc = $(".round-archive", st);
+        if (!arc) { arc = document.createElement("div"); arc.className = "round-archive"; st.appendChild(arc); }
+        arc.innerHTML = snap.arcHtml; restored = true;
+      }
+      if (snap.formHidden) {
+        var fc = $(".tool-card[id$='-form-card']", st);
+        if (fc) fc.style.display = "none";
+      }
+      if (restored) { st.dataset.snapRestored = "1"; rebindFollows(st); }
+    }
+    setTimeout(attempt, 0);
+  }
+  function clearAllSnaps() {
+    try {
+      Object.keys(sessionStorage).forEach(function (k) {
+        if (k && k.indexOf(SNAP_PREFIX) === 0) sessionStorage.removeItem(k);
+      });
+    } catch (e) {}
+  }
+
   function navigate(feat, force) {
     var changed = S.feature !== feat;
     S.feature = feat;
@@ -219,7 +290,11 @@
     if (feat === "home") { renderHome(); return; }
     if (feat === "ziwei") { renderZiweiEntry(); return; }
     var fn = { bazi: renderBazi, meihua: renderMeihua, tarot: renderTarot, huangli: renderHuangli, astrology: renderAstrology }[feat];
-    if (fn) { fn(); }
+    if (fn) {
+      fn();
+      // renderXxx 重建了结果区骨架；若本会话此前有解读快照（reload 后），此刻恢复之
+      restoreStageSnap(feat);
+    }
   }
 
   /* ---------------- 通用渲染块 ---------------- */
@@ -1875,48 +1950,62 @@
   /* 归档轮只读化：移除会「触发新一轮解读」的控件（AI 解读按钮、快捷问题 chips、开关），
      保留解读正文、追问结果链与追问输入框——在归档轮里继续追问仍沿用本轮旧牌/旧卦，是合理的。
      这样归档轮不会再用旧牌去解读一个新问题（历史对话点 AI 解读触发新解读的怪逻辑）。 */
-  function freezeForReview(node) {
-    var controls = node.querySelectorAll(".tool-ai, .p-suggest, .p-switch");
-    Array.prototype.slice.call(controls).forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
-    // 展开回看时，外层归档轮标题（.round-item-hd .rq）已经显示了问题文本，
-    // 内层解读卡若仍写「新提问 · 问题」就是重复残留，统一改成中性的「解读」。
-    Array.prototype.slice.call(node.querySelectorAll(".p-ai-title")).forEach(function (t) {
-      var txt = (t.textContent || "").trim();
-      if (txt.indexOf("新提问") === 0) t.textContent = "本次解读";
+  /* 从一轮的解读卡里提取可归档的正文（去掉卡壳/控制控件），用于装进归档卡卡体。 */
+  function extractReviewBody(node) {
+    var body = $(".p-ai-body", node);
+    if (!body) return "";
+    var clone = body.cloneNode(true);
+    // 只读化：去掉会触发新一轮解读的控件；追问条在归档卡里保留可用（沿用本轮旧盘）。
+    Array.prototype.slice.call(clone.querySelectorAll(".tool-ai, .p-suggest, .p-switch")).forEach(function (c) {
+      if (c.parentNode) c.parentNode.removeChild(c);
     });
-    return node;
+    return clone.innerHTML;
   }
-  /* 把 container 当前一轮（结果卡 + 解读卡 + 追问链）打包折叠归档，并清空 container。返回归档节点数。
-     原子记录定义：一条可归档/可保存的记录 = AI 解读 + 功能 + 个人信息 + 问题。
-     因此【仅抽卡/起卦/排盘、尚未 AI 解读】的纯结果轮不算一条记录——直接丢弃，不产生归档项。
-     这与后端一致：history.save 只在 deduce（AI 解读）落库，calc（抽牌/起卦/排盘）从不落库。
-     rk = 本轮确定性结果身份（牌阵|牌面 / 卦象 / 日期 / 命盘），同问题不同结果身份 = 不同轮，
-     必须归档成平级的独立轮，绝不能塞进同一个旧轮造成嵌套。 */
+  /* 把 container 当前一轮打包成【一张 .p-ai.p-ai-archived 卡】归档。
+     结构刻意与「新提问的解读卡」完全同构：卡头=问题（点按折叠/展开），卡体=解读正文。
+     彻底摒弃旧的 .round-item-hd + .round-item-bd 双层套壳（卡套卡的嵌套感来源）。
+     原子记录门禁：只有 AI 解读卡（.p-ai）存在才算一条记录；纯抽卡/起卦轮直接丢弃。 */
   function archiveRound(container, question, rk) {
     if (!container) return 0;
-    var nodes = Array.prototype.slice.call(container.children).filter(function (n) {
-      return n.classList && (n.classList.contains("p-result") || n.classList.contains("p-ai"));
-    });
-    if (!nodes.length) return 0;
-    // 原子记录门禁：没有 AI 解读卡（.p-ai）的纯抽卡/起卦轮不归档，直接丢弃旧节点。
-    // 用整棵子树查询：塔罗/梅花解读卡是结果容器的直接子节点，八字/占星则在嵌套的 #*-ai-out 内。
-    if (!container.querySelector(".p-ai")) {
-      nodes.forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
+    var ais = Array.prototype.slice.call(container.querySelectorAll(".p-ai"));
+    // 排除追问子卡（在 .ai-follow-slot 内）：只归档顶层解读卡
+    ais = ais.filter(function (n) { return !n.closest(".ai-follow"); });
+    if (!ais.length) {
+      // 无解读卡：清掉本轮的纯结果卡（盘面）后返回 0
+      Array.prototype.slice.call(container.children).forEach(function (n) {
+        if (n.classList && n.classList.contains("p-result") && n.parentNode) n.parentNode.removeChild(n);
+      });
       return 0;
     }
-    // 若旧轮本身没有 rk（老数据），尝试从容器补一个，避免归档项无身份导致跨轮误判
+    var main = ais[0];
+    var bodyHtml = extractReviewBody(main);
+    // 追问链（槽内的追问结果卡）文本也并入归档卡正文，保证回看时能读到完整对话
+    var slot = $(".ai-follow-slot", main);
+    if (slot && slot.children.length) {
+      bodyHtml += '<div class="pf-hist-fu">' + Array.prototype.slice.call(slot.children).map(function (fu) {
+        return extractReviewBody(fu) || (fu.textContent || "");
+      }).join("") + '</div>';
+    }
+    // 盘面卡纯文本摘要并入卡体顶部（如需回看确定性结果），避免再套一层结果卡
+    var resultCard = container.querySelector(":scope > .p-result");
+    var factHtml = "";
+    if (resultCard) {
+      var rc = $(".p-ai-body", resultCard) || resultCard;
+      factHtml = '<div class="pf-arch-fact">' + (rc.innerHTML || "") + '</div>';
+    }
     var host = archiveHost(container);
     var item = document.createElement("div");
-    item.className = "round-item";
+    item.className = "p-ai p-ai-archived";       // 与新提问解读卡同构的单卡
     if (rk) item.dataset.rk = rk;
-    item.innerHTML = '<div class="round-item-hd"><span class="dot"></span><span class="rq"></span><span class="rsign">展开回看</span></div>' +
-      '<div class="round-item-bd"></div>';
-    $(".rq", item).textContent = question || "上一轮提问";
-    var bd = $(".round-item-bd", item);
-    nodes.forEach(function (n) { bd.appendChild(freezeForReview(n)); });
+    item.dataset.archQ = question || "上一轮提问";
+    item.innerHTML = '<div class="p-ai-head"><span class="dot"></span>' +
+      '<span class="p-ai-title">历史 · ' + esc(question || "上一轮提问") + '</span></div>' +
+      '<div class="p-ai-body">' + factHtml + bodyHtml + '</div>';
     host.insertBefore(item, host.firstChild);   // 最新一轮置顶
+    // 清空本轮结果容器（盘面 + 解读 + 追问槽一次性移除）
+    Array.prototype.slice.call(container.children).forEach(function (n) { n.parentNode.removeChild(n); });
     container.dataset.lastQ = "";
-    return nodes.length;
+    return 1;
   }
   function qboxFor(container) {
     if (S.feature === "ziwei") return container.id === "zw-d-ai-out" ? "#zw-dq" : "#zw-q";
@@ -1933,13 +2022,13 @@
       var nrk = node.dataset ? (node.dataset.rk || "") : "";
       return !nrk || nrk === rk;                     // 老归档轮无 rk 时按文本兜底
     }
-    var items = st.querySelectorAll(".round-archive .round-item");
+    var items = st.querySelectorAll(".round-archive .p-ai-archived");
     for (var i = 0; i < items.length; i++) {
       if (!sameRk(items[i])) continue;
-      var rq = $(".rq", items[i]);
-      if (rq && rq.textContent.trim() === q) return { node: items[i], isArchive: true };
+      var aq = items[i].dataset.archQ || "";
+      if (aq === q) return { node: items[i], isArchive: true };
     }
-    var ais = st.querySelectorAll(".p-ai");
+    var ais = st.querySelectorAll(".p-ai:not(.p-ai-archived)");
     for (var j = 0; j < ais.length; j++) {
       if (ais[j].closest(".round-archive") || ais[j].closest(".ai-follow")) continue;  // 归档轮/追问子卡不参与
       if (!sameRk(ais[j])) continue;
@@ -1948,15 +2037,14 @@
     }
     return null;
   }
-  /* 定位到某次已解读：归档轮展开、滚动到视野、聚焦追问框，给出提示。 */
+  /* 定位到某次已解读：归档卡展开、滚动到视野，给出提示。
+     归档卡是只读回看（不再挂追问框），追问请回到当前轮。 */
   function revealAnswered(hit, msg) {
     if (!hit) return;
     var target = hit.node;
-    if (hit.isArchive) { target.classList.add("open"); var sign = $(".rsign", target); if (sign) sign.textContent = "收起"; }
+    if (hit.isArchive) target.classList.add("p-ai-open");
     target.scrollIntoView({ behavior: "smooth", block: "center" });
-    var f = target.querySelector(".ai-follow input");
-    if (f) (function (x) { setTimeout(function () { x.focus(); }, 450); })(f);
-    toast(msg || "已定位到这次解读，可展开回看或继续追问");
+    toast(msg || "已定位到这次解读，点卡头可展开回看");
   }
   /* 模板/快捷问题点击：先填入输入框；若本会话中该问题已解读过（当前轮或归档轮），
      则定位回看而不重复发起解读。新问题只填框等待手动点「AI 解读」。 */
@@ -2081,6 +2169,8 @@
       // 避免每追问一次就多堆叠一个追问框（用户反馈「追问后仍有追问框」）。
       if (hid && tag !== "追问") attachFollow(card, hid, followNote(S.feature));
       if (!noRefresh && S.feature === "profile") renderProfile();
+      // 解读/追问稳定后存会话快照：reload 后仍能恢复本会话提问
+      saveStageSnap(S.feature);
       if (onDone) onDone(true);
     }
   }
@@ -2104,6 +2194,7 @@
      追问条内的子容器，子结果卡再挂新的追问条，形成连续对话。 */
   function attachFollow(card, hid, noteText) {
     if (!card || !hid) return;
+    card.dataset.hid = String(hid);   // 供会话快照恢复后重绑
     var old = $(".ai-follow", card);
     if (old) old.remove();
     // 追问结果槽（slot）与追问输入栏（wrap）分离：slot 在输入栏上方，
@@ -2125,25 +2216,40 @@
     // 输入栏紧跟 slot 之后（而非把 slot 塞进输入栏内部）
     if (slot.parentNode === card) card.insertBefore(wrap, slot.nextSibling);
     else card.appendChild(wrap);
+    bindFollowBar(card);
+  }
+  /* 把一张解读卡的追问框绑定到它的 hid（可重复调用，供会话快照恢复后重绑）。
+     用 onclick 覆盖式赋值，避免重复绑定叠加。 */
+  function bindFollowBar(card) {
+    var wrap = $(".ai-follow", card);
+    if (!wrap || card.dataset.bound === "1") return;
+    var hid = card.dataset.hid;
+    if (!hid) return;
+    card.dataset.bound = "1";
     var inp = $("input", wrap), btn = $(".ai-follow-btn", wrap);
     function ask() {
       var q = inp.value.trim();
       if (!q) { toast("请输入追问内容"); inp.focus(); return; }
       if (btn.disabled) { toast("追问进行中，请稍候"); return; }
       btn.disabled = true; inp.value = "";
+      var slot = $(".ai-follow-slot", card);
       var url = "/api/history/followup?" + pfAuth() + "&id=" + hid + "&q=" + encodeURIComponent(q);
       streamToUrl(url, "追问", q, slot, true);
       setTimeout(function () { btn.disabled = false; }, 1200);
     }
     btn.onclick = ask;
-    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); ask(); } });
+    inp.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); ask(); } };
+  }
+  /* 会话快照恢复后：重新绑定所有带 data-hid 的解读卡追问框 */
+  function rebindFollows(root) {
+    $$(".p-ai[data-hid]", root || document).forEach(function (card) { bindFollowBar(card); });
   }
 
   /* ================= 个人中心 ================= */
   var PF_FEATS = [["bazi", "八字"], ["ziwei", "紫微"], ["meihua", "梅花"], ["tarot", "塔罗"], ["astrology", "占星"], ["huangli", "黄历"]];
   var pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false,
     birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false,
-    batchMode: false, selected: {}, aiProfile: null };
+    batchMode: false, selected: {} };
 
   function pfAuth() {
     return "profile_id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token);
@@ -2171,13 +2277,11 @@
       fetch("/api/history/stats?" + ap).then(function (r) { return r.json(); }),
       fetch(listUrl).then(function (r) { return r.json(); }),
       fetch("/api/profile/get?" + apP).then(function (r) { return r.json(); }),
-      fetch("/api/memory/list?" + ap).then(function (r) { return r.json(); }),
-      fetch("/api/profile/ai_profile?" + ap).then(function (r) { return r.json(); })
+      fetch("/api/memory/list?" + ap).then(function (r) { return r.json(); })
     ]).then(function (res) {
       pfState.items = (res[1] && res[1].items) || [];
       pfState.dates = (res[0] && res[0].dates) || [];
       pfState.memories = (res[3] && res[3].items) || [];
-      pfState.aiProfile = res[4] || null;
       paintProfile(res[0] || {}, res[1] || {}, res[2] || {});
     }).catch(function (e) {
       var body = $("#pf-body");
@@ -2235,7 +2339,6 @@
             (pfState.editAccount ? "收起" : "修改") + '</button></div>' +
         (pfState.editAccount ? pfAccountForm() : '<p class="p-note pf-hint">可修改用户名与登录密码，不影响你的历史对话。</p>') +
       '</div>' +
-      pfAiprofileHTML() +
       pfMemoryHTML() +
       '<div class="p-stat-row">' + cards + '</div>' +
       '<p class="p-note pf-hint pf-tip">点击卡片查看该功能的历史对话</p>' +
@@ -2374,7 +2477,6 @@
       };
     });
     bindMemory();
-    bindAiprofile();
   }
   /* 档案出生信息 → 展示用的键值对 */
   function birthSegment(birth) {
@@ -2474,47 +2576,6 @@
   /* 个人记忆卡片区：稳定自我认知的沉淀，支持编辑 / 删除 / 从历史导入 AI 压缩 */
   /* AI 画像卡：展示 AI 从历史对话中提炼的长期记忆（独立于历史提问表），
      让用户看清「它记住了什么」并可一键清空——删除历史提问并不会清除画像。 */
-  function pfAiprofileHTML() {
-    var ap = pfState.aiProfile || {};
-    var up = (ap.user_profile || "").trim();
-    var summ = (ap.summary || "").trim();
-    var body = "";
-    if (up) body += '<div class="pf-aiup-block"><div class="pf-aiup-k">AI 对你的画像</div>' +
-      '<div class="pf-aiup-v">' + esc(up) + '</div></div>';
-    if (summ) body += '<div class="pf-aiup-block"><div class="pf-aiup-k">更早对话摘要' +
-      (ap.summary_updated_at ? ' · ' + esc(ap.summary_updated_at.slice(0, 10)) : '') + '</div>' +
-      '<div class="pf-aiup-v">' + esc(summ) + '</div></div>';
-    if (!body) body = '<p class="p-note pf-aiup-empty">AI 还没有从对话中提炼出关于你的长期画像。</p>';
-    return '<div class="pf-aiup">' +
-      '<div class="pf-birth-h"><h3 style="font-family:var(--serif);font-size:15px;margin:0">AI 记忆管理</h3>' +
-      '<button type="button" class="p-navitem pf-aiup-clear" style="width:auto;padding:4px 11px"' +
-      ((up || summ) ? '' : ' disabled') + '>清空 AI 画像</button></div>' +
-      '<p class="p-note pf-hint">下面是 AI 从你历次对话中自动提炼、用于让解读更懂你的长期画像。它和历史提问分开保存——删除历史提问不会清除它；这里可查看并清空。</p>' +
-      body + '</div>';
-  }
-  function bindAiprofile() {
-    var b = $(".pf-aiup-clear", $("#pf-body"));
-    if (!b) return;
-    b.onclick = function () {
-      if (!b.classList.contains("arm")) {
-        b.classList.add("arm"); b.textContent = "确认清空";
-        var t = setTimeout(function () { b.classList.remove("arm"); b.textContent = "清空 AI 画像"; }, 4000);
-        b._armTimer = t;
-        return;
-      }
-      clearTimeout(b._armTimer);
-      b.disabled = true;
-      fetch("/api/profile/ai_profile/clear", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile_id: S.profile.id, token: S.profile.token })
-      }).then(function (r) { return r.json(); }).then(function (d) {
-        if (!d.ok) { toast(d.error || "清空失败"); b.disabled = false; return; }
-        toast("AI 画像已清空，后续解读不再引用旧的对话记忆");
-        loadProfile();
-      }).catch(function () { toast("清空失败，请稍后再试"); b.disabled = false; });
-    };
-  }
-
   function pfMemoryHTML() {
     var mems = pfState.memories || [];
     var cards = mems.map(function (m) {
@@ -3548,16 +3609,6 @@
     if (!h) return;
     var card = h.parentElement;
     if (card) card.classList.toggle("p-ai-open");
-  });
-  // 整轮归档卡：点头部展开/收起回看（问题绑定整轮，登录态下本功能内即可回看）
-  document.addEventListener("click", function (e) {
-    var h = e.target.closest && e.target.closest(".round-item-hd");
-    if (!h) return;
-    var item = h.parentElement;
-    if (!item || !item.classList.contains("round-item")) return;
-    var open = item.classList.toggle("open");
-    var sign = $(".rsign", h);
-    if (sign) sign.textContent = open ? "收起" : "展开回看";
   });
   // 「关于本功能」开合：委托到 document，页面重渲染后依然有效
   document.addEventListener("click", function (e) {
