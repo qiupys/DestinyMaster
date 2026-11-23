@@ -133,6 +133,29 @@ async def api_profile_update(body: ProfileUpdateBody):
     )
 
 
+@app.get("/api/profile/ai_profile")
+async def api_profile_ai_profile(
+    profile_id: int = Query(...),
+    token: str = Query(...),
+):
+    """读取 AI 从历史对话中提炼的长期画像与摘要，供个人中心展示与清除。"""
+    if not profile_store.auth(profile_id, token):
+        return {"ok": False, "error": "登录状态失效，请重新登录"}
+    if not profile_store.get_profile(profile_id):
+        return {"ok": False, "error": "档案不存在"}
+    return {"ok": True, **profile_store.get_ai_profile(profile_id)}
+
+
+@app.post("/api/profile/ai_profile/clear")
+async def api_profile_ai_profile_clear(body: dict):
+    """清空 AI 长期画像与摘要；历史提问记录本身保留。"""
+    pid, token = body.get("profile_id"), body.get("token")
+    if not profile_store.auth(pid or 0, token or ""):
+        return {"ok": False, "error": "登录状态失效，请重新登录"}
+    profile_store.clear_ai_profile(int(pid))
+    return {"ok": True}
+
+
 # ---------------- 管理员端点：口令在 server/.adminkey，可删用户、不可见用户资料 ----------------
 from fastapi import Request
 from fastapi import HTTPException

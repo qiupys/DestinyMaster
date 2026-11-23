@@ -2106,17 +2106,26 @@
     if (!card || !hid) return;
     var old = $(".ai-follow", card);
     if (old) old.remove();
+    // 追问结果槽（slot）与追问输入栏（wrap）分离：slot 在输入栏上方，
+    // 每次追问结果追加进 slot，输入栏永远留在所有追问结果的最下方——
+    // 用户要的是「追问栏一直在问题下方，包括追问后的追问」。
+    var slot = $(".ai-follow-slot", card);
+    if (!slot) {
+      slot = document.createElement("div");
+      slot.className = "ai-follow-slot";
+      card.appendChild(slot);
+    }
     var wrap = document.createElement("div");
     wrap.className = "ai-follow";
-    // 追问提示放在追问条内部、输入框上方，作为追问区域的说明；
-    // 不再挂在 AI 正文末尾（那样紧跟免责声明，像是答案的一部分）。
+    // 追问提示放在追问条内部、输入框上方，作为追问区域的说明。
     wrap.innerHTML = (noteText ? '<p class="p-note pf-follow-note">' + esc(noteText) + '</p>' : '') +
       '<div class="ai-follow-row">' +
         '<input class="ti" placeholder="就这次解读继续追问…" />' +
-        '<button class="ai-follow-btn" type="button">追问</button></div>' +
-      '<div class="ai-follow-slot"></div>';
-    card.appendChild(wrap);
-    var inp = $("input", wrap), btn = $(".ai-follow-btn", wrap), slot = $(".ai-follow-slot", wrap);
+        '<button class="ai-follow-btn" type="button">追问</button></div>';
+    // 输入栏紧跟 slot 之后（而非把 slot 塞进输入栏内部）
+    if (slot.parentNode === card) card.insertBefore(wrap, slot.nextSibling);
+    else card.appendChild(wrap);
+    var inp = $("input", wrap), btn = $(".ai-follow-btn", wrap);
     function ask() {
       var q = inp.value.trim();
       if (!q) { toast("请输入追问内容"); inp.focus(); return; }
@@ -2134,7 +2143,7 @@
   var PF_FEATS = [["bazi", "八字"], ["ziwei", "紫微"], ["meihua", "梅花"], ["tarot", "塔罗"], ["astrology", "占星"], ["huangli", "黄历"]];
   var pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false,
     birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false,
-    batchMode: false, selected: {} };
+    batchMode: false, selected: {}, aiProfile: null };
 
   function pfAuth() {
     return "profile_id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token);
@@ -2162,11 +2171,13 @@
       fetch("/api/history/stats?" + ap).then(function (r) { return r.json(); }),
       fetch(listUrl).then(function (r) { return r.json(); }),
       fetch("/api/profile/get?" + apP).then(function (r) { return r.json(); }),
-      fetch("/api/memory/list?" + ap).then(function (r) { return r.json(); })
+      fetch("/api/memory/list?" + ap).then(function (r) { return r.json(); }),
+      fetch("/api/profile/ai_profile?" + ap).then(function (r) { return r.json(); })
     ]).then(function (res) {
       pfState.items = (res[1] && res[1].items) || [];
       pfState.dates = (res[0] && res[0].dates) || [];
       pfState.memories = (res[3] && res[3].items) || [];
+      pfState.aiProfile = res[4] || null;
       paintProfile(res[0] || {}, res[1] || {}, res[2] || {});
     }).catch(function (e) {
       var body = $("#pf-body");
@@ -2224,6 +2235,7 @@
             (pfState.editAccount ? "收起" : "修改") + '</button></div>' +
         (pfState.editAccount ? pfAccountForm() : '<p class="p-note pf-hint">可修改用户名与登录密码，不影响你的历史对话。</p>') +
       '</div>' +
+      pfAiprofileHTML() +
       pfMemoryHTML() +
       '<div class="p-stat-row">' + cards + '</div>' +
       '<p class="p-note pf-hint pf-tip">点击卡片查看该功能的历史对话</p>' +
@@ -2362,6 +2374,7 @@
       };
     });
     bindMemory();
+    bindAiprofile();
   }
   /* 档案出生信息 → 展示用的键值对 */
   function birthSegment(birth) {
@@ -2459,6 +2472,49 @@
   }
   var MEM_CATS = ["性格特质", "事业方向", "感情关系", "健康作息", "综合"];
   /* 个人记忆卡片区：稳定自我认知的沉淀，支持编辑 / 删除 / 从历史导入 AI 压缩 */
+  /* AI 画像卡：展示 AI 从历史对话中提炼的长期记忆（独立于历史提问表），
+     让用户看清「它记住了什么」并可一键清空——删除历史提问并不会清除画像。 */
+  function pfAiprofileHTML() {
+    var ap = pfState.aiProfile || {};
+    var up = (ap.user_profile || "").trim();
+    var summ = (ap.summary || "").trim();
+    var body = "";
+    if (up) body += '<div class="pf-aiup-block"><div class="pf-aiup-k">AI 对你的画像</div>' +
+      '<div class="pf-aiup-v">' + esc(up) + '</div></div>';
+    if (summ) body += '<div class="pf-aiup-block"><div class="pf-aiup-k">更早对话摘要' +
+      (ap.summary_updated_at ? ' · ' + esc(ap.summary_updated_at.slice(0, 10)) : '') + '</div>' +
+      '<div class="pf-aiup-v">' + esc(summ) + '</div></div>';
+    if (!body) body = '<p class="p-note pf-aiup-empty">AI 还没有从对话中提炼出关于你的长期画像。</p>';
+    return '<div class="pf-aiup">' +
+      '<div class="pf-birth-h"><h3 style="font-family:var(--serif);font-size:15px;margin:0">AI 记忆管理</h3>' +
+      '<button type="button" class="p-navitem pf-aiup-clear" style="width:auto;padding:4px 11px"' +
+      ((up || summ) ? '' : ' disabled') + '>清空 AI 画像</button></div>' +
+      '<p class="p-note pf-hint">下面是 AI 从你历次对话中自动提炼、用于让解读更懂你的长期画像。它和历史提问分开保存——删除历史提问不会清除它；这里可查看并清空。</p>' +
+      body + '</div>';
+  }
+  function bindAiprofile() {
+    var b = $(".pf-aiup-clear", $("#pf-body"));
+    if (!b) return;
+    b.onclick = function () {
+      if (!b.classList.contains("arm")) {
+        b.classList.add("arm"); b.textContent = "确认清空";
+        var t = setTimeout(function () { b.classList.remove("arm"); b.textContent = "清空 AI 画像"; }, 4000);
+        b._armTimer = t;
+        return;
+      }
+      clearTimeout(b._armTimer);
+      b.disabled = true;
+      fetch("/api/profile/ai_profile/clear", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: S.profile.id, token: S.profile.token })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) { toast(d.error || "清空失败"); b.disabled = false; return; }
+        toast("AI 画像已清空，后续解读不再引用旧的对话记忆");
+        loadProfile();
+      }).catch(function () { toast("清空失败，请稍后再试"); b.disabled = false; });
+    };
+  }
+
   function pfMemoryHTML() {
     var mems = pfState.memories || [];
     var cards = mems.map(function (m) {

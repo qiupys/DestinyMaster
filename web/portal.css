@@ -441,6 +441,14 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .pf-btn:hover { border-color:var(--wx-jin); color:var(--wx-jin); background:var(--accent-soft); }
 .pf-acct-row .pf-btn { align-self:flex-end; }
 /* ===================== 个人记忆卡片 ===================== */
+/* AI 画像管理卡：展示 AI 从历史对话提炼的长期记忆，可清空 */
+.pf-aiup { margin-top:14px; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); }
+.pf-aiup-block { margin-top:12px; padding-top:11px; border-top:1px dashed var(--line); }
+.pf-aiup-k { font-size:11px; color:var(--wx-jin); margin-bottom:6px; letter-spacing:.3px; }
+.pf-aiup-v { font-size:12.5px; line-height:1.8; color:var(--ink-2); white-space:pre-wrap; }
+.pf-aiup-empty { margin:12px 0 2px; }
+.pf-aiup-clear.arm { color:#c0392b; border-color:#c0392b; }
+.pf-aiup-clear:disabled { opacity:.5; cursor:not-allowed; }
 .pf-memory { margin-top:14px; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); }
 .pf-mem-actions { display:inline-flex; gap:8px; }
 .pf-memory > .p-note { margin:8px 0 0; }
@@ -497,7 +505,9 @@ details.p-disclose .inner { padding-bottom: 12px; }
 }
 .ai-follow-btn:hover { border-color:var(--wx-jin); color:var(--wx-jin); }
 .ai-follow-btn:disabled { opacity:.55; cursor:wait; }
+/* 追问结果槽在输入栏上方：结果卡之间留间距，输入栏紧随其后（-4px 收紧与上一张结果卡的距离） */
 .ai-follow-slot .p-ai { margin-top:13px; }
+.ai-follow-slot + .ai-follow { margin-top:10px; }
 @media (max-width: 560px) {
   .ai-follow { padding:13px 15px 16px; }
   .ai-follow-row { flex-direction:column; align-items:stretch; }
@@ -1506,3 +1516,16 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 @media (max-width: 760px) {
   .as-houses { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ================= 卡片垂直节奏统一（v91） =================
+   盘面卡→提问卡是 16px，提问卡→解读卡此前是 8px（.p-ai 全局默认），
+   相邻间距忽大忽小。把各功能结果容器内的【首张】解读卡上间距也设为 16px，
+   让「盘面 → 提问 → 解读」三段卡片节奏一致；追问结果卡在 slot 内不受影响。 */
+#as-ai-out > .p-ai:first-child,
+#bz-ai-out > .p-ai:first-child,
+#zw-ai-out > .p-ai:first-child,
+#zw-d-ai-out > .p-ai:first-child { margin-top:16px; }
+/* 塔罗/梅花/黄历：解读卡直接插在结果容器内，首张同样统一到 16px */
+#tr-result > .p-ai:first-child,
+#mh-result > .p-ai:first-child,
+#hl-result > .p-ai:first-child { margin-top:16px; }

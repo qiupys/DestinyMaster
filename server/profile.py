@@ -408,6 +408,42 @@ def get_user_profile(profile_id: int) -> str:
     return (row["user_profile"] or "") if row else ""
 
 
+def get_ai_profile(profile_id: int) -> dict:
+    """个人中心展示：AI 从对话中提炼的长期画像 + 更早对话摘要。
+
+    让用户看清「AI 到底记住了什么」——这些是独立于历史提问表的长期记忆，
+    删除历史提问不会自动清除，需用户显式清空。
+    """
+    _ensure_profile_columns()
+    row = db().execute(
+        "SELECT user_profile, profile_upto FROM profiles WHERE id=?", (profile_id,)
+    ).fetchone()
+    srow = db().execute(
+        "SELECT content, updated_at FROM summaries WHERE profile_id=?", (profile_id,)
+    ).fetchone()
+    return {
+        "user_profile": (row["user_profile"] or "") if row else "",
+        "summary": (srow["content"] or "") if srow else "",
+        "summary_updated_at": (srow["updated_at"] or "") if srow else "",
+    }
+
+
+def clear_ai_profile(profile_id: int) -> None:
+    """清空 AI 长期画像与对话摘要，并把画像/压缩水位推进到当前最新消息，
+    避免对旧消息的再次压缩/提炼把它重新生成。历史提问表本身不动。"""
+    _ensure_profile_columns()
+    c = db()
+    max_id = c.execute(
+        "SELECT COALESCE(MAX(id),0) AS m FROM messages WHERE profile_id=?", (profile_id,)
+    ).fetchone()["m"]
+    c.execute(
+        "UPDATE profiles SET user_profile='', profile_upto=?, compressed_until=? WHERE id=?",
+        (max_id, max_id, profile_id),
+    )
+    c.execute("DELETE FROM summaries WHERE profile_id=?", (profile_id,))
+    c.commit()
+
+
 def build_user_profile_prompt(old_profile: str, summary: str, messages: list[dict]) -> str:
     convo = "\n".join(
         f"{'用户' if m['role'] == 'user' else '命理师'}: {m['content'][:500]}"
