@@ -265,7 +265,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           pillar_year=pillar_year, pillar_month=pillar_month,
                           pillar_day=pillar_day, pillar_time=pillar_time,
                           lat=lat, lon=lon, tz=tz, place=place,
-                          country=country, province=province, city=city)
+                          country=country, province=province, city=city,
+                          question=question)
             try:
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
@@ -327,7 +328,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           pillar_year=pillar_year, pillar_month=pillar_month,
                           pillar_day=pillar_day, pillar_time=pillar_time,
                           lat=lat, lon=lon, tz=tz, place=place,
-                          country=country, province=province, city=city)
+                          country=country, province=province, city=city,
+                          question=question)
             try:
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
@@ -467,6 +469,7 @@ def _calc_meihua(p: dict) -> dict:
     return meihua.derive(
         method, num1=p.get("num1"), num2=p.get("num2"),
         upper=p.get("upper"), lower=p.get("lower"), moving=p.get("moving"), when=when,
+        question=p.get("question"),
     )
 
 
@@ -498,7 +501,9 @@ def _calc_huangli(p: dict) -> dict:
 
 
 def _calc_tarot(p: dict) -> dict:
-    return tarot.draw(p.get("spread") or "three")
+    # 所问之事参与抽牌种子（与时间/随机源并列，非唯一决定）；前端仍回传 deck 锁定同一副牌
+    return tarot.draw(p.get("spread") or "three",
+                      seed=tarot.question_seed(p.get("question") or ""))
 
 
 def _calc_astrology(p: dict) -> dict:

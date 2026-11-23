@@ -140,3 +140,15 @@
   - 注意：profile.py 的 `_ensure_profile_columns()` 必须保留（db() 初始化调用它补 messages.dedupe_key），只去掉 user_profile/profile_upto 列迁移即可。
 - **功能页历史归档单层化**：`archiveRound()` 从 `.round-item > .round-item-hd + .round-item-bd > .p-ai` 双层卡套卡，改为生成【一张 `.p-ai.p-ai-archived`】——卡头 `.p-ai-head`=「历史 · 问题」（点按折叠，复用已有 `.p-ai-archived` CSS 的 `::after` 展开回看/收起），卡体 `.p-ai-body`=解读正文 + 追问链（盘面摘要并入 `.pf-arch-fact` 引用块）。与新提问解读卡完全同构，杜绝嵌套。`findAnswered` 用 `dataset.archQ`/`.p-ai-archived`，`revealAnswered` 切 `p-ai-open`；删除旧 `.round-item-hd` 点击委托。旧 `.round-item*` CSS 已清。
 - **会话快照（reload 后提问不丢）**：纯 hash 切页 DOM 本就保留（实测 1→1），但 reload 后解读卡丢失（盘面靠 chart 缓存恢复）。新增 `saveStageSnap(feat)`（在 streamToUrl finish 后把结果区+归档区 innerHTML 存 sessionStorage，key 按 uid 隔离）、`restoreStageSnap(feat)`（navigate render 后恢复，命盘类等异步排盘落地再恢复）、`clearAllSnaps()`（退出登录清）。追问框改 `bindFollowBar(card)` 可重绑（card.dataset.hid + dataset.bound 防重复），`rebindFollows()` 供恢复后重绑。
+
+### 7.11 占卜类起卦/抽牌纳入「所问之事」变量（v93）
+- **设计原则**：占卜类（梅花/塔罗）的确定性计算层（calc）此前完全不带问题——问题只在 deduce 阶段进 prompt。v93 让**所问之事作为变量之一**参与成卦/抽牌，但**不是唯一决定因素**：问题与「当下时刻 + 系统随机源」共同成卦，同一问题在不同时刻起卦/抽牌仍会得到不同结果，保留占卜的机缘感与随机性。（曾误做成「问题唯一决定」的确定性种子，被纠正：问题只是并列变量。）
+- **梅花**：`meihua.derive(..., question=)` 的 `random` 分支用 `sha256(问题|time_ns|random.getrandbits(64))` 派生 num1/num2，steps 写明「依所问之事…并参合当下机缘起数」。`time/number/manual` 三种传统起卦方式不受影响，问题不参与。derive 返回值新增 `num1/num2`。**时间起卦保持传统算法不动**。
+- **塔罗**：`tarot.question_seed(q)` 用 `sha256(问题|time_ns|random.getrandbits(64))` 的前 8 字节作 int 种子，`_calc_tarot` 调 `tarot.draw(spread, seed=question_seed(q))`。`draw(seed=)` 与 `cards_from_deck()` 机制复用。
+- **黄历**：不改（择日类，问题不参与「起卦/抽牌」，无对应动作）。
+- **一致性（关键）**：calc 与 deduce 是两次独立调用，若都按「问题+时刻+随机」重算会得到两副不同的卦/牌。锁定方案：
+  - 梅花：前端 calc 拿到 `d.upper.name/d.lower.name/d.moving` 后，deduce 改传 `method=manual&upper=&lower=&moving=`（manual 分支从三元组重建的本卦/互卦/变卦/六爻/fact/rag_query 与 calc 完全一致，已 E2E 验证 fact+rag_query 全等）。
+  - 塔罗：沿用既有 `deck`（slug|正逆位串）回传，`cards_from_deck()` 覆盖随机抽牌。
+  - 因此「用户看到的卦/牌 == AI 解读的卦/牌」，追问也复用同一副。
+- **前端**：梅花 `castMeihua`/塔罗 `drawTarot` 的 calc fetch 追加 `&question=问题`；文案改为「结合所问之事与当下机缘」并明确「同一问题每次也可能不同」。版本号 v93。
+- **参数链路**：calc/deduce 工厂的 `params` 统一带 `question`（deduce 用 q→question），compute_fn 从 `p["question"]` 读取。

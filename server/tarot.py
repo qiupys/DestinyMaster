@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import random
 import re
+import hashlib
+import time as _time
 from functools import lru_cache
 from pathlib import Path
 
@@ -57,6 +59,13 @@ SPREADS = {
                                    "不久的过去", "主观看法与目标", "不久的将来",
                                    "自己", "周围环境", "希望与恐惧", "最终结果"]},
 }
+
+
+def question_seed(question: str) -> int:
+    """由所问之事派生抽牌种子，但问题不是唯一变量：问题 + 当前纳秒时刻 + 系统随机源
+    共同哈希。同一问题每次抽牌仍不同（保留占卜的机缘感），问题改变则种子必变。"""
+    material = f"{question}|{_time.time_ns()}|{random.getrandbits(64)}"
+    return int.from_bytes(hashlib.sha256(material.encode("utf-8")).digest()[:8], "big")
 
 
 def draw(spread: str = "three", seed: int | None = None) -> dict:

@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import random
+import hashlib
+import time as _time
 from datetime import datetime
 
 # 先天八卦数 → (卦名, 卦象, 五行, 三爻阴阳列表[初→三], 1阳0阴)
@@ -109,8 +111,14 @@ def _yao_pos_name(pos: int, yang: int) -> str:
 
 def derive(method: str, num1: int | None = None, num2: int | None = None,
            upper: str | None = None, lower: str | None = None, moving: int | None = None,
-           when: datetime | None = None) -> dict:
-    """返回确定性起卦结果（含逐步推导步骤，可复核）。"""
+           when: datetime | None = None, question: str | None = None) -> dict:
+    """返回确定性起卦结果（含逐步推导步骤，可复核）。
+
+    question 仅参与「随机起卦」：所问之事与当下时刻、随机源共同作为变量起数，
+    问题不是唯一决定因素——同一问题在不同时刻起卦仍会得到不同的卦。
+    num1/num2 同时在随机分支作为「锁定回放」入口：前端把 calc 已确定的两数回传，
+    保证 AI 解读时复用的是用户看到的那一卦。
+    """
     steps: list[str] = []
     when = when or datetime.now()
 
@@ -135,8 +143,17 @@ def derive(method: str, num1: int | None = None, num2: int | None = None,
         steps.append("注：年数以立春为界的年支序数计，非公历年份；时辰以本地时间换算，不做真太阳时校正")
     elif method in ("number", "random"):
         if method == "random":
-            num1, num2 = random.randint(1, 99), random.randint(1, 99)
-            steps.append(f"随机得数：{num1}、{num2}")
+            # 问题参与起卦，但不是唯一变量：问题 + 当前纳秒时刻 + 系统随机源共同哈希成种子。
+            # 同一问题在不同时刻/不同随机序仍是不同的卦；问题改变了种子也必然改变。
+            if question:
+                seed_material = f"{question}|{_time.time_ns()}|{random.getrandbits(64)}"
+                digest = hashlib.sha256(seed_material.encode("utf-8")).digest()
+                sub = random.Random(int.from_bytes(digest, "big"))
+                num1, num2 = sub.randint(1, 99), sub.randint(1, 99)
+                steps.append(f"依所问之事「{question}」并参合当下机缘起数：{num1}、{num2}")
+            else:
+                num1, num2 = random.randint(1, 99), random.randint(1, 99)
+                steps.append(f"随机得数：{num1}、{num2}")
         else:
             steps.append(f"用户输入数：第一数{num1}、第二数{num2}")
         if num1 is None or num2 is None:
@@ -188,6 +205,8 @@ def derive(method: str, num1: int | None = None, num2: int | None = None,
     )
     return {
         "method": method, "when": when.strftime("%Y-%m-%d %H:%M"),
+        # 起卦数回传：随机起卦时前端据此锁定，deduce 以 num1/num2 走「数字起卦」复现同一卦
+        "num1": num1, "num2": num2,
         "upper": {"num": up_n, "name": up[0], "symbol": up[1], "wuxing": up[2]},
         "lower": {"num": lo_n, "name": lo[0], "symbol": lo[1], "wuxing": lo[2]},
         "ben_gua": {"index": ben_idx, "name": ben_name},

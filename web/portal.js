@@ -1167,7 +1167,7 @@
   /* ================= 梅花易数 ================= */
   function renderMeihua() {
     stageEl().innerHTML =
-      toolHero("梅花易数 · 每日决策", "梅花易数取象于当下，观变于一事；卦成之后，由 AI 结合《周易》原文解读。") +
+      toolHero("梅花易数 · 每日决策", "梅花易数取象于当下，观变于一事：所问之事与起卦时刻、机缘共同参与成卦，卦成之后由 AI 结合《周易》原文解读。") +
       '<div class="tool-card"><div class="tool-form" id="mh-form">' +
         '<div class="p-bazi-gate" id="mh-bazi-gate"><span class="bg-ic">◈</span><span class="bg-txt">正在检查您的命局资料…</span></div>' +
         '<div class="tf-group"><div class="tf-gt">提出您的决策问题</div>' +
@@ -1190,7 +1190,7 @@
         '<b>数字起卦</b>：第一个数字取下卦，第二个数字取上卦，动爻 =（两数之和）mod 6。',
         '先天八卦数：乾1 · 兑2 · 离3 · 震4 · 巽5 · 坎6 · 艮7 · 坤8；年数以立春为界的年支序数计（子1…亥12），不是公历年份；余数为 0 时按第 8 卦 / 第 6 爻处理。',
         '<b>手动起卦</b>：点击爻位设置阴阳，再选择变爻位置；本卦、动爻、变卦随之确定。'
-      ], "每一次起卦结果与所问之事绑定：本卦、动爻与变卦在同一轮解读和追问中保持不变；换了问题请重新起卦。AI 解读引用的卦爻辞是《周易》真实文本。");
+      ], "随机起卦把所问之事与起卦时刻、机缘共同作为变量，问题并非唯一决定因素——同一问题在不同时刻起卦也会有不同卦象；时间/数字/手动起卦仍按各自传统规则。每一次卦象与所问之事绑定：本卦、动爻与变卦在同一轮解读和追问中保持不变。AI 解读引用的卦爻辞是《周易》真实文本。");
 
     $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#mh-q"); updateBtn(); }; });
     var GUA_NAMES = ["乾","兑","离","震","巽","坎","艮","坤"];
@@ -1284,7 +1284,7 @@
           '<div class="mh-yaos" id="mh-editor"></div></div>';
         drawEditor();
       } else {
-        box.innerHTML = '<p class="p-note">系统随机给出两个数：第一数取下卦，第二数取上卦，动爻以两数之和除 6 取余。</p>';
+        box.innerHTML = '<p class="p-note">系统会结合你所问之事与当下机缘给出两个数：第一数取下卦，第二数取上卦，动爻以两数之和除 6 取余。同一个问题在不同时刻起卦，卦象也会不同。</p>';
       }
     }
     renderInputs();
@@ -1327,7 +1327,8 @@
       if (!q0) { toast("请先写下你的决策问题"); $("#mh-q").focus(); return; }
       mhDrawing = true;
       $("#mh-err").textContent = "";
-      fetch("/api/meihua/calc?" + mhParams()).then(function(r){return r.json();}).then(function(d){
+      // 所问之事作为起卦变量之一随 calc 下发（随机起卦时与时刻/随机源共同参与起数）
+      fetch("/api/meihua/calc?" + mhParams() + "&question=" + encodeURIComponent(q0)).then(function(r){return r.json();}).then(function(d){
         mhDrawing = false;
         if (!d.ok) { $("#mh-err").textContent = d.error || "起卦失败"; return; }
         var bianUpper = (d.bian_gua && d.bian_gua.upper) || d.upper;
@@ -1351,6 +1352,10 @@
         // 卦象身份 = 本卦序 + 动爻 + 变卦序；同问题不同卦是两轮，不能按问题文本去重
         var mhRk = "gua|" + d.ben_gua.index + "-" + d.moving + "-" + d.bian_gua.index;
         $("#mh-result").dataset.rk = mhRk;
+        // 锁定本次卦象：deduce 会以 manual 方式用这组上/下卦与动爻重算，
+        // 保证「用户看到的卦」==「AI 解读的卦」（否则随机起卦会在 deduce 时重新抽数，两者不一致）。
+        var mhLock = "method=manual&upper=" + encodeURIComponent(d.upper.name) +
+          "&lower=" + encodeURIComponent(d.lower.name) + "&moving=" + d.moving;
         $("#mh-ai").onclick = function () {
           var q = $("#mh-q").value.trim();
           if (!q) { toast("请先写下所问之事"); return; }
@@ -1358,9 +1363,9 @@
           if (!mhBaziReady) { toast("请先在个人中心补全出生年月日与出生时间，梅花解卦需结合您的八字命局"); return; }
           // 问题文本变了 = 新提问 → 重新起卦并按新问题解卦
           if (q !== $("#mh-result").dataset.roundQ) { toast("问题已更改，正在按新问题重新起卦"); castMeihua(q); return; }
-          streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(q) + authParam(), q, $("#mh-result"), mhRk);
+          streamAI("meihua", mhLock + "&q=" + encodeURIComponent(q) + authParam(), q, $("#mh-result"), mhRk);
         };
-        if (autoAskQ && mhBaziReady && S.profile) streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(autoAskQ) + authParam(), autoAskQ, $("#mh-result"), mhRk);
+        if (autoAskQ && mhBaziReady && S.profile) streamAI("meihua", mhLock + "&q=" + encodeURIComponent(autoAskQ) + authParam(), autoAskQ, $("#mh-result"), mhRk);
         $("#mh-result").scrollIntoView({ behavior: "smooth", block: "nearest" });
       }).catch(function () { mhDrawing = false; });
     }
@@ -1371,13 +1376,13 @@
   /* ================= 塔罗牌 ================= */
   function renderTarot() {
     stageEl().innerHTML =
-      toolHero("塔罗牌占卜", "以图像与象征映照问题的不同侧面。写下明确的问题，程序随机抽牌；确认牌面后，由 AI 按牌位和正逆位组织成一条与你有关的叙事——包含主线，也指出盲点。") +
+      toolHero("塔罗牌占卜", "以图像与象征映照问题的不同侧面。写下明确的问题，程序会结合所问之事与当下机缘抽牌；确认牌面后，由 AI 按牌位和正逆位组织成一条与你有关的叙事——包含主线，也指出盲点。") +
       '<div class="tool-card"><div class="tool-form" id="tr-form">' +
         (S.profile
           ? '<div class="p-bazi-gate ok tr-star-gate"><span class="bg-ic">◈</span><span class="bg-txt">解牌将自动结合您档案生日换算的太阳星座（性格基调），让解读更贴合本人。</span></div>'
           : '<div class="p-bazi-gate warn tr-star-gate"><span class="bg-ic">◈</span><span class="bg-txt">登录后，塔罗解牌将自动结合档案生日换算的太阳星座，让解读更贴合本人。</span></div>') +
         '<div class="tf-group"><div class="tf-gt">提出您的问题</div>' +
-          '<p class="p-note" style="margin:0 0 10px">请输入一个明确的问题，程序会随机抽取三张牌；确认牌面后，可让 AI 按牌位和正逆位解读</p>' +
+          '<p class="p-note" style="margin:0 0 10px">请输入一个明确的问题，程序会结合所问之事与当下机缘抽牌；同一问题每次抽牌也可能不同。确认牌面后，可让 AI 按牌位和正逆位解读</p>' +
           '<input class="ti" id="tr-q" placeholder="例如：创业还是留在大公司更适合我？" />' +
           '<div class="p-suggest tr-chips"><button data-q="创业还是留在大公司更适合我？">创业还是留在大公司更适合我？</button><button data-q="对方不喜欢我，我该如何让自己放下？">对方不喜欢我，我该如何让自己放下？</button><button data-q="为何我在社交场中难以做真实的自己？">为何我在社交场中难以做真实的自己？</button><button data-q="异地恋还要坚持吗？">异地恋还要坚持吗？</button></div>' +
         '</div>' +
@@ -1460,7 +1465,8 @@
       var q0 = $("#tr-q").value.trim();
       if (!q0) { toast("请先写下你想问的事，再抽牌"); $("#tr-q").focus(); return; }
       trDrawing = true;
-      fetch("/api/tarot/calc?" + trParam()).then(function(r){return r.json();}).then(function(d){
+      // 所问之事作为抽牌变量之一随 calc 下发（与时刻/随机源共同参与抽牌，问题唯一改变也会改变牌面分布）
+      fetch("/api/tarot/calc?" + trParam() + "&question=" + encodeURIComponent(q0)).then(function(r){return r.json();}).then(function(d){
         trDrawing = false;
         if (!d.ok) { $("#tr-err").textContent = d.error || "抽牌失败"; return; }
         // 每次抽牌 = 新一轮：先把上一整轮（牌面+解读+追问链）折叠归档，再渲染新牌面。
