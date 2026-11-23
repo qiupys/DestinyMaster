@@ -121,3 +121,8 @@
 - **批量删除**：后端 `POST /api/history/delete_batch`（ids 列表 → `history.delete_many`，顶层+子记录连坐，仅本人）；前端个人中心 `.pf-hist-zone` 历史区加「批量删除」→ 全选 `#pf-selall` / 单选 `.pf-hcard-ck` / 删除选中（两步确认）/ 退出，状态存 `pfState.batchMode/selected`。
 - **历史区宽度**：`.pf-hist-zone` 用 `max-width:var(--content-w);margin:auto` 包住标题+列表，与展开的 `.p-ai.p-hist-detail` 严格同宽居中（曾因列表撑满外层 p-card、详情卡锁 760 导致左右边缘对不齐）。
 - **归档回看标签**：`freezeForReview()` 把归档轮内 `.p-ai-title` 的「新提问 · 问题」改写为「本次解读」——外层 `.round-item-hd .rq` 已显示问题文本，内层重复即残留。
+
+### 7.8 历史区宽度再修订（v90）
+- 个人中心是撑满 `#pf-body` 内宽的卡片流（个人记忆 / 统计卡均 `max-width:none`）。历史区此前误用 `max-width:var(--content-w)=760;margin:auto` 居中，导致相对上方卡片整体右缩进约 90px。
+- 修订：`.pf-hist-zone` 去掉 max-width 与 auto margin，改 `margin:22px 0 0` 跟随父容器内宽；`.p-ai.p-hist-detail` 覆盖全局 `.p-ai` 的 760 限制（`max-width:none;margin:16px 0 0`）。三者（个人记忆 / 统计 / 历史区）left 与 width 实测完全一致。
+- 注意：`--content-w:760` 仍用于**功能页**（盘面/提问/解读/归档），个人中心卡片流不在此列，勿混淆。
