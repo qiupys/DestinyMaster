@@ -134,3 +134,9 @@
   - 用户画像 `profiles.user_profile` 与更早对话摘要 `summaries` 是 AI 从历次对话提炼的**长期记忆，独立于 `feature_history` 历史提问表**——删除历史提问不会清除。追问时 `_personalize → get_user_profile` 会把它重新注入 prompt，所以删历史后 AI 仍可能引用旧信息（如「八成上限两成现金零融资」）。
   - 新增 `GET /api/profile/ai_profile`(profile_id,token) 读画像+摘要、`POST /api/profile/ai_profile/clear` 清空画像+摘要并把 `profile_upto`/`compressed_until` 水位推进到最新消息（避免旧消息被再次提炼重建）。`profile.get_ai_profile/clear_ai_profile` 实现。
   - 个人中心新增「AI 记忆管理」卡（在个人记忆卡上方）：展示 AI 记住的内容 + 「清空 AI 画像」两步确认。让用户看清来源并自主清除。
+
+### 7.10 记忆统一 / 归档单层化 / 会话快照（v92）
+- **记忆统一到个人记忆**：删除 v91 新增的「AI 记忆管理」（自动画像 user_profile + 摘要）。个性化注入唯一来源 = 用户手动维护的 `personal_memory`（个人记忆卡），`memory.personalization_text()` 拼成 `[分类] 内容` 文本，`history.personalization()` 注入所有功能 prompt（含紫微首轮/追问）。删除个人记忆即时不再注入。后端删 `GET/POST /api/profile/ai_profile`、画像后台提炼 `maybe_update_user_profile`、profile.py 画像函数；前端删 pfAiprofileHTML/bindAiprofile/CSS/pfState.aiProfile/loadProfile fetch。prompt 文案统一为「个人记忆（用户手动维护的自我认知…不要在回复中复述或宣称记得这些）」。
+  - 注意：profile.py 的 `_ensure_profile_columns()` 必须保留（db() 初始化调用它补 messages.dedupe_key），只去掉 user_profile/profile_upto 列迁移即可。
+- **功能页历史归档单层化**：`archiveRound()` 从 `.round-item > .round-item-hd + .round-item-bd > .p-ai` 双层卡套卡，改为生成【一张 `.p-ai.p-ai-archived`】——卡头 `.p-ai-head`=「历史 · 问题」（点按折叠，复用已有 `.p-ai-archived` CSS 的 `::after` 展开回看/收起），卡体 `.p-ai-body`=解读正文 + 追问链（盘面摘要并入 `.pf-arch-fact` 引用块）。与新提问解读卡完全同构，杜绝嵌套。`findAnswered` 用 `dataset.archQ`/`.p-ai-archived`，`revealAnswered` 切 `p-ai-open`；删除旧 `.round-item-hd` 点击委托。旧 `.round-item*` CSS 已清。
+- **会话快照（reload 后提问不丢）**：纯 hash 切页 DOM 本就保留（实测 1→1），但 reload 后解读卡丢失（盘面靠 chart 缓存恢复）。新增 `saveStageSnap(feat)`（在 streamToUrl finish 后把结果区+归档区 innerHTML 存 sessionStorage，key 按 uid 隔离）、`restoreStageSnap(feat)`（navigate render 后恢复，命盘类等异步排盘落地再恢复）、`clearAllSnaps()`（退出登录清）。追问框改 `bindFollowBar(card)` 可重绑（card.dataset.hid + dataset.bound 防重复），`rebindFollows()` 供恢复后重绑。
