@@ -95,9 +95,18 @@
     else st.appendChild(host);
     bindAIGate(host);
   }
-  /* 档案出生信息变更后：清掉本地命盘缓存（否则旧盘仍被复用），并刷新档案副本 */
+  /* 命盘类缓存：出生信息不变时复用已排好的盘，登录态不重复请求后端排盘。
+     key 由出生信息决定；个人信息变更时 profileBirthChanged 统一清除。 */
+  var CHART_CACHE = { bazi: "bz-chart-v1", astrology: "as-chart-v1", ziwei: "zw-chart-v1" };
+  function chartCacheGet(feature) {
+    try { return JSON.parse(sessionStorage.getItem(CHART_CACHE[feature]) || "null"); } catch (e) { return null; }
+  }
+  function chartCacheSet(feature, obj) {
+    try { sessionStorage.setItem(CHART_CACHE[feature], JSON.stringify(obj)); } catch (e) {}
+  }
+  /* 档案出生信息变更后：清掉全部命盘缓存（否则旧盘仍被复用），并刷新档案副本 */
   function profileBirthChanged() {
-    try { sessionStorage.removeItem("zw-chart-v1"); } catch (e) {}
+    Object.keys(CHART_CACHE).forEach(function (f) { try { sessionStorage.removeItem(CHART_CACHE[f]); } catch (e) {} });
     if (S.zw) { S.zw.chart = null; S.zw.id = null; S.zw.key = null; S.zw.horo = null; }
     if (S.profile) {
       fetch("/api/profile/get?id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token))
@@ -846,8 +855,15 @@
       var saveBirth = S.bzSaveBirth && S.profile;
       if (saveBirth) qs += "&save=1" + authParam();
       lastQS = qs;
-      fetch("/api/bazi/calc?" + qs).then(function (r) { return r.json(); }).then(function (d) {
+      // 登录态且非写回：命中缓存直接用缓存数据渲染，不重复请求排盘（档案变更会清缓存）
+      var cacheKey = qs.replace(/&save=1.*$/, "");
+      var cached = (S.profile && !saveBirth) ? chartCacheGet("bazi") : null;
+      var fetchJson = (cached && cached.key === cacheKey && cached.uid === S.profile.id && cached.data)
+        ? (function () { return Promise.resolve(cached.data); })
+        : (function () { return fetch("/api/bazi/calc?" + qs).then(function (r) { return r.json(); }); });
+      fetchJson().then(function (d) {
         if (!d.ok) { $("#bz-err").textContent = d.error || "排盘失败"; return; }
+        if (S.profile && !saveBirth) chartCacheSet("bazi", { key: cacheKey, uid: S.profile.id, data: d });
         if (d.birth_saved) {
           S.bzSaveBirth = false;
           toast("出生信息已同步到个人档案，其它功能将使用新信息");
@@ -1223,6 +1239,9 @@
     stageEl().innerHTML =
       toolHero("塔罗牌占卜", "以图像与象征映照问题的不同侧面。写下明确的问题，程序随机抽牌；确认牌面后，由 AI 按牌位和正逆位组织成一条与你有关的叙事——包含主线，也指出盲点。") +
       '<div class="tool-card"><div class="tool-form" id="tr-form">' +
+        (S.profile
+          ? '<div class="p-bazi-gate ok tr-star-gate"><span class="bg-ic">◈</span><span class="bg-txt">解牌将自动结合您档案生日换算的太阳星座（性格基调），让解读更贴合本人。</span></div>'
+          : '<div class="p-bazi-gate warn tr-star-gate"><span class="bg-ic">◈</span><span class="bg-txt">登录后，塔罗解牌将自动结合档案生日换算的太阳星座，让解读更贴合本人。</span></div>') +
         '<div class="tf-group"><div class="tf-gt">提出您的问题</div>' +
           '<p class="p-note" style="margin:0 0 10px">请输入一个明确的问题，程序会随机抽取三张牌；确认牌面后，可让 AI 按牌位和正逆位解读</p>' +
           '<input class="ti" id="tr-q" placeholder="例如：创业还是留在大公司更适合我？" />' +
@@ -1231,9 +1250,6 @@
         '<div class="tf-group"><div class="tf-gt">牌阵</div>' +
           '<div class="p-seg" id="tr-spread"><button class="on" data-v="three">三张牌 · 过去现在未来</button><button data-v="celtic_cross">凯尔特十字（十张）</button></div>' +
         '</div>' +
-        (S.profile
-          ? '<div class="p-bazi-gate ok tr-star-gate"><span class="bg-ic">◈</span><span class="bg-txt">解牌将自动结合您档案生日换算的太阳星座（性格基调），让解读更贴合本人。</span></div>'
-          : '<div class="p-bazi-gate warn tr-star-gate"><span class="bg-ic">◈</span><span class="bg-txt">登录后，塔罗解牌将自动结合档案生日换算的太阳星座，让解读更贴合本人。</span></div>') +
         '<label class="p-switch tr-star-switch"><input type="checkbox" id="tr-star"' + (S.profile ? ' checked' : ' disabled') + ' /><span>结合我的太阳星座解牌</span></label>' +
         '<button class="tool-submit" id="tr-draw">抽取塔罗牌</button>' +
         '<div class="p-err" id="tr-err"></div>' +
@@ -1348,27 +1364,18 @@
   function signSym(n) { return SIGN_SYM[n] || "✦"; }
 
   function renderAstrology() {
-    // 登录用户：出生信息唯一来源是个人档案，占星页只读展示，不再提供填写表单
-    var asProfileBirth = null;
-    var birthBlock = S.profile
-      ? '<div class="as-profile-box" id="as-profile-box">' +
-          '<div class="apb-head"><span class="bg-ic">◈</span><span class="apb-title">已使用个人档案中的出生信息</span>' +
-            '<button type="button" class="apb-edit" id="as-edit-profile">修改出生信息</button></div>' +
-          '<div class="apb-body" id="as-profile-body">正在读取档案…</div>' +
-        '</div>'
-      : birthFieldsHTML("as", { simple: true, compact: true }) +
-        placeFieldsHTML("as") +
-        '<p class="p-note" style="margin:8px 0 0">出生地决定上升与宫位；不知道精确时间时可用中午 12:00，但上升与宫位会有偏差。登录后可把这份信息存入个人档案，供各功能共用。</p>';
+    // 命盘类：登录态用档案出生信息自动排盘并收起表单，结果区直接提问；
+    // 出生信息不变则复用缓存、不重复排盘，仅档案变更时才重排。未登录态需在本页填写出生资料后手动生成。
+    var asProfileBirth = null;   // 登录态档案出生信息副本
+    var asEditing = false;       // 登录态是否处于「修改出生信息」编辑模式
 
     stageEl().innerHTML =
       toolHero("占星命盘 · 本命盘", "使用与你个人档案共用的出生资料排出完整本命盘：太阳、月亮、上升三大件，十大行星落座，十二宫宫位与主要相位。AI 将据此作一次结构化解读。") +
-      '<div class="tool-card"><div class="tool-form" id="as-form">' +
+      '<div class="tool-card" id="as-form-card"><div class="tool-form" id="as-form">' +
         '<div class="tf-group"><div class="tf-gt">出生资料</div>' +
-          birthBlock +
-        '</div>' +
-        '<div class="tf-group"><div class="tf-gt">你想问什么？</div>' +
-          '<input class="ti" id="as-q" placeholder="例如：我现阶段适合怎样发展事业？" />' +
-          '<div class="p-suggest"><button data-q="我的性格优势与短板分别是什么？">性格优势</button><button data-q="我现阶段的事业方向该如何选择？">事业方向</button><button data-q="我的感情关系有哪些课题？">感情课题</button></div>' +
+          birthFieldsHTML("as", { simple: true, compact: true }) +
+          placeFieldsHTML("as") +
+          '<p class="p-note" style="margin:8px 0 0">出生地决定上升与宫位；不知道精确时间时可用中午 12:00，但上升与宫位会有偏差。登录后会存入个人档案，供各功能共用。</p>' +
         '</div>' +
         '<button class="tool-submit" id="as-calc">生成本命盘</button>' +
         '<div class="p-err" id="as-err"></div>' +
@@ -1380,47 +1387,14 @@
         '本盘采用回归黄道、Placidus 宫制（高纬度自动回落整宫制），星历由 Swiss Ephemeris 计算；占星为性格与趋势的象征性参考，非命运定论。'
       ], "占星是一面象征之镜，帮助你理解性格倾向与人生课题；它提供视角而非答案，选择权始终在你手中。");
 
-    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#as-q"); }; });
+    // 表单始终绑定（登录态拉档案后回填、未登录态临时填写）
+    birthFieldsBind("as", { calendar: "solar" });
+    placeFieldsBind("as", {});
 
-    if (S.profile) {
-      // 登录用户：异步拉档案，渲染只读出生信息卡；排盘参数直接取自档案
-      function renderProfileBox(b) {
-        asProfileBirth = b || {};
-        S.profileBirth = asProfileBirth;
-        var box = $("#as-profile-body");
-        if (!box) return;
-        if (!asProfileBirth.year) {
-          box.innerHTML = '<p class="p-note" style="margin:0">档案尚无出生信息，请点右上「修改出生信息」前往个人中心补全。</p>';
-          return;
-        }
-        var dt = asProfileBirth.year + "年" + asProfileBirth.month + "月" + asProfileBirth.day + "日";
-        var tm = asProfileBirth.know_time === false ? "出生时间未知（按午时）"
-          : String(asProfileBirth.hour != null ? asProfileBirth.hour : 12).padStart(2, "0") + ":" +
-            String(asProfileBirth.minute != null ? asProfileBirth.minute : 0).padStart(2, "0");
-        var co = asProfileBirth.country || "中国", pv = asProfileBirth.province || "", ct = asProfileBirth.city || "";
-        var loc = [co, pv, ct].filter(Boolean).join(" · ");
-        var hasGeo = asProfileBirth.lat != null && asProfileBirth.lon != null;
-        box.innerHTML = '<div class="apb-row"><span>出生日期</span><b>' + esc(dt) + '</b></div>' +
-          '<div class="apb-row"><span>出生时间</span><b>' + esc(tm) + '</b></div>' +
-          '<div class="apb-row"><span>出生地</span><b>' + esc(loc || "未填写") + '</b></div>' +
-          (hasGeo ? '' : '<p class="apb-warn">档案还没有出生地经纬度，上升与宫位会不准——请点「修改出生信息」补全城市。</p>');
-      }
-      var editBtn = $("#as-edit-profile");
-      if (editBtn) editBtn.onclick = function () { pfState.editBirth = true; go("profile"); };
-      renderProfileBox(S.profileBirth);
-      fetch("/api/profile/get?id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token)).then(function (r) { return r.json(); }).then(function (d) {
-        var b = (d.ok && d.profile && d.profile.birth) || {};
-        renderProfileBox(b);
-      }).catch(function () { var box = $("#as-profile-body"); if (box) box.textContent = "档案读取失败，请刷新重试"; });
-    } else {
-      // 未登录用户：保留临时填写表单（仅供排盘，AI 解读仍需登录）
-      birthFieldsBind("as", { calendar: "solar" });
-      placeFieldsBind("as", {});
-    }
-
+    // 排盘参数：登录态默认取档案；「修改出生信息」编辑态与未登录态取表单
     function asParams() {
-      if (S.profile) {
-        var b = asProfileBirth || {};
+      if (S.profile && !asEditing && asProfileBirth && asProfileBirth.year) {
+        var b = asProfileBirth;
         var co = b.country || "中国", pv = b.province || "", ct = b.city || "";
         var place = (co === "中国" ? pv.replace(/(省|市|自治区|特别行政区)$/, "") : co) + (ct ? "·" + ct : "");
         return { y: b.year, m: b.month, d: b.day, h: b.hour != null ? b.hour : 12, mi: b.minute != null ? b.minute : 0,
@@ -1432,6 +1406,41 @@
                country: pl.country, province: pl.province, city: pl.city,
                place: pl.place, lat: pl.lat, lon: pl.lon, tz: pl.tz };
     }
+
+    // 登录态排完盘后收起出生资料卡，结果标题右侧给出来源提示 + 修改入口（对齐八字/紫微）
+    function collapseBirth() { var card = $("#as-form-card"); if (card) card.style.display = "none"; }
+    function profileAside() {
+      if (!S.profile || asEditing) return "";
+      return '<span class="result-aside" id="as-edit">已使用档案中的出生信息 · ' +
+        '<button type="button" class="link-btn" data-as-edit="1">修改出生信息</button></span>';
+    }
+    // 「修改出生信息」：展开已回填的表单卡供编辑（改动后重新生成会写回档案）
+    document.addEventListener("click", function (e) {
+      var b = e.target.closest && e.target.closest("[data-as-edit]");
+      if (!b) return;
+      asEditing = true;
+      var card = $("#as-form-card"); if (card) card.style.display = "";
+      var aside = $("#as-edit"); if (aside) aside.remove();
+      var g = $("#as-form .tf-group"); if (g) g.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    // 登录态：拉档案 → 回填表单 → 出生信息完整则自动出盘（命中缓存直接用，不重复排盘）
+    if (S.profile) {
+      fetch("/api/profile/get?id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token))
+        .then(function (r) { return r.json(); }).then(function (d) {
+          if (d.ok && d.profile && d.profile.birth) {
+            var b = d.profile.birth;
+            asProfileBirth = b; S.profileBirth = b;
+            birthFieldsBind("as", { calendar: "solar", year: b.year, month: b.month, day: b.day,
+              hour: b.hour != null ? b.hour : 12, minute: b.minute != null ? b.minute : 0,
+              know_time: b.know_time !== false });
+            placeFieldsBind("as", { country: b.country, province: b.province, city: b.city,
+              lat: b.lat, lon: b.lon, tz: b.tz });
+            // 出生日期 + 经纬度齐全才自动出盘；缺项则保留表单让用户补全
+            if (b.year && b.month && b.day && b.lat != null && b.lon != null) autoCastAstro();
+          }
+        }).catch(function () {});
+    }
     function posLine(label, sym, sign, deg, house) {
       return '<div class="as-pos"><span class="as-pos-sym">' + sym + '</span>' +
         '<span class="as-pos-label">' + label + '</span>' +
@@ -1440,45 +1449,44 @@
         (house ? '<span class="as-pos-house">第' + house + '宫</span>' : '') + '</div>';
     }
     var asDrawing = false;
-    function castAstro() {
-      if (asDrawing) return;
-      if (S.busyKeys && S.busyKeys["as-result"]) { toast("当前解读进行中，请稍候"); return; }
-      var q = $("#as-q").value.trim();
-      if (!q) { toast("请先写下你想问的事"); $("#as-q").focus(); return; }
-      var pa = asParams();
-      if (!pa.y || !pa.m || !pa.d) { toast(S.profile ? "档案尚无出生日期，请先到个人中心补全" : "请在出生资料里选择出生日期"); return; }
-      if (pa.lat == null || pa.lon == null) { toast(S.profile ? "档案还没有出生地，请到个人中心补全出生城市" : "请选择出生国家 / 省份 / 城市"); return; }
-      asDrawing = true;
-      $("#as-err").textContent = "";
-      var qs = "year=" + pa.y + "&month=" + pa.m + "&day=" + pa.d + "&hour=" + pa.h + "&minute=" + pa.mi +
+    var ASTRO_CHIPS = [
+      { t: "性格优势", q: "我的性格优势与短板分别是什么？" },
+      { t: "事业方向", q: "我现阶段的事业方向该如何选择？" },
+      { t: "感情课题", q: "我的感情关系有哪些课题？" }
+    ];
+    function astroKey(pa) { return [pa.y, pa.m, pa.d, pa.h, pa.mi, pa.lat, pa.lon, pa.place].join("|"); }
+    function buildQS(pa) {
+      return "year=" + pa.y + "&month=" + pa.m + "&day=" + pa.d + "&hour=" + pa.h + "&minute=" + pa.mi +
         "&lat=" + pa.lat + "&lon=" + pa.lon + "&tz=" + pa.tz + "&place=" + encodeURIComponent(pa.place) +
         "&country=" + encodeURIComponent(pa.country) + "&province=" + encodeURIComponent(pa.province) +
-        "&city=" + encodeURIComponent(pa.city) + (S.profile ? "&save=1&gender=" + encodeURIComponent((S.profileBirth && S.profileBirth.gender) || "男") : "");
-      fetch("/api/astrology/calc?" + qs).then(function (r) { return r.json(); }).then(function (d) {
-        asDrawing = false;
-        if (!d.ok) { $("#as-err").textContent = d.error || "排盘失败"; return; }
-        archiveRound($("#as-result"), $("#as-result").dataset.roundQ || "上一轮命盘", $("#as-result").dataset.rk);
-        var big = '<div class="as-big3">' +
-          posLine("太阳 ☉", "☉", d.sun.sign, d.sun.degree, d.sun.house) +
-          posLine("月亮 ☽", "☽", d.moon.sign, d.moon.degree, d.moon.house) +
-          posLine("上升 ↑", "↑", d.asc.sign, d.asc.degree, null) +
-          posLine("中天", "◈", d.mc.sign, d.mc.degree, null) +
-        '</div>';
-        var planets = (d.planets || []).filter(function (p) { return p.key !== "sun" && p.key !== "moon"; })
-          .map(function (p) {
-            return '<div class="as-planet"><b>' + esc(p.name) + '</b><span>' + signSym(p.sign) + ' ' + esc(p.sign) + ' ' + esc(p.degree) + '</span>' +
-              '<em>第' + (p.house || "—") + '宫' + (p.retro ? ' · 逆行' : '') + '</em></div>';
-          }).join("");
-        var houses = (d.houses || []).map(function (h) {
-          return '<div class="as-house"><i>' + h.num + '</i><span>' + signSym(h.sign) + ' ' + esc(h.sign) + '</span><em>' + esc(h.degree) + '</em></div>';
+        "&city=" + encodeURIComponent(pa.city) +
+        (S.profile && asEditing ? "&save=1&gender=" + encodeURIComponent((asProfileBirth && asProfileBirth.gender) || "男") : "");
+    }
+    // 纯渲染：把排盘数据与提问卡画进结果区（三段平级，对齐八字）
+    function paintAstro(d, pa, qs, rk, q) {
+      archiveRound($("#as-result"), $("#as-result").dataset.roundQ || "上一轮命盘", $("#as-result").dataset.rk);
+      var big = '<div class="as-big3">' +
+        posLine("太阳 ☉", "☉", d.sun.sign, d.sun.degree, d.sun.house) +
+        posLine("月亮 ☽", "☽", d.moon.sign, d.moon.degree, d.moon.house) +
+        posLine("上升 ↑", "↑", d.asc.sign, d.asc.degree, null) +
+        posLine("中天", "◈", d.mc.sign, d.mc.degree, null) +
+      '</div>';
+      var planets = (d.planets || []).filter(function (p) { return p.key !== "sun" && p.key !== "moon"; })
+        .map(function (p) {
+          return '<div class="as-planet"><b>' + esc(p.name) + '</b><span>' + signSym(p.sign) + ' ' + esc(p.sign) + ' ' + esc(p.degree) + '</span>' +
+            '<em>第' + (p.house || "—") + '宫' + (p.retro ? ' · 逆行' : '') + '</em></div>';
         }).join("");
-        var aspects = (d.aspects || []).map(function (a) {
-          return '<div class="as-aspect"><b>' + esc(a.name) + '</b><span>' + esc(a.a) + ' — ' + esc(a.b) + '</span><em>容许 ' + a.orb + '°</em></div>';
-        }).join("") || '<p class="p-note">主要相位较少</p>';
-        var elem = d.element || {};
-        var elemLine = ['火','土','风','水'].map(function (k) { return k + (elem[k] || 0); }).join(' · ');
+      var houses = (d.houses || []).map(function (h) {
+        return '<div class="as-house"><i>' + h.num + '</i><span>' + signSym(h.sign) + ' ' + esc(h.sign) + '</span><em>' + esc(h.degree) + '</em></div>';
+      }).join("");
+      var aspects = (d.aspects || []).map(function (a) {
+        return '<div class="as-aspect"><b>' + esc(a.name) + '</b><span>' + esc(a.a) + ' — ' + esc(a.b) + '</span><em>容许 ' + a.orb + '°</em></div>';
+      }).join("") || '<p class="p-note">主要相位较少</p>';
+      var elem = d.element || {};
+      var elemLine = ['火','土','风','水'].map(function (k) { return k + (elem[k] || 0); }).join(' · ');
 
-        $("#as-result").innerHTML = '<div class="p-result">' + resultTitle("本命盘") +
+      $("#as-result").innerHTML = '<div class="p-result">' +
+          '<div class="result-head">' + resultTitle("本命盘") + profileAside() + '</div>' +
           '<div class="p-card as-card">' +
             '<div class="as-meta">公历 ' + pa.y + '-' + String(pa.m).padStart(2,"0") + '-' + String(pa.d).padStart(2,"0") +
               ' ' + String(pa.h).padStart(2,"0") + ':' + String(pa.mi).padStart(2,"0") + ' · ' + esc(pa.place) +
@@ -1487,19 +1495,66 @@
             '<div class="as-sub-h">行星落座</div><div class="as-planets">' + planets + '</div>' +
             '<div class="as-sub-h">十二宫</div><div class="as-houses">' + houses + '</div>' +
             '<div class="as-sub-h">主要相位</div><div class="as-aspects">' + aspects + '</div>' +
-            '<button class="tool-ai" id="as-ai" style="margin-top:18px">AI 解读本命盘</button>' +
-          '</div></div>';
-        var rk = "astro|" + pa.y + "-" + pa.m + "-" + pa.d + "|" + pa.h + ":" + pa.mi + "|" + pa.place;
-        $("#as-result").dataset.rk = rk;
-        $("#as-result").dataset.roundQ = q;
-        $("#as-ai").onclick = function () {
-          var nq = $("#as-q").value.trim();
-          if (!nq) { toast("请先写下你想问的事"); return; }
-          if (requireLogin()) return;
-          streamAI("astrology", qs + "&q=" + encodeURIComponent(nq) + authParam(), nq, $("#as-result"), rk);
-        };
-        $("#as-result").scrollIntoView({ behavior: "smooth", block: "nearest" });
+          '</div>' +
+        '</div>' +
+        '<div class="bz-ask as-ask">' +
+          '<div class="bz-ask-h">就这张盘提问</div>' +
+          '<div class="p-suggest zw-chips">' + ASTRO_CHIPS.map(function (c) {
+            return '<button type="button" data-q="' + esc(c.q) + '">' + esc(c.t) + '</button>';
+          }).join("") + '</div>' +
+          '<div class="zw-ask-row"><input class="ti" id="as-q" placeholder="例如：我现阶段适合怎样发展事业？" />' +
+            '<button class="tool-ai zw-ask-btn" id="as-ai" type="button">AI 解读</button></div>' +
+        '</div>' +
+        '<div id="as-ai-out"></div>';
+      $("#as-result").dataset.rk = rk;
+      $("#as-result").dataset.roundQ = q || "";
+      $$("#as-result .zw-chips button").forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#as-q"); }; });
+      $("#as-ai").onclick = function () {
+        var nq = $("#as-q").value.trim();
+        if (!nq) { toast("请先写下你想问的事"); $("#as-q").focus(); return; }
+        if (requireLogin()) return;
+        streamAI("astrology", qs + "&q=" + encodeURIComponent(nq) + authParam(), nq, $("#as-ai-out"), rk);
+      };
+      $("#as-q").onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); $("#as-ai").click(); } };
+      if (S.profile && !asEditing) collapseBirth();
+    }
+    // 排盘核心：命中缓存直接渲染（不请求），否则请求后端并写缓存
+    function doCast(pa, auto) {
+      var qs = buildQS(pa);
+      var key = astroKey(pa);
+      var rk = "astro|" + pa.y + "-" + pa.m + "-" + pa.d + "|" + pa.h + ":" + pa.mi + "|" + pa.place;
+      var paint = function (d) {
+        asDrawing = false;
+        if (d.birth_saved) {
+          profileBirthChanged(); asEditing = false;
+          toast("出生信息已同步到个人档案，其它功能将使用新信息");
+        }
+        if (S.profile && !asEditing) chartCacheSet("astrology", { key: key, uid: S.profile.id, data: d });
+        paintAstro(d, pa, qs, rk, auto ? "" : ($("#as-result").dataset.roundQ || ""));
+        if (!auto) $("#as-result").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      };
+      var cached = S.profile ? chartCacheGet("astrology") : null;
+      if (cached && cached.key === key && cached.uid === S.profile.id && cached.data) { paint(cached.data); return; }
+      asDrawing = true;
+      $("#as-err").textContent = "";
+      fetch("/api/astrology/calc?" + qs).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) { asDrawing = false; $("#as-err").textContent = d.error || "排盘失败"; return; }
+        paint(d);
       }).catch(function () { asDrawing = false; $("#as-err").textContent = "排盘失败，请检查出生资料后重试"; });
+    }
+    function castAstro() {
+      if (asDrawing) return;
+      if (S.busyKeys && S.busyKeys["as-ai-out"]) { toast("当前解读进行中，请稍候"); return; }
+      var pa = asParams();
+      if (!pa.y || !pa.m || !pa.d) { toast(S.profile ? "档案尚无出生日期" : "请在出生资料里选择出生日期"); return; }
+      if (pa.lat == null || pa.lon == null) { toast(S.profile ? "档案还没有出生地，请到个人中心补全" : "请选择出生国家 / 省份 / 城市"); return; }
+      doCast(pa, false);
+    }
+    function autoCastAstro() {
+      if (asDrawing) return;
+      var pa = asParams();
+      if (!pa.y || !pa.m || !pa.d || pa.lat == null || pa.lon == null) return;
+      doCast(pa, true);
     }
     $("#as-calc").onclick = function () { castAstro(); };
     applyGate("astrology");
@@ -1515,6 +1570,9 @@
       '<div class="tool-card hl-cal" id="hl-cal"><p class="p-note" style="text-align:center">日历加载中…</p></div>' +
       '<div id="hl-day"><p class="p-note" style="text-align:center;margin:18px 0">当日历注加载中…</p></div>' +
       '<div class="tool-card hl-ai-card"><div class="tool-form">' +
+        (S.profile
+          ? '<div class="p-bazi-gate ok hl-bazi-gate"><span class="bg-ic">◈</span><span class="bg-txt">择日答疑将自动结合您档案中的八字（日主与喜忌），让答案更贴合本人。</span></div>'
+          : '<div class="p-bazi-gate warn hl-bazi-gate"><span class="bg-ic">◈</span><span class="bg-txt">登录后，择日答疑将自动结合档案里的八字（日主与喜忌），让答案更贴合本人。</span></div>') +
         '<div class="tf-group"><div class="tf-gt">AI 择日答疑</div>' +
           '<p class="p-note" style="margin:0">结合上方所选日期的完整历注，解释宜忌与你所想之事的关系。</p>' +
         '</div>' +
@@ -1522,10 +1580,7 @@
           '<textarea class="ti ta" id="hl-q" placeholder="例如：这天适合搬家吗？"></textarea>' +
           '<div class="p-suggest"><button data-q="今天适合做什么事情？">今天适合做什么</button><button data-q="这周哪天最适合搬家？">本周搬家吉日</button><button data-q="这天适合签约开业吗？">签约开业</button></div>' +
         '</div>' +
-        '<label class="p-switch hl-bazi-switch"><input type="checkbox" id="hl-bazi"' + (S.profile ? '' : ' disabled') + ' /><span>导入本人八字信息</span></label>' +
-        '<p class="p-note" style="margin:7px 0 2px">' + (S.profile
-          ? '择日时一并参考你八字里的日主与喜忌，答案更贴合本人。'
-          : '登录后可导入档案里的八字，一并参考日主与喜忌。') + '</p>' +
+        '<label class="p-switch hl-bazi-switch"><input type="checkbox" id="hl-bazi"' + (S.profile ? ' checked' : ' disabled') + ' /><span>导入本人八字信息</span></label>' +
         '<button class="tool-ai" id="hl-ai">AI 择日答疑</button>' +
         '<div class="p-err" id="hl-err"></div>' +
       '</div></div>' +

@@ -295,7 +295,7 @@ details.p-disclose .inner { padding-bottom: 12px; }
 }
 .ag-btn:hover { filter: brightness(1.15); }
 /* 未登录：隐藏各功能真正的 AI 提问框/按钮，只留门禁卡 */
-.stage-locked .bz-ask, .stage-locked .zw-ask, .stage-locked .zw-d-ask,
+.stage-locked .bz-ask, .stage-locked .zw-ask, .stage-locked .zw-d-ask, .stage-locked .as-ask,
 .stage-locked .ai-follow, .stage-locked #mh-ai, .stage-locked #tr-ai,
 .stage-locked #hl-ai, .stage-locked #bz-ai, .stage-locked #zw-ask,
 .stage-locked #zw-dask { display: none !important; }
@@ -1345,12 +1345,12 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .p-bazi-gate.warn { border-color: color-mix(in srgb, var(--cinnabar) 55%, var(--line)); }
 .p-bazi-gate.warn .bg-ic { color: var(--cinnabar); }
 
-/* ===================== 塔罗：结合星座开关（绿色提示框与梅花一致） ===================== */
-.tr-star-gate { margin-bottom: 12px; }
+/* ===================== 占卜类：导入档案信息的绿色提示框（梅花/塔罗/黄历位置统一在表单顶部） ===================== */
+.tr-star-gate, .hl-bazi-gate { margin-bottom: 12px; }
 .tr-star-switch { margin-top: 2px; }
-.tr-star-switch input:disabled { opacity: .4; cursor: not-allowed; }
+.tr-star-switch input:disabled, .hl-bazi-switch input:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ===================== 占星：登录用户的只读档案出生信息卡 ===================== */
+/* ===================== 占星：登录用户的只读档案出生信息卡（保留样式，兼容历史缓存 DOM） ===================== */
 .as-profile-box { border: 1px solid var(--wx-jin); border-radius: 11px; padding: 4px 16px 12px;
   background: var(--panel-2); }
 .apb-head { display: flex; align-items: center; gap: 9px; padding: 10px 0; border-bottom: 1px solid var(--line); }
