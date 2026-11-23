@@ -49,7 +49,8 @@
     meihua: { title: "AI 梅花解卦", desc: "基于本次卦象，可就所问之事继续提问，答复仅供参考。" },
     tarot:  { title: "AI 塔罗解读", desc: "基于本次牌阵，可就所问之事继续提问，答复仅供参考。" },
     huangli:{ title: "AI 黄历答疑", desc: "基于当日历注，可就择日事项继续提问，答复仅供参考。" },
-    ziwei:  { title: "AI 紫微推演", desc: "基于本次命盘，可就格局与运限继续提问，答复仅供参考。" }
+    ziwei:  { title: "AI 紫微推演", desc: "基于本次命盘，可就格局与运限继续提问，答复仅供参考。" },
+    astrology: { title: "AI 占星解读", desc: "基于本次本命盘的行星落座、宫位与相位，可就性格与运势继续提问，答复仅供参考。" }
   };
   /* 未登录时的门禁块：模糊的假提问框 + 锁 + 标题说明 + 登录按钮（对齐参考图） */
   function aiGateBlock(feature) {
@@ -195,7 +196,7 @@
     var ab = $("#p-auth-btn");
     if (ab) ab.classList.toggle("current", feat === "profile");
     var names = { home:"首页",bazi:"八字排盘",ziwei:"紫微斗数",meihua:"梅花易数",liuyao:"六爻",qimen:"奇门遁甲",
-      tarot:"塔罗牌",huangli:"黄历",profile:"个人中心" };
+      tarot:"塔罗牌",astrology:"占星命盘",huangli:"黄历",profile:"个人中心" };
     $("#p-crumb").textContent = names[feat] || feat;
     // 隐藏所有已建舞台，只显示当前功能的；DOM 不销毁 → 提问框/解读/追问/进行中的 SSE 全部保留
     Object.keys(S.stageCache).forEach(function (k) { S.stageCache[k].style.display = "none"; });
@@ -207,7 +208,7 @@
     st.dataset.ready = "1";
     if (feat === "home") { renderHome(); return; }
     if (feat === "ziwei") { renderZiweiEntry(); return; }
-    var fn = { bazi: renderBazi, meihua: renderMeihua, tarot: renderTarot, huangli: renderHuangli }[feat];
+    var fn = { bazi: renderBazi, meihua: renderMeihua, tarot: renderTarot, huangli: renderHuangli, astrology: renderAstrology }[feat];
     if (fn) { fn(); }
   }
 
@@ -639,8 +640,10 @@
         icon: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/>' },
       { feat: "meihua", tag: "周易占卜", name: "梅花易数", desc: "时间或手动起卦，本卦互卦变卦与动爻，逐层解读。",
         icon: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.1 5-5 2.1 2.1-5 5-2.1z"/>' },
-      { feat: "tarot",  tag: "塔罗牌", name: "塔罗牌", desc: "三张或凯尔特十字牌阵，先写问题再抽牌，按牌位成文。",
+      { feat: "tarot",  tag: "西方占卜", name: "塔罗牌", desc: "三张或凯尔特十字牌阵，先写问题再抽牌，按牌位成文。",
         icon: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M5 20h14"/>' },
+      { feat: "astrology", tag: "西方占卜", name: "占星命盘", desc: "按生日与出生地排出完整本命盘：日月上升、行星落座、宫位与相位。",
+        icon: '<circle cx="12" cy="12" r="9"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="2.5"/>' },
       { feat: "huangli",tag: "其他功能", name: "老黄历", desc: "宜忌、值神、冲煞与物候，结合所选日期作择日答疑。",
         icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01"/>' }
     ];
@@ -887,6 +890,7 @@
     stageEl().innerHTML =
       toolHero("梅花易数 · 每日决策", "梅花易数取象于当下，观变于一事；卦成之后，由 AI 结合《周易》原文解读。") +
       '<div class="tool-card"><div class="tool-form" id="mh-form">' +
+        '<div class="p-bazi-gate" id="mh-bazi-gate"><span class="bg-ic">◈</span><span class="bg-txt">正在检查您的命局资料…</span></div>' +
         '<div class="tf-group"><div class="tf-gt">提出您的决策问题</div>' +
           '<p class="p-note" style="margin:0 0 10px">请输入一个明确的问题，系统将自动为您起卦</p>' +
           '<input class="ti" id="mh-q" placeholder="例如：我是否应该接受这个工作机会？" />' +
@@ -916,6 +920,34 @@
     var manualYaos = [1,1,1,1,1,1];   // 自下而上，1=阳；手动起卦编辑器状态
     var manualMoving = 0;             // 0=未选变爻
     var lastGua = null;               // 最近一次起卦结果，供 AI 解卦用
+    var mhBaziReady = false;          // 档案是否具备完整八字（梅花解卦强制要求）
+
+    /* 梅花解卦强制结合本人八字：进入时拉取档案判断出生信息是否完整，
+       据更新顶部提示条；未登录/缺出生时间则由后端最终拦截，这里先给出引导。 */
+    function refreshBaziGate() {
+      var gate = $("#mh-bazi-gate");
+      if (!gate) return;
+      if (!S.profile) {
+        mhBaziReady = false;
+        gate.className = "p-bazi-gate warn";
+        gate.innerHTML = '<span class="bg-ic">◈</span><span class="bg-txt">梅花解卦将结合您的八字命局以提高准确度——请先登录并补全出生信息。</span>';
+        return;
+      }
+      fetch("/api/profile/get?id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token)).then(function (r) { return r.json(); }).then(function (d) {
+        var b = (d.ok && d.profile && d.profile.birth) || {};
+        var complete = !!(b.year && b.month && b.day && b.know_time !== false && b.hour !== null && b.hour !== undefined && b.hour !== "");
+        mhBaziReady = complete;
+        gate.className = "p-bazi-gate " + (complete ? "ok" : "warn");
+        gate.innerHTML = complete
+          ? '<span class="bg-ic">◈</span><span class="bg-txt">解卦将自动结合您档案中的八字命局（四柱喜忌），使命盘与卦象相互印证，结论更贴合本人。</span>'
+          : '<span class="bg-ic">◈</span><span class="bg-txt">您的档案尚缺完整出生时间，梅花解卦需结合八字命局——请先到「个人中心」补全出生年月日与时辰。</span>';
+      }).catch(function () {
+        mhBaziReady = false;
+        gate.className = "p-bazi-gate warn";
+        gate.innerHTML = '<span class="bg-ic">◈</span><span class="bg-txt">命局资料读取失败，请刷新重试或到个人中心补全出生信息。</span>';
+      });
+    }
+    refreshBaziGate();
 
     /* 爻线图形：阳爻一条长横，阴爻两段 */
     function yaoGlyph(yang, moving) {
@@ -1039,11 +1071,13 @@
         $("#mh-ai").onclick = function () {
           var q = $("#mh-q").value.trim();
           if (!q) { toast("请先写下所问之事"); return; }
+          if (requireLogin()) return;
+          if (!mhBaziReady) { toast("请先在个人中心补全出生年月日与出生时间，梅花解卦需结合您的八字命局"); return; }
           // 问题文本变了 = 新提问 → 重新起卦并按新问题解卦
           if (q !== $("#mh-result").dataset.roundQ) { toast("问题已更改，正在按新问题重新起卦"); castMeihua(q); return; }
           streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(q) + authParam(), q, $("#mh-result"), mhRk);
         };
-        if (autoAskQ) streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(autoAskQ) + authParam(), autoAskQ, $("#mh-result"), mhRk);
+        if (autoAskQ && mhBaziReady && S.profile) streamAI("meihua", mhParams() + "&q=" + encodeURIComponent(autoAskQ) + authParam(), autoAskQ, $("#mh-result"), mhRk);
         $("#mh-result").scrollIntoView({ behavior: "smooth", block: "nearest" });
       }).catch(function () { mhDrawing = false; });
     }
@@ -1064,6 +1098,10 @@
         '<div class="tf-group"><div class="tf-gt">牌阵</div>' +
           '<div class="p-seg" id="tr-spread"><button class="on" data-v="three">三张牌 · 过去现在未来</button><button data-v="celtic_cross">凯尔特十字（十张）</button></div>' +
         '</div>' +
+        '<label class="p-switch tr-star-switch"><input type="checkbox" id="tr-star"' + (S.profile ? ' checked' : ' disabled') + ' /><span>结合我的太阳星座解牌</span></label>' +
+        '<p class="p-note" style="margin:7px 0 2px">' + (S.profile
+          ? '按档案生日换算太阳星座，AI 解牌时结合你的性格基调，答案更贴合本人。'
+          : '登录后可自动按档案生日换算太阳星座，一并作为解牌参考。') + '</p>' +
         '<button class="tool-submit" id="tr-draw">抽取塔罗牌</button>' +
         '<div class="p-err" id="tr-err"></div>' +
       '</div></div>' +
@@ -1128,7 +1166,8 @@
       }).join("") + '</div>';
     }
     function askTarot(deck, q) {
-      streamAI("tarot", trParam() + "&q=" + encodeURIComponent(q) + "&deck=" + encodeURIComponent(deck) + authParam(), q, $("#tr-result"), $("#tr-result").dataset.rk);
+      var useStar = $("#tr-star") && $("#tr-star").checked && S.profile ? "&use_star=1" : "";
+      streamAI("tarot", trParam() + "&q=" + encodeURIComponent(q) + "&deck=" + encodeURIComponent(deck) + useStar + authParam(), q, $("#tr-result"), $("#tr-result").dataset.rk);
     }
     var trDrawing = false;
     function drawTarot(autoAskQ) {
@@ -1168,6 +1207,169 @@
     }
     $("#tr-draw").onclick = function () { drawTarot(null); };
     applyGate("tarot");
+  }
+
+  /* ================= 占星命盘（完整本命盘） ================= */
+  // 常见出生城市（经纬度 + 时区），与后端 astrology.CITIES 对齐；自定义时手动填经纬度
+  var ASTRO_CITIES = [
+    ["北京",39.9042,116.4074,8],["上海",31.2304,121.4737,8],["广州",23.1291,113.2644,8],
+    ["深圳",22.5431,114.0579,8],["杭州",30.2741,120.1551,8],["成都",30.5728,104.0668,8],
+    ["武汉",30.5928,114.3055,8],["西安",34.3416,108.9398,8],["南京",32.0603,118.7969,8],
+    ["重庆",29.5630,106.5516,8],["天津",39.3434,117.3616,8],["苏州",31.2989,120.5853,8],
+    ["长沙",28.2282,112.9388,8],["郑州",34.7466,113.6254,8],["青岛",36.0671,120.3826,8],
+    ["厦门",24.4798,118.0894,8],["昆明",25.0389,102.7183,8],["香港",22.3193,114.1694,8],
+    ["台北",25.0330,121.5654,8],["新加坡",1.3521,103.8198,8]
+  ];
+  var SIGN_SYM = { "白羊座":"♈","金牛座":"♉","双子座":"♊","巨蟹座":"♋","狮子座":"♌","处女座":"♍",
+    "天秤座":"♎","天蝎座":"♏","射手座":"♐","摩羯座":"♑","水瓶座":"♒","双鱼座":"♓" };
+  function signSym(n) { return SIGN_SYM[n] || "✦"; }
+
+  function renderAstrology() {
+    // 登录用户：从档案预填出生日期与时间（历法已在写入端归一为公历）
+    var pre = { y: "", m: "", d: "", h: 12, mi: 0 };
+    if (S.profile && S.profileBirth && S.profileBirth.year) {
+      pre.y = S.profileBirth.year; pre.m = S.profileBirth.month; pre.d = S.profileBirth.day;
+      if (S.profileBirth.hour !== undefined && S.profileBirth.hour !== null) pre.h = S.profileBirth.hour;
+      pre.mi = S.profileBirth.minute || 0;
+    }
+    var cityOpts = ASTRO_CITIES.map(function (c) {
+      return '<option value="' + c[0] + '" data-lat="' + c[1] + '" data-lon="' + c[2] + '" data-tz="' + c[3] + '">' + c[0] + '</option>';
+    }).join("");
+    stageEl().innerHTML =
+      toolHero("占星命盘 · 本命盘", "输入出生时间与出生地，排出你的完整本命盘：太阳、月亮、上升三大件，十大行星落座，十二宫宫位与主要相位。AI 将据此作一次结构化解读。") +
+      '<div class="tool-card"><div class="tool-form" id="as-form">' +
+        '<div class="tf-group"><div class="tf-gt">出生资料</div>' +
+          '<div class="tf-grid" style="margin:0 0 10px">' +
+            '<div class="tf-field"><label>出生日期（公历）</label><input class="ti" id="as-date" type="date" value="' +
+              (pre.y ? pre.y + "-" + String(pre.m).padStart(2,"0") + "-" + String(pre.d).padStart(2,"0") : "") + '" /></div>' +
+            '<div class="tf-field"><label>出生时间</label><input class="ti" id="as-time" type="time" value="' +
+              String(pre.h).padStart(2,"0") + ":" + String(pre.mi).padStart(2,"0") + '" /></div>' +
+          '</div>' +
+          '<div class="tf-field"><label>出生地</label>' +
+            '<select class="ti" id="as-city"><option value="">请选择城市…</option>' + cityOpts +
+              '<option value="__custom">自定义经纬度</option></select></div>' +
+          '<div class="tf-grid" id="as-geo" style="margin-top:10px;display:none">' +
+            '<div class="tf-field"><label>纬度（-90~90，北纬为正）</label><input class="ti" id="as-lat" type="number" step="0.0001" value="39.9042" /></div>' +
+            '<div class="tf-field"><label>经度（-180~180，东经为正）</label><input class="ti" id="as-lon" type="number" step="0.0001" value="116.4074" /></div>' +
+            '<div class="tf-field"><label>时区（UTC 偏移，中国为 8）</label><input class="ti" id="as-tz" type="number" step="0.5" value="8" /></div>' +
+          '</div>' +
+          '<p class="p-note" style="margin:8px 0 0">出生地决定上升与宫位；不知道精确时间时可用中午 12:00，但上升与宫位会有偏差。</p>' +
+        '</div>' +
+        '<div class="tf-group"><div class="tf-gt">你想问什么？</div>' +
+          '<input class="ti" id="as-q" placeholder="例如：我现阶段适合怎样发展事业？" />' +
+          '<div class="p-suggest"><button data-q="我的性格优势与短板分别是什么？">性格优势</button><button data-q="我现阶段的事业方向该如何选择？">事业方向</button><button data-q="我的感情关系有哪些课题？">感情课题</button></div>' +
+        '</div>' +
+        '<button class="tool-submit" id="as-calc">生成本命盘</button>' +
+        '<div class="p-err" id="as-err"></div>' +
+      '</div></div>' +
+      '<div id="as-result"></div>' +
+      aboutDetails("关于本命盘", [
+        '<b>太阳</b>代表核心自我与意志，<b>月亮</b>代表情绪与内在需求，<b>上升</b>代表外在呈现与人生态度，三者共同构成人格骨架。',
+        '行星落在<b>十二星座</b>（如何表达）与<b>十二宫位</b>（在哪个生活领域），再结合与其他行星的<b>相位</b>（协作或张力）一并解读，才是完整的占星判断。',
+        '本盘采用回归黄道、Placidus 宫制（高纬度自动回落整宫制），星历由 Swiss Ephemeris 计算；占星为性格与趋势的象征性参考，非命运定论。'
+      ], "占星是一面象征之镜，帮助你理解性格倾向与人生课题；它提供视角而非答案，选择权始终在你手中。");
+
+    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#as-q"); }; });
+    $("#as-city").onchange = function () {
+      $("#as-geo").style.display = this.value === "__custom" ? "" : "none";
+    };
+    // 登录态异步（再）拉一次档案用于预填，幂等；覆盖 profileBirth 尚未缓存的情况
+    if (S.profile) {
+      fetch("/api/profile/get?id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token)).then(function (r) { return r.json(); }).then(function (d) {
+        var b = (d.ok && d.profile && d.profile.birth) || {};
+        S.profileBirth = b;
+        if (b.year && !$("#as-date").value) {
+          $("#as-date").value = b.year + "-" + String(b.month).padStart(2,"0") + "-" + String(b.day).padStart(2,"0");
+          if (b.hour != null) $("#as-time").value = String(b.hour).padStart(2,"0") + ":" + String(b.minute || 0).padStart(2,"0");
+        }
+      }).catch(function () {});
+    }
+
+    function asParams() {
+      var date = $("#as-date").value, time = $("#as-time").value || "12:00";
+      var y, m, d, h, mi;
+      if (date && date.split("-").length === 3) { var p2 = date.split("-"); y = +p2[0]; m = +p2[1]; d = +p2[2]; }
+      var tp = time.split(":"); h = +tp[0]; mi = +tp[1] || 0;
+      var cityVal = $("#as-city").value;
+      var place = "", lat = "", lon = "", tz = 8;
+      if (cityVal === "__custom") {
+        lat = $("#as-lat").value; lon = $("#as-lon").value; tz = $("#as-tz").value || 8;
+        place = "自定义(" + lat + "," + lon + ")";
+      } else if (cityVal) {
+        var opt = $("#as-city").options[$("#as-city").selectedIndex];
+        place = cityVal; lat = opt.dataset.lat; lon = opt.dataset.lon; tz = opt.dataset.tz;
+      }
+      return { y: y, m: m, d: d, h: h, mi: mi, place: place, lat: lat, lon: lon, tz: tz };
+    }
+    function posLine(label, sym, sign, deg, house) {
+      return '<div class="as-pos"><span class="as-pos-sym">' + sym + '</span>' +
+        '<span class="as-pos-label">' + label + '</span>' +
+        '<span class="as-pos-sign">' + esc(sign) + '</span>' +
+        '<span class="as-pos-deg">' + esc(deg) + '</span>' +
+        (house ? '<span class="as-pos-house">第' + house + '宫</span>' : '') + '</div>';
+    }
+    var asDrawing = false;
+    function castAstro() {
+      if (asDrawing) return;
+      if (S.busyKeys && S.busyKeys["as-result"]) { toast("当前解读进行中，请稍候"); return; }
+      var q = $("#as-q").value.trim();
+      if (!q) { toast("请先写下你想问的事"); $("#as-q").focus(); return; }
+      var pa = asParams();
+      if (!pa.y || !pa.m || !pa.d) { toast("请选择出生日期"); $("#as-date").focus(); return; }
+      if (!pa.place) { toast("请选择出生城市或填写经纬度"); $("#as-city").focus(); return; }
+      asDrawing = true;
+      $("#as-err").textContent = "";
+      var qs = "year=" + pa.y + "&month=" + pa.m + "&day=" + pa.d + "&hour=" + pa.h + "&minute=" + pa.mi +
+        "&lat=" + pa.lat + "&lon=" + pa.lon + "&tz=" + pa.tz + "&place=" + encodeURIComponent(pa.place);
+      fetch("/api/astrology/calc?" + qs).then(function (r) { return r.json(); }).then(function (d) {
+        asDrawing = false;
+        if (!d.ok) { $("#as-err").textContent = d.error || "排盘失败"; return; }
+        archiveRound($("#as-result"), $("#as-result").dataset.roundQ || "上一轮命盘", $("#as-result").dataset.rk);
+        var big = '<div class="as-big3">' +
+          posLine("太阳 ☉", "☉", d.sun.sign, d.sun.degree, d.sun.house) +
+          posLine("月亮 ☽", "☽", d.moon.sign, d.moon.degree, d.moon.house) +
+          posLine("上升 ↑", "↑", d.asc.sign, d.asc.degree, null) +
+          posLine("中天", "◈", d.mc.sign, d.mc.degree, null) +
+        '</div>';
+        var planets = (d.planets || []).filter(function (p) { return p.key !== "sun" && p.key !== "moon"; })
+          .map(function (p) {
+            return '<div class="as-planet"><b>' + esc(p.name) + '</b><span>' + signSym(p.sign) + ' ' + esc(p.sign) + ' ' + esc(p.degree) + '</span>' +
+              '<em>第' + (p.house || "—") + '宫' + (p.retro ? ' · 逆行' : '') + '</em></div>';
+          }).join("");
+        var houses = (d.houses || []).map(function (h) {
+          return '<div class="as-house"><i>' + h.num + '</i><span>' + signSym(h.sign) + ' ' + esc(h.sign) + '</span><em>' + esc(h.degree) + '</em></div>';
+        }).join("");
+        var aspects = (d.aspects || []).map(function (a) {
+          return '<div class="as-aspect"><b>' + esc(a.name) + '</b><span>' + esc(a.a) + ' — ' + esc(a.b) + '</span><em>容许 ' + a.orb + '°</em></div>';
+        }).join("") || '<p class="p-note">主要相位较少</p>';
+        var elem = d.element || {};
+        var elemLine = ['火','土','风','水'].map(function (k) { return k + (elem[k] || 0); }).join(' · ');
+
+        $("#as-result").innerHTML = '<div class="p-result">' + resultTitle("本命盘") +
+          '<div class="p-card as-card">' +
+            '<div class="as-meta">公历 ' + pa.y + '-' + String(pa.m).padStart(2,"0") + '-' + String(pa.d).padStart(2,"0") +
+              ' ' + String(pa.h).padStart(2,"0") + ':' + String(pa.mi).padStart(2,"0") + ' · ' + esc(pa.place) +
+              ' · ' + esc(d.house_system || "") + '宫制 · 元素 ' + elemLine + '</div>' +
+            big +
+            '<div class="as-sub-h">行星落座</div><div class="as-planets">' + planets + '</div>' +
+            '<div class="as-sub-h">十二宫</div><div class="as-houses">' + houses + '</div>' +
+            '<div class="as-sub-h">主要相位</div><div class="as-aspects">' + aspects + '</div>' +
+            '<button class="tool-ai" id="as-ai" style="margin-top:18px">AI 解读本命盘</button>' +
+          '</div></div>';
+        var rk = "astro|" + pa.y + "-" + pa.m + "-" + pa.d + "|" + pa.h + ":" + pa.mi + "|" + pa.place;
+        $("#as-result").dataset.rk = rk;
+        $("#as-result").dataset.roundQ = q;
+        $("#as-ai").onclick = function () {
+          var nq = $("#as-q").value.trim();
+          if (!nq) { toast("请先写下你想问的事"); return; }
+          if (requireLogin()) return;
+          streamAI("astrology", qs + "&q=" + encodeURIComponent(nq) + authParam(), nq, $("#as-result"), rk);
+        };
+        $("#as-result").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }).catch(function () { asDrawing = false; $("#as-err").textContent = "排盘失败，请检查出生资料后重试"; });
+    }
+    $("#as-calc").onclick = function () { castAstro(); };
+    applyGate("astrology");
   }
 
   /* ================= 黄历（月历视图 + 默认当日历注 + AI 问事） ================= */
@@ -1376,8 +1578,8 @@
      · 新提问：换新问题 → 旧的一整轮折叠归档（功能页内可展开回看）→ 按新问题从头开始。
        塔罗/梅花还会真正重新抽牌/起卦；八字/紫微/黄历的盘固定，只换问题重解。
      归档区挂在结果容器【之外】（stage 层），因为塔罗/梅花重新抽牌会 innerHTML 重建结果容器。 */
-  var ROOT_SEL = { bazi:"#bz-result", meihua:"#mh-result", tarot:"#tr-result", huangli:"#hl-result", ziwei:"#zw-result" };
-  var QBOX_SEL = { bazi:"#bz-q", meihua:"#mh-q", tarot:"#tr-q", huangli:"#hl-q", ziwei:"#zw-q" };
+  var ROOT_SEL = { bazi:"#bz-result", meihua:"#mh-result", tarot:"#tr-result", huangli:"#hl-result", ziwei:"#zw-result", astrology:"#as-result" };
+  var QBOX_SEL = { bazi:"#bz-q", meihua:"#mh-q", tarot:"#tr-q", huangli:"#hl-q", ziwei:"#zw-q", astrology:"#as-q" };
 
   function archiveHost(container) {
     var st = container.closest(".p-wrap") || stageEl();
@@ -1593,7 +1795,8 @@
       meihua: "追问会沿用这一次的卦象，不会重新起卦",
       tarot: "追问会沿用这一次的牌阵与抽牌结果，不会重新抽牌",
       huangli: "追问会沿用这一次的黄历信息，不会重新查询",
-      ziwei: "追问会沿用这一次的命盘，不会重新排盘"
+      ziwei: "追问会沿用这一次的命盘，不会重新排盘",
+      astrology: "追问会沿用这一次的本命盘，不会重新排盘"
     };
     return MAP[feature] || "追问会沿用这一次的解读内容，不会重新推演";
   }
@@ -1630,7 +1833,7 @@
   }
 
   /* ================= 个人中心 ================= */
-  var PF_FEATS = [["bazi", "八字"], ["meihua", "梅花"], ["tarot", "塔罗"], ["huangli", "黄历"], ["ziwei", "紫微"]];
+  var PF_FEATS = [["bazi", "八字"], ["ziwei", "紫微"], ["meihua", "梅花"], ["tarot", "塔罗"], ["astrology", "占星"], ["huangli", "黄历"]];
   var pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false, birth: null };
 
   function pfAuth() {

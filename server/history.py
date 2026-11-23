@@ -10,10 +10,11 @@ from datetime import datetime
 
 import profile as profile_store
 
-FEATURES = ("bazi", "ziwei", "meihua", "liuyao", "qimen", "tarot", "huangli")
+FEATURES = ("bazi", "ziwei", "meihua", "liuyao", "qimen", "tarot", "huangli", "astrology")
 FEATURE_NAMES = {
     "bazi": "八字排盘", "ziwei": "紫微斗数", "meihua": "梅花易数",
     "liuyao": "六爻", "qimen": "奇门遁甲", "tarot": "塔罗牌", "huangli": "黄历",
+    "astrology": "占星命盘",
 }
 
 

@@ -16,6 +16,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 import ai
+import astrology
 import bazi
 import history
 import huangli
@@ -27,7 +28,7 @@ import tarot
 
 router = APIRouter()
 
-FEATURES = ("bazi", "meihua", "tarot", "huangli")
+FEATURES = ("bazi", "meihua", "tarot", "huangli", "astrology")
 
 
 def _auth(pid: int | None, token: str | None) -> int | None:
@@ -41,6 +42,8 @@ def _retrieve(feature: str, query: str, extra, payload: dict | None = None) -> l
     if feature == "meihua":
         return rag_kb.retrieve(feature, query, extra, top_k=10, max_chars=3600,
                                primary=(payload or {}).get("rag_primary_idx"))
+    if feature == "astrology":
+        return rag_kb.retrieve(feature, query, extra, top_k=8, max_chars=2800)
     return rag_kb.retrieve(feature, query, extra, top_k=5, max_chars=1400)
 
 
@@ -104,6 +107,79 @@ def _bazi_of_profile(pid: int) -> str:
         return ""
 
 
+def _star_of_profile(pid: int) -> tuple[str, bool]:
+    """从档案生日换算太阳星座文本（塔罗用）。返回 (文本, 是否成功取到生日)。"""
+    if not pid:
+        return "", False
+    try:
+        birth = history.personalization(pid, "tarot").get("birth") or {}
+        y, m, d = birth.get("year"), birth.get("month"), birth.get("day")
+        if not (y and m and d):
+            raw = str(birth.get("date") or "")
+            if raw.count("-") == 2:
+                y, m, d = (int(x) for x in raw.split("-"))
+        if not (y and m and d):
+            return "", False
+        s = astrology.sun_sign(int(m), int(d))
+        return (f"问卜者太阳星座：{s['name']}（{s['en']}，{s['element']}象 · {s['modality']}宫 · "
+                f"守护星{s['ruler']}，特质：{s['keywords']}）。解牌时请结合该星座的性格基调，"
+                f"说明牌面信息如何映射到这位问卜者的处境。"), True
+    except Exception:
+        return "", False
+
+
+def _bazi_complete(pid: int) -> bool:
+    """档案是否具备完整出生信息（年月日 + 时分），用于梅花「强制引入八字」门禁。"""
+    if not pid:
+        return False
+    try:
+        birth = history.personalization(pid, "meihua").get("birth") or {}
+        y, m, d = birth.get("year"), birth.get("month"), birth.get("day")
+        if not (y and m and d):
+            raw = str(birth.get("date") or "")
+            if raw.count("-") == 2:
+                y, m, d = (int(x) for x in raw.split("-"))
+        if not (y and m and d):
+            return False
+        # 时分：档案 know_time=False 表示不详，视为不完整
+        if birth.get("know_time") is False:
+            return False
+        h = birth.get("hour")
+        return h not in (None, "")
+    except Exception:
+        return False
+
+
+def _augment_profile(pid: int | None, feature: str, up: str,
+                     *, use_bazi: int = 0, use_star: int = 0) -> tuple[str, str]:
+    """按功能把八字/星座约束注入用户画像文本。
+
+    返回 (注入后的 up, 注入说明文本)；注入说明会存入 payload，追问时原样复用，
+    保证「首轮解读」与「后续追问」看到的是同一份个人约束，不受档案后续修改影响。
+    """
+    extra = ""
+    if not pid:
+        return up, extra
+    if feature == "meihua":
+        # 八字为强制约束（deduce 门禁已校验完整性）
+        line = _bazi_of_profile(pid)
+        if line:
+            line = line.split("判断日子吉凶时")[0].strip() + (
+                "。解卦时须结合其四柱五行喜忌：用生体/用克体等体用生克落到命主实际喜忌上，"
+                "并说明卦象五行对命主是助是耗，使命盘与卦象相互印证。"
+            )
+            extra = line
+    elif use_bazi:
+        line = _bazi_of_profile(pid)
+        if line:
+            extra = line
+    if feature == "tarot" and use_star:
+        star, _ok = _star_of_profile(pid)
+        if star:
+            extra = (extra + "\n" + star).strip()
+    return ((up + "\n" + extra).strip() if extra else up), extra
+
+
 def _personalize(pid: int | None, feature: str) -> tuple[str, list[dict]]:
     if not pid:
         return "", []
@@ -135,6 +211,10 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             when: str | None = Query(None, description="时间/梅花起卦可指定的时刻(ISO)"),
             pillar_year: str | None = Query(None), pillar_month: str | None = Query(None),
             pillar_day: str | None = Query(None), pillar_time: str | None = Query(None),
+            lat: float | None = Query(None, description="占星：出生地纬度"),
+            lon: float | None = Query(None, description="占星：出生地经度"),
+            tz: float = Query(8.0, description="占星：出生地时区(UTC偏移)"),
+            place: str = Query("", description="占星：出生地名称"),
             question: str = Query(""),
             profile_id: int | None = Query(None), token: str | None = Query(None),
             save: int = Query(0, description="1=把本次出生信息写回档案（用户主动修改时用）"),
@@ -144,7 +224,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           minute=minute, gender=gender, birth_place=birth_place, spread=spread,
                           calendar=calendar, when=when,
                           pillar_year=pillar_year, pillar_month=pillar_month,
-                          pillar_day=pillar_day, pillar_time=pillar_time)
+                          pillar_day=pillar_day, pillar_time=pillar_time,
+                          lat=lat, lon=lon, tz=tz, place=place)
             try:
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
@@ -175,11 +256,16 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             when: str | None = Query(None, description="时间/梅花起卦可指定的时刻(ISO)"),
             pillar_year: str | None = Query(None), pillar_month: str | None = Query(None),
             pillar_day: str | None = Query(None), pillar_time: str | None = Query(None),
+            lat: float | None = Query(None, description="占星：出生地纬度"),
+            lon: float | None = Query(None, description="占星：出生地经度"),
+            tz: float = Query(8.0, description="占星：出生地时区(UTC偏移)"),
+            place: str = Query("", description="占星：出生地名称"),
             q: str = Query(""),
             profile_id: int | None = Query(None), token: str | None = Query(None),
             force: int = Query(0),
             use_bazi: int = Query(0, description="1=把登录用户档案八字一并作为解读参考"),
             deck: str | None = Query(None, description="塔罗：前端抽牌结果，锁定同一副牌供 AI 解读"),
+            use_star: int = Query(0, description="塔罗：1=把登录用户档案生日换算的太阳星座一并作为解读参考"),
         ):
             question = (q or "").strip()
             if not question:
@@ -189,7 +275,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           minute=minute, gender=gender, birth_place=birth_place, spread=spread,
                           calendar=calendar, when=when,
                           pillar_year=pillar_year, pillar_month=pillar_month,
-                          pillar_day=pillar_day, pillar_time=pillar_time)
+                          pillar_day=pillar_day, pillar_time=pillar_time,
+                          lat=lat, lon=lon, tz=tz, place=place)
             try:
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
@@ -204,6 +291,15 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             # AI 解读/问答要求登录（与前端门禁一致；未登录直接拒绝，不消耗模型额度）
             if not pid:
                 return {"ok": False, "error": "请先登录后再使用 AI 解读与追问"}
+            # 梅花易数：强制引入本人八字作为解卦约束——档案须有完整出生信息（年月日+时分）
+            # 否则拦截并引导补全，避免在没有命局参照的情况下空泛解卦。
+            if feature == "meihua" and not _bazi_complete(pid):
+                return {"ok": False, "error": "梅花解卦需结合您的八字命局以提高准确度，请先到「个人中心」补全出生年月日与出生时间（含时辰）。"}
+            # 把「是否引入八字/星座」纳入去重身份：同一问题、不同个人约束应各自成轮
+            if use_bazi and feature != "meihua":
+                payload["_use_bazi"] = 1
+            if use_star:
+                payload["_use_star"] = 1
             key = _dedupe_key(pid, feature, payload, question)
             if pid and not force:
                 cached = history.find_cached_entry(pid, feature, key)
@@ -218,10 +314,12 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                 query = payload.get("rag_query", "") + " " + question
                 excerpts = _retrieve(feature, query, payload.get("rag_extra"), payload)
             up, recent = _personalize(pid, feature)
-            if use_bazi and pid:
-                line = _bazi_of_profile(pid)
-                if line:
-                    up = (up + "\n" + line).strip()
+            up, injected = _augment_profile(
+                pid, feature, up, use_bazi=use_bazi, use_star=use_star,
+            )
+            # 把个人约束文本存入 payload：追问时原样复用，保证前后一致
+            if injected:
+                payload["_injected"] = injected
             prompt = ai.build_prompt(
                 history.FEATURE_NAMES[feature], payload["fact"], question,
                 excerpts, user_profile=up, history=recent,
@@ -347,6 +445,32 @@ def _calc_tarot(p: dict) -> dict:
     return tarot.draw(p.get("spread") or "three")
 
 
+def _calc_astrology(p: dict) -> dict:
+    from datetime import datetime
+    # 年月日时分：显式参数优先，缺省取当前时刻
+    now = datetime.now()
+    y = int(p.get("year") or now.year)
+    m = int(p.get("month") or now.month)
+    d = int(p.get("day") or now.day)
+    h = int(p.get("hour") if p.get("hour") is not None else 12)
+    mi = int(p.get("minute") or 0)
+    lat = p.get("lat")
+    lon = p.get("lon")
+    place = p.get("place") or ""
+    tz = float(p.get("tz") if p.get("tz") is not None else 8.0)
+    # 若只给了城市名没给经纬度，尝试按城市表补全
+    if (lat is None or lon is None) and place:
+        city = astrology.city_lookup(place)
+        if city:
+            lat = lat if lat is not None else city["lat"]
+            lon = lon if lon is not None else city["lon"]
+            if not p.get("tz"):
+                tz = city["tz"]
+    if lat is None or lon is None:
+        raise ValueError("请选择出生城市或填写经纬度")
+    return astrology.derive(y, m, d, h, mi, float(lat), float(lon), tz, place)
+
+
 @router.get("/api/bazi/pillars_to_date")
 async def api_bazi_pillars_to_date(
     pillar_year: str = Query(...), pillar_month: str = Query(...),
@@ -423,6 +547,7 @@ _make_calc_and_deduce("meihua", _calc_meihua)
 _make_calc_and_deduce("bazi", _calc_bazi)
 _make_calc_and_deduce("huangli", _calc_huangli)
 _make_calc_and_deduce("tarot", _calc_tarot)
+_make_calc_and_deduce("astrology", _calc_astrology)
 
 
 # ---- 历史与个人中心端点 ----
@@ -524,6 +649,10 @@ async def api_history_followup(
         else:
             query = ((payload.get("rag_query") or "") + " " + item.get("question", "") + " " + question).strip()
             excerpts = _retrieve(feature, query, payload.get("rag_extra"), payload)
+        # 复用首轮落盘的个人约束（八字/星座），保证追问与首轮解读口径一致
+        injected = payload.get("_injected", "")
+        if injected:
+            up = (up + "\n" + injected).strip()
         prompt = ai.build_prompt(name, payload.get("fact", ""), question, excerpts,
                                  user_profile=up, history=prior)
 
