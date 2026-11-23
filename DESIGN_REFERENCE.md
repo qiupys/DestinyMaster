@@ -64,11 +64,11 @@
 
 | 场景 | 统一入口 | 说明 |
 |---|---|---|
-| **出生日期时间选择**（年月日 + 时分 + 农历/八字切换） | `birthFieldsHTML(pfx, opts)` / `birthFieldsBind(pfx, init)` / `birthCollect(pfx)` | 出生资料唯一表单模板。用于八字、紫微、占星、个人中心档案、注册。 |
+| **出生日期时间选择**（年月日 + 时分 + 农历/八字切换） | `birthFieldsHTML(pfx, opts)` / `birthFieldsBind(pfx, init)` / `birthCollect(pfx)` | 出生资料唯一表单模板。用于八字、紫微、占星、个人中心档案、注册。`opts` 细粒度开关：`simple`=隐藏八字切换+农历；`noBazi`=只隐藏八字切换（**档案编辑用此保留农历互转**）；`noLunar`=只隐藏农历。后端写入端 `_birth_to_solar` 统一把农历转公历存储，读取端无需判断历法。 |
 | **任意公历日期时间选择**（选一个时刻，非出生资料） | `dateTimeHTML(pfx, opts)` / `dateTimeBind(pfx, init)` / `dateTimeCollect(pfx)` | 复用同一个日历弹窗 `openDateLookup`。用于梅花指定起卦时刻、黄历第二人八字等。**禁止再用原生 `<input type="datetime-local">`。** |
 | **日历弹窗** | `openDatePicker(pfx)`（写入出生字段）/ `openDateLookup(initial, onPick)`（回调，不写出生字段） | 全局唯一 `dpEl` 实例，两种模式由 `dpOnPick` 是否为空区分。 |
 | **出生地三级联动** | `placeFieldsHTML(pfx)` / `placeFieldsBind` / `placeCollect` | 国家→省/州→城市，含经纬度时区，数据源 `GEO_DATA`。 |
-| **提问卡（结果区下方）** | `.ask-card` 语义：`.bz-ask` / `.zw-ask` / `.zw-d-ask` / `.bz-ask.as-ask` | 统一 `max-width:720px; margin:16px auto 0`。**任何功能的结果提问卡都必须是这个宽度**，不要另设类。 |
+| **提问卡（结果区下方）** | `.bz-ask` / `.zw-ask` / `.zw-d-ask`（宫位详情）/ `.bz-ask.as-ask`（占星） | 统一 `max-width:var(--content-w); margin:16px auto 0`。**禁止写死宽度常量**——盘面卡、提问卡、解读卡、归档卡、门禁卡全部用同一个 `--content-w`（760px）。历史上因「盘面 760、提问 720」两个常量打架，紫微提问卡反复出现"独一档/对不齐"，已彻底收敛为单一变量。 |
 | **导入档案信息的提示框** | `.p-bazi-gate`（`.ok` / `.warn`），统一放表单**第一个子元素** | 梅花强制八字 / 塔罗太阳星座 / 黄历八字，样式与位置一致。 |
 | **AI 流式解读 + 追问** | `streamAI(feature, query, question, container, rk)` | 统一 SSE 渲染、免责声明由系统附加、落 `feature_history`、卡底挂 `attachFollow`。新功能不要自己写 fetch+渲染。 |
 
@@ -83,10 +83,18 @@
 
 ### 7.3 视觉规范（避免"独一档"）
 
-- 结果卡 / 提问卡统一 `max-width:720px` 居中（紫微舞台 760px 例外也已让提问卡回落到 720）。
+- **唯一宽度源** `--content-w:760px`（定义在 `.portal-body`）：盘面卡 / 提问卡 / 解读卡 / 归档卡 / 门禁卡 / 结果标题全部 `max-width:var(--content-w); margin:auto`。新增内容区一律用它，**不得再写 720/760 等裸常量**（@media 视口断点除外）。曾因两常量并存导致紫微提问卡反复对不齐。
 - 单行输入统一 `.ti`（42px 高）；**提问框一律单行 input，不用 textarea**（曾出现黄历 textarea 高度独一档）。
-- 个人中心：基本信息 4 字段一行（`repeat(4,1fr)`）、功能统计 6 卡一行（`repeat(6,1fr)`），窄屏再折行。
-- 占星盘面每条数据附含义：行星/相位用 `.as-mean` 整行展示，十二宫格子用 `title` 悬浮，含义来自后端原子字段 `meaning`/`tone`。
+- 个人中心：基本信息 4 字段一行（`repeat(4,1fr)`）、功能统计 6 卡一行（`repeat(6,1fr)`），窄屏再折行；性别用分段按钮不再独占整栏；表单内保存按钮统一 `.pf-btn`（描边轻量），与「编辑/修改」同调，不用深色 `.tool-submit`。
+- 占星盘面每条数据附含义：行星/相位用 `.as-mean` 整行展示，十二宫为 **4 列 × 3 行**（`.as-house-h` 完整星座名 + `.as-house-mean` 可见含义），含义来自后端原子字段 `meaning`/`tone`。**禁止再用 6 列 nowrap + 省略号**（会把星座名缩略成符号）。注意 CSS 中不要重复定义 `.as-houses`，否则后面的规则会覆盖布局（曾踩坑）。
+- 老黄历日历：数字 13px / 农历 10px / 格高 42px，保持紧凑，勿放大。
+
+### 7.6 个人记忆（Personal Memory）
+
+- 数据：`server/memory.py` 建 `personal_memory` 表（profile_id 隔离），一条记忆 = 正文 + 分类 + 来源 + 时间戳。分类 `CATEGORIES` 常量统一。
+- 后端端点（feature_api.py）：`GET /api/memory/list`、`POST /api/memory/save`（带 id=编辑，不带=新增）、`POST /api/memory/delete`、`POST /api/memory/compress`（从历史 ids 抽取答案 → `ai.stream_answer` 收集全文压缩成一条，非流式返回）。
+- 前端：个人中心 `.pf-memory` 卡片区，`pfMemoryHTML()` 渲染 + `bindMemory()` 绑定；状态存 `pfState.memories/editMem/memDraft/memCat/memImportOpen/memSelected/memBusy`。
+- 交互：新建/编辑进编辑态（分类分段 + textarea）→ 保存；删除两步确认；「从历史导入」勾选历史 → AI 压缩后进编辑态让用户确认再保存。
 
 ### 7.4 新增一个功能的标准步骤（Checklist）
 

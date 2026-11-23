@@ -132,7 +132,8 @@
     S.profileBirth = null;
     S.zw = null; S.zwFromProfile = false;
     try { sessionStorage.removeItem("zw-chart-v1"); } catch (e) {}
-    pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false, birth: null };
+    pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false,
+      birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false };
   }
   function setProfile(p) {
     var wasLogged = !!S.profile;
@@ -329,9 +330,15 @@
     for (var h = 0; h < 24; h++) hours += '<option value="' + h + '">' + h + '时</option>';
     for (var m2 = 0; m2 < 60; m2++) mins += '<option value="' + m2 + '">' + m2 + '分</option>';
     var gzOpts = GZ60.map(function (g) { return '<option>' + g + '</option>'; }).join("");
+    // 输入方式切换（日期/八字）与历法切换（阳历/农历）是两件事，分开控制：
+    //   noBazi   —— 隐藏「日期/八字」切换（档案、占星等只用日期输入的场景）
+    //   noLunar  —— 隐藏「农历」按钮（确无农历转换能力的场景）
+    //   simple   —— 兼容旧调用：等价于 noBazi + noLunar
+    var hideMode = opts.noBazi || opts.simple;
+    var hideLunar = opts.noLunar || opts.simple;
     var head = opts.title ?
       '<div class="bf-head"><span class="bf-title">' + opts.title + '</span>' +
-        (opts.simple ? '' :
+        (hideMode ? '' :
           '<span class="bf-modes">输入方式：<span class="p-seg bf-mode" id="' + pfx + '-mode">' +
             '<button class="on" data-v="date">日期</button><button data-v="bazi">八字</button></span></span>') +
       '</div>' : "";
@@ -345,7 +352,7 @@
             '<div class="bf-a1"><label class="bf-lab">出生日期</label></div>' +
             '<div class="bf-b1"><label id="' + pfx + '-tlabel" class="bf-lab" for="' + pfx + '-hour">出生时间</label></div>' +
             '<div class="bf-a2"><div class="p-seg bf-cal" id="' + pfx + '-cal"><button class="on" data-v="solar">阳历</button>' +
-              (opts.simple ? '' : '<button data-v="lunar">农历</button>') + '</div></div>' +
+              (hideLunar ? '' : '<button data-v="lunar">农历</button>') + '</div></div>' +
             '<div class="bf-b2"><label class="p-switch"><input type="checkbox" id="' + pfx + '-knowtime" checked /><span>我知道出生时间</span></label>' +
               '<p class="p-note bf-hint" id="' + pfx + '-kthint">如果不知道确切出生时间，可以不选择</p></div>' +
             '<div class="bf-a3">' +
@@ -1531,7 +1538,10 @@
           '</div>';
         }).join("");
       var houses = (d.houses || []).map(function (h) {
-        return '<div class="as-house"' + (h.meaning ? ' title="第' + h.num + '宫：' + esc(h.meaning) + '"' : '') + '><i>' + h.num + '</i><span>' + signSym(h.sign) + ' ' + esc(h.sign) + '</span><em>' + esc(h.degree) + '</em></div>';
+        return '<div class="as-house">' +
+          '<div class="as-house-h"><i>' + h.num + '</i><span>' + signSym(h.sign) + ' ' + esc(h.sign) + '</span><em>' + esc(h.degree) + '</em></div>' +
+          (h.meaning ? '<div class="as-house-mean">' + esc(h.meaning) + '</div>' : '') +
+        '</div>';
       }).join("");
       var aspects = (d.aspects || []).map(function (a) {
         return '<div class="as-aspect"><b>' + esc(a.name) + '</b><span>' + esc(a.a) + ' — ' + esc(a.b) + '</span><em>容许 ' + a.orb + '°</em>' +
@@ -2112,7 +2122,8 @@
 
   /* ================= 个人中心 ================= */
   var PF_FEATS = [["bazi", "八字"], ["ziwei", "紫微"], ["meihua", "梅花"], ["tarot", "塔罗"], ["astrology", "占星"], ["huangli", "黄历"]];
-  var pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false, birth: null };
+  var pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false,
+    birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false };
 
   function pfAuth() {
     return "profile_id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token);
@@ -2139,10 +2150,12 @@
     Promise.all([
       fetch("/api/history/stats?" + ap).then(function (r) { return r.json(); }),
       fetch(listUrl).then(function (r) { return r.json(); }),
-      fetch("/api/profile/get?" + apP).then(function (r) { return r.json(); })
+      fetch("/api/profile/get?" + apP).then(function (r) { return r.json(); }),
+      fetch("/api/memory/list?" + ap).then(function (r) { return r.json(); })
     ]).then(function (res) {
       pfState.items = (res[1] && res[1].items) || [];
       pfState.dates = (res[0] && res[0].dates) || [];
+      pfState.memories = (res[3] && res[3].items) || [];
       paintProfile(res[0] || {}, res[1] || {}, res[2] || {});
     }).catch(function (e) {
       var body = $("#pf-body");
@@ -2192,6 +2205,7 @@
             (pfState.editAccount ? "收起" : "修改") + '</button></div>' +
         (pfState.editAccount ? pfAccountForm() : '<p class="p-note pf-hint">可修改用户名与登录密码，不影响你的历史对话。</p>') +
       '</div>' +
+      pfMemoryHTML() +
       '<div class="p-stat-row">' + cards + '</div>' +
       '<p class="p-note pf-hint pf-tip">点击卡片查看该功能的历史对话</p>' +
       '<div style="margin-top:22px"><div class="pf-hist-head"><h3 style="font-family:var(--serif);font-size:16px;margin:0">' +
@@ -2256,6 +2270,7 @@
         }).catch(function () { toast("删除失败，请稍后再试"); });
       };
     });
+    bindMemory();
   }
   /* 档案出生信息 → 展示用的键值对 */
   function birthSegment(birth) {
@@ -2282,14 +2297,15 @@
   function pfBirthForm(birth) {
     birth = birth || {};
     var g = birth.gender === "male" ? "男" : (birth.gender === "female" ? "女" : (birth.gender || "男"));
+    // 档案编辑：保留阳历/农历互转（后端写入端统一转公历），只隐藏「八字输入」这种非日期方式。
     return '<div class="pf-birth-form">' +
-      birthFieldsHTML("pfb", { simple: true, compact: true }) +
-      '<div class="tf-field" style="margin-top:10px"><label>性别</label><select class="ti" id="pfb-gender">' +
-        '<option' + (g === "男" ? " selected" : "") + '>男</option>' +
-        '<option' + (g === "女" ? " selected" : "") + '>女</option></select></div>' +
+      birthFieldsHTML("pfb", { noBazi: true, compact: true }) +
+      '<div class="pf-birth-gender"><label>性别</label><div class="p-seg" id="pfb-gender">' +
+        '<button type="button" class="' + (g === "男" ? "on" : "") + '" data-v="男">男</button>' +
+        '<button type="button" class="' + (g === "女" ? "on" : "") + '" data-v="女">女</button></div></div>' +
       placeFieldsHTML("pfb") +
-      '<div style="display:flex;gap:10px;align-items:center;margin-top:12px">' +
-        '<button class="tool-submit" type="button" id="pf-birth-save" style="flex:0 0 auto;width:auto;padding:9px 20px">保存到档案</button>' +
+      '<div class="pf-form-foot">' +
+        '<button class="pf-btn" type="button" id="pf-birth-save">保存出生信息</button>' +
         '<span class="p-note" style="margin:0">保存后八字、紫微、黄历、占星会同步使用这份出生信息</span>' +
       '</div>' +
     '</div>';
@@ -2305,17 +2321,19 @@
       hour: birth.hour != null ? birth.hour : 12, minute: birth.minute != null ? birth.minute : 0,
       know_time: birth.know_time !== false });
     placeFieldsBind("pfb", birth);
+    // 性别分段：档案存的是「男/女」，回填到 .p-seg 选中态
+    var g = birth.gender === "male" ? "男" : (birth.gender === "female" ? "女" : (birth.gender || "男"));
+    if ($("#pfb-gender")) segSet($("#pfb-gender"), g);
   }
   /* 保存档案出生信息 */
   function pfSaveBirth(old) {
     var b = birthCollect("pfb");
-    if (b.mode === "bazi") { toast("档案出生信息请用公历日期填写"); return; }
     if (!b.year || !b.month || !b.day) { toast("请选择出生日期"); return; }
     var pl = placeCollect("pfb");
     var birth = {
       year: b.year, month: b.month, day: b.day,
       hour: b.hour, minute: b.minute,
-      gender: ($("#pfb-gender") || {}).value || "男",
+      gender: segVal($("#pfb-gender")) || "男",
       know_time: b.know_time, calendar: b.calendar || "solar"
     };
     ["country", "province", "city", "lat", "lon", "tz"].forEach(function (k) {
@@ -2338,15 +2356,167 @@
     return '<div class="pf-acct-form">' +
       '<div class="pf-acct-row"><div class="tf-field"><label>用户名</label>' +
         '<input class="ti" id="pf-newname" value="' + esc(S.profile.name) + '" placeholder="2~24 位字母/数字/下划线" /></div>' +
-        '<button class="tool-submit" type="button" id="pf-name-save" style="flex:0 0 auto;width:auto;padding:9px 18px">保存用户名</button></div>' +
+        '<button class="pf-btn" type="button" id="pf-name-save">保存用户名</button></div>' +
       '<div class="pf-acct-sep"></div>' +
       '<div class="pf-acct-row"><div class="tf-field"><label>当前密码</label>' +
         '<input class="ti" type="password" id="pf-oldpass" placeholder="修改密码时必填" /></div>' +
         '<div class="tf-field"><label>新密码</label>' +
         '<input class="ti" type="password" id="pf-newpass" placeholder="至少 6 位" /></div>' +
-        '<button class="tool-submit" type="button" id="pf-pass-save" style="flex:0 0 auto;width:auto;padding:9px 18px">修改密码</button></div>' +
+        '<button class="pf-btn" type="button" id="pf-pass-save">修改密码</button></div>' +
       '<p class="p-note pf-hint">密码修改后会退出其他设备的登录状态。</p>' +
       '</div>';
+  }
+  var MEM_CATS = ["性格特质", "事业方向", "感情关系", "健康作息", "综合"];
+  /* 个人记忆卡片区：稳定自我认知的沉淀，支持编辑 / 删除 / 从历史导入 AI 压缩 */
+  function pfMemoryHTML() {
+    var mems = pfState.memories || [];
+    var cards = mems.map(function (m) {
+      if (pfState.editMem === m.id) {
+        return '<div class="pf-mem-card editing" data-mid="' + m.id + '">' +
+          '<div class="pf-mem-cats">' + MEM_CATS.map(function (c) {
+            return '<button type="button" data-mem-cat="' + c + '" class="' + (pfState.memCat === c ? "on" : "") + '">' + c + '</button>';
+          }).join("") + '</div>' +
+          '<textarea class="ti pf-mem-edit" rows="4">' + esc(pfState.memDraft || m.content) + '</textarea>' +
+          '<div class="pf-mem-acts"><button type="button" class="pf-btn pf-mem-save" data-mid="' + m.id + '">保存</button>' +
+          '<button type="button" class="pf-btn pf-mem-cancel">取消</button></div></div>';
+      }
+      return '<div class="pf-mem-card" data-mid="' + m.id + '">' +
+        '<div class="pf-mem-top"><span class="pf-mem-cat">' + esc(m.category || "综合") + '</span>' +
+        '<span class="pf-mem-tools"><button type="button" class="pf-mem-editbtn" data-mid="' + m.id + '">编辑</button>' +
+        '<button type="button" class="pf-mem-del" data-mid="' + m.id + '">删除</button></span></div>' +
+        '<div class="pf-mem-text">' + esc(m.content) + '</div>' +
+        '<div class="pf-mem-src">来源：' + esc(m.source || "手动添加") + (m.updated_at && m.updated_at !== m.ts ? ' · 更新于 ' + esc(m.updated_at) : '') + '</div>' +
+        '</div>';
+    }).join("");
+
+    // 新建草稿
+    var draft = pfState.editMem === -1 ?
+      '<div class="pf-mem-card editing">' +
+        '<div class="pf-mem-cats">' + MEM_CATS.map(function (c) {
+          return '<button type="button" data-mem-cat="' + c + '" class="' + (pfState.memCat === c ? "on" : "") + '">' + c + '</button>';
+        }).join("") + '</div>' +
+        '<textarea class="ti pf-mem-edit" rows="4" placeholder="写下一条关于自己的稳定认知…">' + esc(pfState.memDraft || "") + '</textarea>' +
+        '<div class="pf-mem-acts"><button type="button" class="pf-btn pf-mem-save" data-mid="0">保存</button>' +
+        '<button type="button" class="pf-btn pf-mem-cancel">取消</button></div></div>' : "";
+
+    // 从历史导入面板
+    var importPanel = "";
+    if (pfState.memImportOpen) {
+      var hist = (pfState.items || []).slice(0, 30);
+      importPanel = '<div class="pf-mem-import">' +
+        '<div class="pf-mem-import-h">选择要导入的历史解读（可多选，最多 8 条），AI 会压缩成一条记忆</div>' +
+        '<div class="pf-mem-import-list">' + (hist.map(function (h) {
+          return '<label class="pf-mem-opt"><input type="checkbox" value="' + h.id + '"' +
+            (pfState.memSelected.indexOf(h.id) >= 0 ? " checked" : "") + '/>' +
+            '<span class="pf-mem-opt-f">' + esc(h.feature_name || "") + '</span>' +
+            '<span class="pf-mem-opt-q">' + esc(String(h.question || "").slice(0, 40)) + '</span></label>';
+        }).join("") || '<p class="p-note">暂无历史对话可导入</p>') + '</div>' +
+        '<div class="pf-mem-acts"><button type="button" class="pf-btn pf-mem-doimport"' + (pfState.memBusy ? " disabled" : "") + '>' +
+          (pfState.memBusy ? "正在压缩生成…" : "AI 压缩生成记忆") + '</button>' +
+          '<button type="button" class="pf-btn pf-mem-closeimport">取消</button></div></div>';
+    }
+
+    return '<div class="pf-memory">' +
+      '<div class="pf-birth-h"><h3 style="font-family:var(--serif);font-size:15px;margin:0">个人记忆</h3>' +
+      '<span class="pf-mem-actions">' +
+        '<button type="button" class="p-navitem pf-mem-new" style="width:auto;padding:4px 11px">新建</button>' +
+        '<button type="button" class="p-navitem pf-mem-importbtn" style="width:auto;padding:4px 11px">从历史导入</button>' +
+      '</span></div>' +
+      '<p class="p-note pf-hint">把解读中对你稳定成立的认知沉淀成卡片，随时编辑；也可从历史对话导入并让 AI 压缩生成。</p>' +
+      (draft || cards || (!importPanel ? '<p class="p-note pf-mem-empty">还没有记忆卡片，点「新建」或「从历史导入」开始沉淀。</p>' : "")) +
+      importPanel +
+      '</div>';
+  }
+  /* 个人记忆区事件绑定 */
+  function bindMemory() {
+    var root = $("#pf-body");
+    if (!root) return;
+    var newBtn = $(".pf-mem-new", root);
+    if (newBtn) newBtn.onclick = function () {
+      pfState.editMem = -1; pfState.memDraft = ""; pfState.memCat = "综合"; pfState.memImportOpen = false;
+      loadProfile();
+    };
+    var impBtn = $(".pf-mem-importbtn", root);
+    if (impBtn) impBtn.onclick = function () {
+      pfState.memImportOpen = !pfState.memImportOpen; pfState.editMem = 0; pfState.memSelected = [];
+      loadProfile();
+    };
+    var closeImp = $(".pf-mem-closeimport", root);
+    if (closeImp) closeImp.onclick = function () { pfState.memImportOpen = false; loadProfile(); };
+    // 分类分段（新建/编辑态）
+    $$(".pf-mem-cats button", root).forEach(function (b) {
+      b.onclick = function () { pfState.memCat = b.dataset.memCat; loadProfile(); };
+    });
+    // 编辑草稿随输入保存（不重绘，避免光标丢失）
+    var ta = $(".pf-mem-edit", root);
+    if (ta) ta.oninput = function () { pfState.memDraft = ta.value; };
+    var cancel = $(".pf-mem-cancel", root);
+    if (cancel) cancel.onclick = function () { pfState.editMem = 0; pfState.memDraft = ""; loadProfile(); };
+    var save = $(".pf-mem-save", root);
+    if (save) save.onclick = function () {
+      var text = (pfState.memDraft || (ta ? ta.value : "") || "").trim();
+      if (!text) { toast("请先填写记忆内容"); return; }
+      var mid = +save.dataset.mid || 0;
+      fetch("/api/memory/save", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: S.profile.id, token: S.profile.token,
+          id: mid, content: text, category: pfState.memCat })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) { toast(d.error || "保存失败"); return; }
+        toast(mid ? "记忆已更新" : "记忆已添加");
+        pfState.editMem = 0; pfState.memDraft = ""; loadProfile();
+      }).catch(function () { toast("保存失败，请稍后再试"); });
+    };
+    $$(".pf-mem-editbtn", root).forEach(function (b) {
+      b.onclick = function () {
+        var m = pfState.memories.filter(function (x) { return x.id === +b.dataset.mid; })[0];
+        if (!m) return;
+        pfState.editMem = m.id; pfState.memDraft = m.content; pfState.memCat = m.category || "综合";
+        pfState.memImportOpen = false; loadProfile();
+      };
+    });
+    $$(".pf-mem-del", root).forEach(function (b) {
+      b.onclick = function () {
+        if (!b.classList.contains("arm")) {
+          b.classList.add("arm"); b.textContent = "确认删除";
+          setTimeout(function () { b.classList.remove("arm"); b.textContent = "删除"; }, 4000);
+          return;
+        }
+        fetch("/api/memory/delete", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profile_id: S.profile.id, token: S.profile.token, id: +b.dataset.mid })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+          if (!d.ok) { toast(d.error || "删除失败"); return; }
+          toast("已删除"); loadProfile();
+        }).catch(function () { toast("删除失败，请稍后再试"); });
+      };
+    });
+    // 导入面板：勾选历史
+    $$(".pf-mem-opt input", root).forEach(function (cb) {
+      cb.onchange = function () {
+        var v = +cb.value, arr = pfState.memSelected.slice();
+        if (cb.checked) { if (arr.indexOf(v) < 0 && arr.length < 8) arr.push(v); else cb.checked = false; }
+        else arr = arr.filter(function (x) { return x !== v; });
+        pfState.memSelected = arr;
+      };
+    });
+    var doImp = $(".pf-mem-doimport", root);
+    if (doImp) doImp.onclick = function () {
+      if (!pfState.memSelected.length) { toast("请先选择要导入的历史对话"); return; }
+      pfState.memBusy = true; loadProfile();
+      fetch("/api/memory/compress", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: S.profile.id, token: S.profile.token, ids: pfState.memSelected,
+          category: pfState.memCat })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        pfState.memBusy = false;
+        if (!d.ok) { toast(d.error || "生成失败"); loadProfile(); return; }
+        // 生成后进入编辑态让用户确认/微调再保存
+        pfState.memImportOpen = false; pfState.editMem = -1;
+        pfState.memDraft = d.content; pfState.memCat = "综合";
+        toast("已生成，确认后保存"); loadProfile();
+      }).catch(function () { pfState.memBusy = false; toast("生成失败，请稍后再试"); loadProfile(); });
+    };
   }
   function pfSaveAccount(kind) {
     var body = { profile_id: S.profile.id, token: S.profile.token };
@@ -2389,22 +2559,18 @@
     fetch("/api/history/detail?" + ap).then(function (r) { return r.json(); }).then(function (d) {
       if (!d.ok) { toast("未找到该记录"); return; }
       var it = d.item;
-      var box = document.createElement("div");
-      box.className = "p-card"; box.style.marginTop = "16px"; box.dataset.hbox = id;
-      // 历史详情的 AI 卡 + 追问条与解读页保持同一套结构（.p-ai/.ai-follow），
-      // 追问复用 attachFollow 统一渲染，格式、多轮能力、免责都一致。
+      // 历史解读不再套 .p-card 外壳（外层卡 + 内层 p-ai 两层边框 = 嵌套感）。
+      // 直接用 .p-ai 卡作为同宽平级元素，宽度走统一 var(--content-w)，与上方问题卡对齐。
       var card = document.createElement("div");
-      card.className = "p-ai";
+      card.className = "p-ai p-hist-detail";
+      card.dataset.hbox = id;
       card.innerHTML = '<div class="p-ai-head"><span class="dot"></span>历史解读 · ' + esc(it.ts) + '</div>' +
         '<div class="p-ai-body"><p><b>问：</b>' + esc(it.question) + '</p><hr/>' +
         (window.marked ? marked.parse(it.answer) : esc(it.answer)) + '</div>';
-      box.appendChild(card);
-      box.className = "p-card p-hist-detail";
-      box.style.marginTop = "16px"; box.dataset.hbox = id;
-      $("#pf-body").appendChild(box);
+      $("#pf-body").appendChild(card);
       // 小字灰色备注放在追问条内部（输入框上方），不再紧跟免责声明、避免像答案的一部分。
       attachFollow(card, id, followNote(it.feature));
-      box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   }
 

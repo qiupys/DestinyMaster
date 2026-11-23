@@ -19,6 +19,9 @@
   --wx-jin: #1f5a45;            /* 深绿 · 点缀/强调 */
   --br-good: #1f5a45;
   --shadow: 0 2px 14px rgba(17,24,39,.05);
+  /* 内容区统一宽度：盘面卡 / 提问卡 / 解读卡 / 归档卡 / 门禁卡全部用它，
+     杜绝「盘面 760、提问 720」这类两常量打架导致的边缘对不齐。见 DESIGN_REFERENCE 第七章。 */
+  --content-w: 760px;
 }
 html[data-theme="dark"] .portal-body {
   --bagua-bg: #0a0a0a;
@@ -269,10 +272,10 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .p-yiji-box .items { font-size: 13px; line-height: 1.9; color: var(--ink-2); }
 
 /* ---------- AI 登录门禁（未登录时替代 AI 提问区） ---------- */
-.ai-gate-host { max-width: 720px; margin: 14px auto 0; }
+.ai-gate-host { max-width: var(--content-w); margin: 14px auto 0; }
 /* 黄历、紫微页整体是 760 宽，门禁卡跟随内容卡宽度 */
 #p-stage-huangli .ai-gate-host,
-#p-stage-ziwei .ai-gate-host { max-width: 760px; }
+#p-stage-ziwei .ai-gate-host { max-width: var(--content-w); }
 .ai-gate {
   position: relative; min-height: 176px; border: 1px solid var(--line); border-radius: 12px;
   background: var(--panel-2); overflow: hidden; display: flex; align-items: center; justify-content: center;
@@ -319,9 +322,9 @@ details.p-disclose .inner { padding-bottom: 12px; }
 
 /* 整轮归档区：一次「提问」= 牌面/卦象结果卡 + AI 解读 + 追问链，作为一组折叠保留。
    独立于结果容器之外（结果容器在重新抽牌/起卦时会被 innerHTML 重建），所以归档不会被冲掉。 */
-.round-archive { max-width: 720px; margin: 22px auto 0; }
+.round-archive { max-width: var(--content-w); margin: 22px auto 0; }
 #p-stage-huangli .round-archive,
-#p-stage-ziwei .round-archive { max-width: 760px; }
+#p-stage-ziwei .round-archive { max-width: var(--content-w); }
 .round-archive-hd { font-size: 11px; color: var(--ink-3); margin: 0 2px 8px; letter-spacing: .5px; }
 .round-item { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; overflow: hidden; background: var(--panel); }
 .round-item-hd {
@@ -404,15 +407,61 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .pf-acct-row .tf-field { flex:1; min-width:150px; }
 .pf-acct-row .tf-field .ti { width:100%; }
 .pf-acct-sep { height:1px; background:var(--line); margin:2px 0; }
-.pf-birth-form { display:flex; flex-direction:column; gap:10px; }
+.pf-birth-form { display:flex; flex-direction:column; gap:12px; }
 .pf-birth-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .pf-birth-time { display:flex; gap:6px; }
 .pf-birth-time .ti { flex:1; min-width:0; }
+/* 性别：标签 + 分段按钮同一行，不再让一个下拉独占整栏 */
+.pf-birth-gender { display:flex; align-items:center; gap:14px; }
+.pf-birth-gender label { font-size:13px; color:var(--ink-2); }
+/* 表单底部保存动作：描边轻量按钮，与「编辑/修改/按日期查找」同调 */
+.pf-form-foot { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:2px; }
+.pf-btn {
+  flex:0 0 auto; width:auto; height:36px; padding:0 16px; border:1px solid var(--line-strong);
+  border-radius:8px; background:var(--panel); color:var(--ink); cursor:pointer;
+  font-size:13px; font-family:inherit; transition:.15s;
+}
+.pf-btn:hover { border-color:var(--wx-jin); color:var(--wx-jin); background:var(--accent-soft); }
+.pf-acct-row .pf-btn { align-self:flex-end; }
+/* ===================== 个人记忆卡片 ===================== */
+.pf-memory { margin-top:14px; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); }
+.pf-mem-actions { display:inline-flex; gap:8px; }
+.pf-memory > .p-note { margin:8px 0 0; }
+.pf-mem-empty { margin:14px 0 2px; }
+.pf-mem-card { border:1px solid var(--line); border-radius:10px; background:var(--panel);
+  padding:12px 14px; margin-top:10px; }
+.pf-mem-card.editing { border-color:var(--line-strong); }
+.pf-mem-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.pf-mem-cat { display:inline-block; font-size:11px; color:var(--wx-jin); background:var(--accent-soft);
+  border-radius:5px; padding:2px 8px; }
+.pf-mem-tools { display:inline-flex; gap:10px; }
+.pf-mem-tools button { border:0; background:transparent; color:var(--ink-3); font:inherit; font-size:11.5px;
+  cursor:pointer; padding:2px; }
+.pf-mem-tools button:hover { color:var(--wx-jin); }
+.pf-mem-text { margin:9px 0 7px; font-size:13px; line-height:1.8; color:var(--ink); white-space:pre-wrap; }
+.pf-mem-src { font-size:10.5px; color:var(--ink-3); }
+.pf-mem-cats { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:9px; }
+.pf-mem-cats button { border:1px solid var(--line); border-radius:14px; background:var(--panel);
+  color:var(--ink-3); font:inherit; font-size:11.5px; padding:3px 10px; cursor:pointer; }
+.pf-mem-cats button.on { border-color:var(--wx-jin); color:var(--wx-jin); background:var(--accent-soft); }
+.pf-mem-edit { width:100%; font-size:13px; line-height:1.7; resize:vertical; }
+.pf-mem-acts { display:flex; gap:8px; margin-top:10px; }
+.pf-mem-import { margin-top:10px; border:1px dashed var(--line-strong); border-radius:10px; padding:12px; background:var(--panel); }
+.pf-mem-import-h { font-size:12px; color:var(--ink-2); margin-bottom:8px; }
+.pf-mem-import-list { max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:5px; }
+.pf-mem-opt { display:flex; align-items:center; gap:8px; font-size:12px; padding:5px 7px; border-radius:7px; cursor:pointer; }
+.pf-mem-opt:hover { background:var(--accent-soft); }
+.pf-mem-opt input { flex:none; }
+.pf-mem-opt-f { flex:0 0 auto; color:var(--ink-3); font-size:11px; }
+.pf-mem-opt-q { flex:1; min-width:0; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pf-mem-doimport:disabled { opacity:.55; cursor:wait; }
 @media (max-width: 640px) {
   .pf-birth-list { grid-template-columns:1fr; }
   .pf-birth-row { grid-template-columns:1fr; }
 }
 /* 历史详情：与解读页同构的 AI 卡 + 追问条；说明文字为小字灰色备注 */
+/* 历史解读：去掉外层卡 nesting 后，作为与问题卡同宽的平级 .p-ai 卡展示 */
+.p-ai.p-hist-detail { margin-top:16px; }
 .p-hist-detail .p-ai-body p:first-child { margin-top:0; }
 .pf-follow-note { margin:0 2px 11px; font-size:11px; color:var(--ink-3); }
 /* 每处 AI 解读卡内的通用追问条（复用 followup，沿用本次盘面，可多轮） */
@@ -518,7 +567,7 @@ details.p-disclose .inner { padding-bottom: 12px; }
 
 /* ================= 参考站风格：工具页 ================= */
 .p-content { padding-top: 44px; }
-.tool-hero { text-align: center; margin: 0 auto 40px; max-width: 720px; }
+.tool-hero { text-align: center; margin: 0 auto 40px; max-width: var(--content-w); }
 .tool-hero h1 {
   font-family: var(--serif); font-size: 32px; font-weight: 700; letter-spacing: 1px;
   margin: 0 0 14px; color: var(--ink);
@@ -526,7 +575,7 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .tool-hero p { font-size: 14px; line-height: 1.7; color: var(--ink-3); margin: 0; }
 
 .tool-card {
-  max-width: 720px; margin: 0 auto; background: var(--panel);
+  max-width: var(--content-w); margin: 0 auto; background: var(--panel);
   border: 1px solid var(--line); border-radius: 12px; padding: 32px 36px;
   box-shadow: 0 1px 3px rgba(17,24,39,.03);
 }
@@ -566,18 +615,18 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 @media (max-width: 640px){ .tool-card { padding: 24px 18px; } .tf-grid, .tf-grid3 { grid-template-columns: 1fr; } .tool-hero h1 { font-size: 26px; } }
 
 /* 结果区标题（无编号）：上下间距统一 14px，与命盘 tabs、卡片间距一致 */
-.result-title { max-width: 720px; margin: 14px auto; font-size: 15px; font-weight: 600; color: var(--ink); }
+.result-title { max-width: var(--content-w); margin: 14px auto; font-size: 15px; font-weight: 600; color: var(--ink); }
 /* 结果标题 + 右侧来源提示同一行 */
-.result-head { max-width: 720px; margin: 14px auto; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.result-head { max-width: var(--content-w); margin: 14px auto; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .result-head .result-title { margin: 0; max-width: none; }
 .result-aside { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
 .result-aside .link-btn { font-size: 11.5px; }
-.p-result .p-card { max-width: 720px; margin: 0 auto; }
+.p-result .p-card { max-width: var(--content-w); margin: 0 auto; }
 
 /* 折叠的使用说明：宽度跟随各功能内容卡（黄历/紫微 760，其余 720） */
-.about-details { max-width: 720px; margin: 26px auto 0; border-top: 1px solid var(--line); padding-top: 14px; }
+.about-details { max-width: var(--content-w); margin: 26px auto 0; border-top: 1px solid var(--line); padding-top: 14px; }
 #p-stage-huangli .about-details,
-#p-stage-ziwei .about-details { max-width: 760px; }
+#p-stage-ziwei .about-details { max-width: var(--content-w); }
 .ad-toggle { list-style: none;
   display: inline-flex; align-items: center; gap: 8px; width: 100%;
   appearance: none; border: 0; background: transparent; padding: 0;
@@ -799,10 +848,10 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 }
 
 /* ================= 黄历月历 ================= */
-.hl-cal { max-width: 760px; margin: 0 auto; }
+.hl-cal { max-width: var(--content-w); margin: 0 auto; }
 .hl-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
-/* 标题 24px 行盒约 38px 高，flex-start 让年月选择器顶边与「2026年11月」标题行齐平 */
-.hl-title { font-family: var(--serif); font-size: 24px; font-weight: 700; color: var(--ink); }
+/* 标题 21px，flex-start 让年月选择器顶边与「2026年11月」标题行齐平 */
+.hl-title { font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--ink); }
 .hl-sub { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
 .hl-ctl { display: flex; gap: 8px; align-items: center; }
 .hl-ctl .ti { width: auto; height: 38px; }
@@ -811,16 +860,16 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
   background: var(--panel); color: var(--ink); font-size: 20px; cursor: pointer; line-height: 1;
 }
 .hl-nav:hover { border-color: var(--ink); }
-.hl-week { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--line); padding-bottom: 8px; }
-.hl-week div { text-align: center; font-size: 12px; color: var(--ink-3); }
-.hl-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 4px; }
+.hl-week { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.hl-week div { text-align: center; font-size: 11px; color: var(--ink-3); }
+.hl-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 2px; }
 .hl-cell {
-  text-align: center; padding: 8px 2px; border-radius: 10px; cursor: pointer; position: relative;
-  transition: .12s; min-height: 54px; box-sizing: border-box;
+  text-align: center; padding: 5px 2px; border-radius: 9px; cursor: pointer; position: relative;
+  transition: .12s; min-height: 42px; box-sizing: border-box;
 }
 .hl-cell:hover { background: var(--accent-soft); }
-.hl-cell b { display: block; font-size: 14.5px; color: var(--ink); font-weight: 600; }
-.hl-cell span { display: block; font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.hl-cell b { display: block; font-size: 13px; color: var(--ink); font-weight: 600; }
+.hl-cell span { display: block; font-size: 10px; color: var(--ink-3); margin-top: 1px; }
 .hl-cell em {
   display: block; font-style: normal; font-size: 10px; color: var(--wx-jin); margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -829,10 +878,10 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .hl-cell.dim:hover { background: transparent; cursor: default; }
 .hl-cell.sel { background: var(--ink); }
 .hl-cell.sel b, .hl-cell.sel span, .hl-cell.sel em { color: var(--bg); }
-.hl-cell.today:not(.sel) b { background: var(--ink); color: var(--bg); border-radius: 50%; width: 24px; height: 24px; line-height: 24px; margin: 0 auto; }
+.hl-cell.today:not(.sel) b { background: var(--ink); color: var(--bg); border-radius: 50%; width: 21px; height: 21px; line-height: 21px; margin: 0 auto; }
 /* ---- 当日历注面板（hl-panel / hlp-*）---- */
 .hl-panel {
-  max-width: 760px; margin: 14px auto 0; border: 1px solid var(--line); border-radius: 14px;
+  max-width: var(--content-w); margin: 14px auto 0; border: 1px solid var(--line); border-radius: 14px;
   background: var(--panel); padding: 16px 18px 18px;
 }
 .hlp-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
@@ -1007,7 +1056,7 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 
 /* AI 解读卡：默认与结果卡统一 720 居中；紫微页容器是 760（zw-pattern / zw-detail），
    解读框跟随容器内宽，与上方提问卡、输入行左右严格对齐 */
-.p-ai { max-width: 720px; margin-left: auto; margin-right: auto; }
+.p-ai { max-width: var(--content-w); margin-left: auto; margin-right: auto; }
 
 /* 黄历 AI 提问卡：全局表单 26px 间距在这张卡里太空，单独收紧 */
 .hl-ai-card .tool-form { gap: 14px; }
@@ -1019,15 +1068,15 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .zw-pattern .p-ai, .zw-detail .p-ai { max-width: none; }
 
 /* 黄历：AI 提问卡与历注面板同宽、留出间距，作为独立卡片 */
-.hl-ai-card { max-width: 760px; margin: 20px auto 0; }
+.hl-ai-card { max-width: var(--content-w); margin: 20px auto 0; }
 /* 黄历页统一 760 宽：AI 解读卡与历注、提问卡同宽 */
-#hl-result .p-ai { max-width: 760px; }
+#hl-result .p-ai { max-width: var(--content-w); }
 @media (max-width: 520px) { .p-stat-row { grid-template-columns: repeat(3, 1fr); } }
 
 /* ================= 紫微：盘区（无卡片嵌套）+ 三视图切换 ================= */
 /* 与八字一致：视图切换靠左，档案来源提示靠右 */
 .zw-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  max-width: 760px; margin: 14px auto 0; }
+  max-width: var(--content-w); margin: 14px auto 0; }
 .zw-tabs { flex: 0 0 auto; display: inline-flex; gap: 2px; padding: 3px; background: var(--panel-2);
   border: 1px solid var(--line); border-radius: 11px; width: auto !important; flex-wrap: nowrap; }
 .zw-tabs button { flex: 0 0 auto; min-width: 86px; white-space: nowrap; padding: 7px 16px; font: inherit;
@@ -1051,17 +1100,17 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 
 /* ================= 紫微：站内原生命盘（固定尺寸，三等分视图） ================= */
 /* 紫微基本信息卡与下方命盘/结果卡统一 760 宽（默认 .tool-card 是 720） */
-#p-stage-ziwei .tool-card { max-width: 760px; }
+#p-stage-ziwei .tool-card { max-width: var(--content-w); }
 .zw-body { margin-top: 14px; }
 /* 本命盘 / 运势盘的所有区块统一宽度并居中，与命格页卡片对齐 */
-.zw-plate, .zw-detail, .zw-pick, .zw-detail-hint { max-width: 760px; margin-left: auto; margin-right: auto; }
-.zw-pattern { max-width: 760px; margin-left: auto; margin-right: auto; }
+.zw-plate, .zw-detail, .zw-pick, .zw-detail-hint { max-width: var(--content-w); margin-left: auto; margin-right: auto; }
+.zw-pattern { max-width: var(--content-w); margin-left: auto; margin-right: auto; }
 
 /* 固定尺寸命盘：正方形 4×4，中宫跨 2×2 */
 .zw-plate {
   position: relative;   /* 三方四正虚线以命盘为定位基准，避免溢出到页面其他区域 */
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(0, 1fr));
-  gap: 6px; width: 100%; max-width: 760px; aspect-ratio: 1 / 1; margin: 0 auto;
+  gap: 6px; width: 100%; max-width: var(--content-w); aspect-ratio: 1 / 1; margin: 0 auto;
 }
 .zw-pal {
   min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
@@ -1158,8 +1207,8 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .zw-td-m { color: var(--ink-3); font-size: 11px; }
 .zw-td-r { color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .zw-tbl td i { font-style: normal; color: var(--ink-3); font-size: 10px; margin-left: 1px; }
-/* 提问卡宽度统一（组件契约 .ask-card）：与八字/占星一致 max-width:720px 居中，避免紫微独一档 */
-.zw-ask { max-width: 720px; margin: 16px auto 0; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--panel-2); }
+/* 提问卡宽度统一：与盘面卡/解读卡共用 var(--content-w) 居中，避免紫微独一档 */
+.zw-ask { max-width: var(--content-w); margin: 16px auto 0; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--panel-2); }
 .zw-ask-h { font-family: var(--serif); font-size: 14px; margin-bottom: 10px; }
 .zw-chips { margin-bottom: 10px; }
 .zw-ask-row { display: flex; gap: 8px; }
@@ -1335,7 +1384,7 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .bz-cur { margin: 0 0 8px; font-size: 11.5px; color: var(--ink-3); }
 
 /* 八字：结果下方的提问卡（与四柱盘面同宽居中） */
-.bz-ask { max-width: 720px; margin: 16px auto 0; border: 1px solid var(--line); border-radius: 12px;
+.bz-ask { max-width: var(--content-w); margin: 16px auto 0; border: 1px solid var(--line); border-radius: 12px;
   background: var(--panel-2); padding: 14px 16px; }
 .bz-ask-h { display: flex; align-items: baseline; gap: 8px; font-family: var(--serif); font-size: 14px; margin-bottom: 10px; }
 .bz-ask-h span { font-family: inherit; font-size: 11.5px; color: var(--ink-3); }
@@ -1396,14 +1445,16 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 /* 盘面逐条含义（原子数据 meaning/tone，追问复用）：占满整行的浅色小字 */
 .as-mean { flex-basis: 100%; margin-top: 3px; font-size: 11px; line-height: 1.5; color: var(--ink-3);
   padding-top: 5px; border-top: 1px dashed var(--line); }
-.as-houses { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
-.as-house { display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 8px;
-  padding: 7px 8px; background: var(--panel-2); font-size: 11.5px; color: var(--ink-2); }
+/* 十二宫：4 列 × 3 行，星座名完整显示 + 宫位含义可读（不再缩略成符号+省略号） */
+.as-houses { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.as-house { display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--line); border-radius: 9px;
+  padding: 9px 11px; background: var(--panel-2); min-width: 0; }
+.as-house-h { display: flex; align-items: center; gap: 6px; }
 .as-house i { font-style: normal; font-size: 10px; color: var(--ink-3); border: 1px solid var(--line-strong);
-  border-radius: 4px; min-width: 16px; text-align: center; flex: none; }
-.as-house span { white-space: nowrap; }
-.as-house em { margin-left: auto; font-style: normal; font-size: 10px; color: var(--ink-3); }
-.as-house[title] { cursor: help; border-bottom-style: dashed; }
+  border-radius: 4px; min-width: 18px; height: 18px; line-height: 16px; text-align: center; flex: none; }
+.as-house span { font-size: 12.5px; color: var(--ink); font-weight: 600; white-space: nowrap; }
+.as-house em { margin-left: auto; font-style: normal; font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.as-house-mean { font-size: 11px; line-height: 1.5; color: var(--ink-3); border-top: 1px dashed var(--line); padding-top: 5px; }
 .as-aspects { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
 .as-aspect { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px;
   padding: 8px 11px; font-size: 12.5px; color: var(--ink-2); background: var(--panel-2); }
@@ -1412,7 +1463,7 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 @media (max-width: 760px) {
   .as-big3 { grid-template-columns: repeat(2, 1fr); }
   .as-planets, .as-aspects { grid-template-columns: 1fr; }
-  .as-houses { grid-template-columns: repeat(3, 1fr); }
+  .as-houses { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ===================== 出生资料共用组件 / 三级出生地 ===================== */
@@ -1429,14 +1480,8 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 /* 个人档案编辑区里的出生资料组件间距 */
 .pf-birth-form .bf-wrap { margin-bottom: 4px; }
 
-/* ===================== 修复十二宫网格溢出 ===================== */
-/* 用 minmax(0,1fr) 允许列收缩到 0，配合 min-width:0 + 省略号，
-   避免 nowrap 的星座/度数内容把网格列撑破卡片边界（第 6 列溢出）。 */
-.as-houses { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-.as-house { min-width: 0; overflow: hidden; }
-.as-house > i { flex: none; }
-.as-house > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.as-house > em { flex: none; margin-left: 0; }
+/* 注：十二宫布局统一定义在上面 .as-houses（4 列，星座名完整 + 含义可读）。
+   旧版 6 列缩略方案已废弃，勿在此处重复覆盖，否则会把新布局冲掉。 */
 @media (max-width: 760px) {
   .as-houses { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

@@ -20,6 +20,7 @@ import astrology
 import bazi
 import history
 import huangli
+import memory as memory_store
 import meihua
 import profile as profile_store
 import rag  # 紫微 iztro-learn 语料检索（其余功能用 rag_kb）
@@ -739,3 +740,93 @@ async def api_history_followup(
 @router.get("/api/kb/stats")
 async def api_kb_stats():
     return {"ok": True, "corpora": rag_kb.kb_stats()}
+
+
+# ============================ 个人记忆（Personal Memory） ============================
+# 把历史解读中稳定的自我认知沉淀成可编辑卡片；支持手动添加、编辑、删除，
+# 以及「从历史对话导入 → AI 压缩生成」。所有端点按 profile_id+token 隔离。
+
+@router.get("/api/memory/list")
+async def api_memory_list(profile_id: int = Query(...), token: str = Query(...)):
+    pid = _auth(profile_id, token)
+    if not pid:
+        return {"ok": False, "error": "登录状态失效，请重新登录"}
+    return {"ok": True, "items": memory_store.list_items(pid)}
+
+
+@router.post("/api/memory/save")
+async def api_memory_save(request: Request):
+    """新增或编辑一条记忆：带 id = 编辑，不带 id = 新增。"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": "参数错误"}
+    pid = _auth(int(body.get("profile_id") or 0), body.get("token") or "")
+    if not pid:
+        return {"ok": False, "error": "登录状态失效，请重新登录"}
+    content = (body.get("content") or "").strip()
+    if not content:
+        return {"ok": False, "error": "记忆内容不能为空"}
+    category = body.get("category") or "综合"
+    mem_id = int(body.get("id") or 0)
+    if mem_id:
+        ok = memory_store.update(pid, mem_id, content, category)
+        return {"ok": ok, "error": None if ok else "未找到该记忆"}
+    item = memory_store.add(pid, content, category, body.get("source") or "手动添加")
+    return {"ok": bool(item), "item": item}
+
+
+@router.post("/api/memory/delete")
+async def api_memory_delete(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": "参数错误"}
+    pid = _auth(int(body.get("profile_id") or 0), body.get("token") or "")
+    if not pid:
+        return {"ok": False, "error": "登录状态失效，请重新登录"}
+    return {"ok": memory_store.delete(pid, int(body.get("id") or 0))}
+
+
+@router.post("/api/memory/compress")
+async def api_memory_compress(request: Request):
+    """从历史对话导入：传 ids=[历史id]，抽取答案 → AI 压缩成一条记忆正文（非流式返回）。"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": "参数错误"}
+    pid = _auth(int(body.get("profile_id") or 0), body.get("token") or "")
+    if not pid:
+        return {"ok": False, "error": "登录状态失效，请重新登录"}
+    ids = body.get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return {"ok": False, "error": "请先选择要导入的历史对话"}
+    excerpts = []
+    for hid in ids[:8]:
+        try:
+            item = history.get_detail(pid, int(hid))
+        except (TypeError, ValueError):
+            continue
+        if not item:
+            continue
+        ans = (item.get("answer") or "").strip()
+        q = (item.get("question") or "").strip()
+        if not ans:
+            continue
+        excerpts.append("【问】" + q + "\n【解读节选】" + ans[:900])
+    if not excerpts:
+        return {"ok": False, "error": "所选历史没有可用的解读内容"}
+    prompt = memory_store.COMPRESS_PROMPT.format(excerpts="\n\n---\n\n".join(excerpts))
+    try:
+        full = ""
+        async for delta in ai.stream_answer(prompt, timeout=180.0):
+            full += delta
+    except Exception as e:
+        return {"ok": False, "error": "压缩生成失败，请稍后重试"}
+    content = full.strip()
+    if not content:
+        return {"ok": False, "error": "压缩生成结果为空"}
+    # 截到合理长度，防止模型偶发超长
+    if len(content) > 400:
+        content = content[:400].rstrip() + "…"
+    return {"ok": True, "content": content, "count": len(excerpts)}
