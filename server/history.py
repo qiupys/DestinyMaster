@@ -34,27 +34,54 @@ def _ensure_table() -> None:
             question TEXT NOT NULL,
             answer TEXT NOT NULL,
             payload TEXT NOT NULL DEFAULT '{}',
-            dedupe_key TEXT
+            dedupe_key TEXT,
+            parent_id INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_fh_profile_feature ON feature_history(profile_id, feature, id DESC);
         """
     )
+    # 兼容旧库：早期表无 parent_id 列，追问被另存成独立记录；补列后旧记录 parent_id 为 NULL，
+    # 自然作为顶层问题保留，不影响既有数据。parent_id 索引必须在补列之后建，否则旧库会因列不存在报错。
+    cols = [r["name"] for r in c.execute("PRAGMA table_info(feature_history)").fetchall()]
+    if "parent_id" not in cols:
+        c.execute("ALTER TABLE feature_history ADD COLUMN parent_id INTEGER")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_fh_parent ON feature_history(parent_id)")
     c.commit()
 
 
 def save(profile_id: int, feature: str, question: str, answer: str,
-         payload: dict | None = None, dedupe_key: str | None = None) -> int:
-    """落一条功能问答历史。payload 存确定性盘面（卦象/八字/牌阵等）JSON。"""
+         payload: dict | None = None, dedupe_key: str | None = None,
+         parent_id: int | None = None) -> int:
+    """落一条功能问答历史。payload 存确定性盘面（卦象/八字/牌阵等）JSON。
+
+    parent_id 为空 = 顶层问题；非空 = 某条顶层问题下的追问，不单列在历史列表。
+    """
     _ensure_table()
     c = profile_store.db()
     cur = c.execute(
-        "INSERT INTO feature_history(profile_id, feature, ts, question, answer, payload, dedupe_key) "
-        "VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO feature_history(profile_id, feature, ts, question, answer, payload, dedupe_key, parent_id) "
+        "VALUES(?,?,?,?,?,?,?,?)",
         (profile_id, feature, _now(), question, answer,
-         json.dumps(payload or {}, ensure_ascii=False), dedupe_key),
+         json.dumps(payload or {}, ensure_ascii=False), dedupe_key, parent_id),
     )
     c.commit()
     return cur.lastrowid
+
+
+def append_followup(profile_id: int, root_id: int, question: str, answer: str,
+                    payload: dict | None = None) -> bool:
+    """把一次追问作为子记录挂到 root_id 这条顶层问题下（不单列）。继承顶层的功能与档案。"""
+    _ensure_table()
+    c = profile_store.db()
+    cur = c.execute(
+        "INSERT INTO feature_history(profile_id, feature, ts, question, answer, payload, dedupe_key, parent_id) "
+        "SELECT profile_id, feature, ?, ?, ?, ?, NULL, ? "
+        "FROM feature_history WHERE id=? AND profile_id=? AND parent_id IS NULL",
+        (_now(), question, answer, json.dumps(payload or {}, ensure_ascii=False), root_id,
+         root_id, profile_id),
+    )
+    c.commit()
+    return cur.rowcount > 0
 
 
 def find_cached(profile_id: int, feature: str, dedupe_key: str) -> str | None:
@@ -79,7 +106,7 @@ def list_history(profile_id: int, feature: str | None = None,
     """按功能 / 日期列出历史。date 为 YYYY-MM-DD，按 ts 前缀精确匹配某一天。"""
     _ensure_table()
     c = profile_store.db()
-    where = "profile_id=?"
+    where = "profile_id=? AND parent_id IS NULL"
     args: list = [profile_id]
     if feature:
         where += " AND feature=?"
@@ -110,19 +137,39 @@ def list_history(profile_id: int, feature: str | None = None,
 
 def get_detail(profile_id: int, history_id: int) -> dict | None:
     _ensure_table()
-    row = profile_store.db().execute(
+    c = profile_store.db()
+    row = c.execute(
         "SELECT * FROM feature_history WHERE id=? AND profile_id=?",
         (history_id, profile_id),
     ).fetchone()
     if not row:
         return None
+    # 若拿到的是追问子记录，归一到它的顶层问题（追问链只有顶层才有完整盘面 payload）。
+    root_id = row["parent_id"] or row["id"]
+    if root_id != row["id"]:
+        row = c.execute(
+            "SELECT * FROM feature_history WHERE id=? AND profile_id=?",
+            (root_id, profile_id),
+        ).fetchone()
+        if not row:
+            return None
     try:
         payload = json.loads(row["payload"])
     except (ValueError, TypeError):
         payload = {}
+    # 追问链：同一顶层问题下的所有追问，按时间正序返回，供详情/追问上下文组装。
+    followups = [
+        {"id": r["id"], "ts": r["ts"], "question": r["question"], "answer": r["answer"]}
+        for r in c.execute(
+            "SELECT id, ts, question, answer FROM feature_history "
+            "WHERE parent_id=? AND profile_id=? ORDER BY id ASC",
+            (root_id, profile_id),
+        ).fetchall()
+    ]
     return {
         "id": row["id"], "feature": row["feature"], "ts": row["ts"],
         "question": row["question"], "answer": row["answer"], "payload": payload,
+        "followups": followups,
     }
 
 
@@ -131,8 +178,33 @@ def delete_one(profile_id: int, history_id: int) -> bool:
     c = profile_store.db()
     cur = c.execute("DELETE FROM feature_history WHERE id=? AND profile_id=?",
                     (history_id, profile_id))
+    # 连坐：顶层问题被删时，其追问子记录一并删除。
+    c.execute("DELETE FROM feature_history WHERE parent_id=? AND profile_id=?",
+              (history_id, profile_id))
     c.commit()
     return cur.rowcount > 0
+
+
+def delete_many(profile_id: int, history_ids: list[int]) -> int:
+    """批量删除顶层问题及其追问子记录；返回实际删除的顶层条数。"""
+    ids = [int(i) for i in history_ids if isinstance(i, (int, float, str))][:500]
+    ids = [i for i in dict.fromkeys(ids) if i > 0]
+    if not ids:
+        return 0
+    _ensure_table()
+    c = profile_store.db()
+    marks = ",".join("?" for _ in ids)
+    cur = c.execute(
+        f"DELETE FROM feature_history WHERE profile_id=? AND id IN ({marks}) AND parent_id IS NULL",
+        [profile_id, *ids],
+    )
+    n = cur.rowcount
+    c.execute(
+        f"DELETE FROM feature_history WHERE profile_id=? AND parent_id IN ({marks})",
+        [profile_id, *ids],
+    )
+    c.commit()
+    return n
 
 
 def personalization(profile_id: int, feature: str) -> dict:
@@ -162,12 +234,13 @@ def stats(profile_id: int) -> dict:
     _ensure_table()
     c = profile_store.db()
     rows = c.execute(
-        "SELECT feature, COUNT(*) AS n FROM feature_history WHERE profile_id=? GROUP BY feature",
+        "SELECT feature, COUNT(*) AS n FROM feature_history WHERE profile_id=? AND parent_id IS NULL "
+        "GROUP BY feature",
         (profile_id,),
     ).fetchall()
     by_feature = {r["feature"]: r["n"] for r in rows}
     drows = c.execute(
-        "SELECT DISTINCT substr(ts,1,10) AS d FROM feature_history WHERE profile_id=? "
+        "SELECT DISTINCT substr(ts,1,10) AS d FROM feature_history WHERE profile_id=? AND parent_id IS NULL "
         "ORDER BY d DESC",
         (profile_id,),
     ).fetchall()

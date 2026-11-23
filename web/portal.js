@@ -1878,6 +1878,12 @@
   function freezeForReview(node) {
     var controls = node.querySelectorAll(".tool-ai, .p-suggest, .p-switch");
     Array.prototype.slice.call(controls).forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
+    // 展开回看时，外层归档轮标题（.round-item-hd .rq）已经显示了问题文本，
+    // 内层解读卡若仍写「新提问 · 问题」就是重复残留，统一改成中性的「解读」。
+    Array.prototype.slice.call(node.querySelectorAll(".p-ai-title")).forEach(function (t) {
+      var txt = (t.textContent || "").trim();
+      if (txt.indexOf("新提问") === 0) t.textContent = "本次解读";
+    });
     return node;
   }
   /* 把 container 当前一轮（结果卡 + 解读卡 + 追问链）打包折叠归档，并清空 container。返回归档节点数。
@@ -1997,7 +2003,7 @@
     streamToUrl("/api/" + feature + "/deduce?" + query, "AI 解读", question, container, false, rk);
   }
   /* 通用 SSE 流式渲染：解读 / 历史追问共用 */
-  function streamToUrl(url, tag, question, container, noRefresh, rk) {
+  function streamToUrl(url, tag, question, container, noRefresh, rk, onDone) {
     // AI 解读与追问一律要求登录（后端也要鉴权，这里先拦一层给出明确引导）
     if (requireLogin()) return;
     // busy 按容器隔离：一个功能在解读，不影响切到别的功能发起新解读（后台并行）
@@ -2055,6 +2061,7 @@
       .catch(function (e) {
         body.innerHTML = '<div style="color:var(--cinnabar)">解读失败：' + esc(e.message) + '</div>';
         S.busyKeys[bkey] = false;
+        if (onDone) onDone(false);
       });
     function render() {
       try { body.innerHTML = (window.marked ? marked.parse(full) : esc(full)) + '<span class="p-cursor"></span>'; }
@@ -2069,9 +2076,12 @@
       // 用 .done 作为「流结束」信号，供测试与追问定位。
       var card = $("#" + holderId);
       if (card) card.classList.add("done");
-      // 每一处解读都支持「继续追问」：有 hid（登录且已落盘）时在卡底挂追问条
-      if (hid) attachFollow(card, hid, followNote(S.feature));
+      // 每一处【首轮解读】都支持「继续追问」：有 hid（登录且已落盘）时在卡底挂追问条。
+      // 追问结果卡（tag=追问）不再挂新追问框——追问链沿用触发它的那条追问条继续输入，
+      // 避免每追问一次就多堆叠一个追问框（用户反馈「追问后仍有追问框」）。
+      if (hid && tag !== "追问") attachFollow(card, hid, followNote(S.feature));
       if (!noRefresh && S.feature === "profile") renderProfile();
+      if (onDone) onDone(true);
     }
   }
 
@@ -2123,7 +2133,8 @@
   /* ================= 个人中心 ================= */
   var PF_FEATS = [["bazi", "八字"], ["ziwei", "紫微"], ["meihua", "梅花"], ["tarot", "塔罗"], ["astrology", "占星"], ["huangli", "黄历"]];
   var pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false,
-    birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false };
+    birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false,
+    batchMode: false, selected: {} };
 
   function pfAuth() {
     return "profile_id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token);
@@ -2174,15 +2185,23 @@
       return '<button type="button" class="p-stat p-stat-btn' + (on ? ' on' : '') + '" data-f="' + f[0] + '">' +
         '<div class="n">' + (by[f[0]] || 0) + '</div><div class="l">' + f[1] + '</div></button>';
     }).join("");
+    // 批量删除模式：全选 / 单选由 pfState.batchMode + pfState.selected 驱动
+    var batch = !!pfState.batchMode;
+    var selCount = pfState.items.filter(function (h) { return !!pfState.selected[h.id]; }).length;
+    var allChecked = batch && pfState.items.length > 0 && selCount === pfState.items.length;
     // 历史缩略卡：功能 + 日期 + 单行问题摘要；纵向列表在固定高度内上下滚动，点击查看详情/追问
     var items = pfState.items.map(function (h) {
       var summary = String(h.question || "").replace(/\s+/g, " ");
       if (summary.length > 54) summary = summary.slice(0, 54) + "…";
-      return '<div class="pf-hcard" data-hid="' + h.id + '" role="button" tabindex="0">' +
-        '<div class="pf-hcard-top"><span class="p-hist-feat">' + esc(h.feature_name) + '</span>' +
+      var sel = batch && !!pfState.selected[h.id];
+      var inner = '<div class="pf-hcard-top"><span class="p-hist-feat">' + esc(h.feature_name) + '</span>' +
         '<span class="pf-hcard-tools"><span class="pf-hcard-date">' + esc(h.ts || "") + '</span>' +
-        '<button type="button" class="p-hist-del" data-del="' + h.id + '">删除</button></span></div>' +
-        '<span class="pf-hcard-q">' + esc(summary) + '</span>' +
+        (batch ? '' : '<button type="button" class="p-hist-del" data-del="' + h.id + '">删除</button>') +
+        '</span></div>' +
+        '<span class="pf-hcard-q">' + esc(summary) + '</span>';
+      return '<div class="pf-hcard' + (batch ? ' batch' : '') + (sel ? ' checked' : '') + '" data-hid="' + h.id + '" role="button" tabindex="0">' +
+        (batch ? '<input type="checkbox" class="pf-hcard-ck" data-id="' + h.id + '"' + (sel ? ' checked' : '') + ' />' : '') +
+        (batch ? '<div class="pf-hcard-main">' + inner + '</div>' : inner) +
         '</div>';
     }).join("") || ('<p class="p-note">' + (pfState.date ? "这一天没有提问记录。" : (cur ? "「" + cur[1] + "」还没有提问记录。" : "还没有提问记录，去各功能里问一句吧。")) + '</p>');
     $("#pf-body").innerHTML =
@@ -2208,16 +2227,22 @@
       pfMemoryHTML() +
       '<div class="p-stat-row">' + cards + '</div>' +
       '<p class="p-note pf-hint pf-tip">点击卡片查看该功能的历史对话</p>' +
-      '<div style="margin-top:22px"><div class="pf-hist-head"><h3 style="font-family:var(--serif);font-size:16px;margin:0">' +
+      '<div class="pf-hist-zone"><div class="pf-hist-head"><h3 style="font-family:var(--serif);font-size:16px;margin:0">' +
         (cur ? esc(cur[1]) + ' · 历史对话' : '历史提问') + '</h3>' +
         '<div class="pf-hist-tools">' +
-          (pfState.date ? '<button type="button" class="pf-dateclear" title="清除日期">' + esc(pfState.date) + ' ✕</button>' : '') +
-          '<button type="button" class="pf-date-btn" id="pf-date-btn">' + CAL_ICON + '<span>' + (pfState.date ? '更改日期' : '按日期查找') + '</span></button>' +
-          (cur || pfState.date ? '<button class="p-navitem pf-clear" style="width:auto;padding:4px 10px">清除筛选</button>' : '') +
+          (batch
+            ? '<label class="pf-selall"><input type="checkbox" id="pf-selall"' + (allChecked ? ' checked' : '') + ' /> 全选</label>' +
+              '<span class="pf-selcount">已选 ' + selCount + '</span>' +
+              '<button type="button" class="p-navitem pf-batch-del" style="width:auto;padding:4px 10px"' + (selCount ? '' : ' disabled') + '>删除选中</button>' +
+              '<button type="button" class="p-navitem pf-batch-exit" style="width:auto;padding:4px 10px">退出批量</button>'
+            : (pfState.date ? '<button type="button" class="pf-dateclear" title="清除日期">' + esc(pfState.date) + ' ✕</button>' : '') +
+              '<button type="button" class="pf-date-btn" id="pf-date-btn">' + CAL_ICON + '<span>' + (pfState.date ? '更改日期' : '按日期查找') + '</span></button>' +
+              (cur || pfState.date ? '<button class="p-navitem pf-clear" style="width:auto;padding:4px 10px">清除筛选</button>' : '') +
+              '<button type="button" class="p-navitem pf-batch-enter" style="width:auto;padding:4px 10px">批量删除</button>') +
         '</div>' +
       '</div>' +
       '<div class="pf-hscroll">' + items + '</div>' +
-      '<p class="p-note pf-hint">上下滚动查看更多；点击卡片查看完整解读并继续追问</p>' +
+      '<p class="p-note pf-hint">' + (batch ? '勾选要删除的提问，点「删除选中」并确认；追问会随原问题一起删除' : '上下滚动查看更多；点击卡片查看完整解读并继续追问') + '</p>' +
       '</div>';
     $$(".p-stat-btn", $("#pf-body")).forEach(function (b) {
       b.onclick = function () {
@@ -2249,10 +2274,76 @@
     };
     var dclr = $(".pf-dateclear", $("#pf-body"));
     if (dclr) dclr.onclick = function () { pfState.date = ""; loadProfile(); };
-    // 缩略卡：点卡片查看；点卡内「删除」按钮两步确认，并阻止冒泡到「查看」
+    // 批量删除：进入/退出/全选/单选/删除选中
+    function repaintBatch() { paintProfile(stats, list, prof); }
+    var be = $(".pf-batch-enter", $("#pf-body"));
+    if (be) be.onclick = function () {
+      pfState.batchMode = true; pfState.selected = {}; repaintBatch();
+    };
+    var bx = $(".pf-batch-exit", $("#pf-body"));
+    if (bx) bx.onclick = function () {
+      pfState.batchMode = false; pfState.selected = {}; repaintBatch();
+    };
+    var sa = $("#pf-selall", $("#pf-body"));
+    if (sa) sa.onchange = function () {
+      $$(".pf-hcard", $("#pf-body")).forEach(function (card) {
+        var id = +card.dataset.hid;
+        pfState.selected[id] = sa.checked;
+        var ck = $(".pf-hcard-ck", card); if (ck) ck.checked = sa.checked;
+        card.classList.toggle("checked", sa.checked);
+      });
+      updateBatchBar();
+    };
+    function updateBatchBar() {
+      var n = pfState.items.filter(function (h) { return !!pfState.selected[h.id]; }).length;
+      var cnt = $(".pf-selcount", $("#pf-body")); if (cnt) cnt.textContent = "已选 " + n;
+      var del = $(".pf-batch-del", $("#pf-body")); if (del) del.disabled = !n;
+      var all = $("#pf-selall", $("#pf-body"));
+      if (all) all.checked = pfState.items.length > 0 && n === pfState.items.length;
+    }
+    // 缩略卡：批量模式下点卡片切换选中；普通模式点卡片查看；点卡内「删除」按钮两步确认，并阻止冒泡
     $$(".pf-hcard", $("#pf-body")).forEach(function (card) {
-      card.onclick = function () { toggleHistory(+card.dataset.hid, card); };
+      card.onclick = function (e) {
+        var id = +card.dataset.hid;
+        if (pfState.batchMode) {
+          if (e && e.target && e.target.classList && e.target.classList.contains("pf-hcard-ck")) return; // checkbox 自己处理
+          pfState.selected[id] = !pfState.selected[id];
+          var ck = $(".pf-hcard-ck", card); if (ck) ck.checked = !!pfState.selected[id];
+          card.classList.toggle("checked", !!pfState.selected[id]);
+          updateBatchBar();
+          return;
+        }
+        toggleHistory(id, card);
+      };
     });
+    $$(".pf-hcard-ck", $("#pf-body")).forEach(function (ck) {
+      ck.onclick = function (e) { e.stopPropagation(); };
+      ck.onchange = function () {
+        var id = +ck.dataset.id;
+        pfState.selected[id] = ck.checked;
+        ck.closest(".pf-hcard").classList.toggle("checked", ck.checked);
+        updateBatchBar();
+      };
+    });
+    var bd = $(".pf-batch-del", $("#pf-body"));
+    if (bd) bd.onclick = function () {
+      var ids = pfState.items.filter(function (h) { return !!pfState.selected[h.id]; }).map(function (h) { return h.id; });
+      if (!ids.length) { toast("请先勾选要删除的提问"); return; }
+      if (!bd.classList.contains("arm")) {
+        bd.classList.add("arm"); bd.textContent = "确认删除 " + ids.length + " 项";
+        setTimeout(function () { if (bd.isConnected) { bd.classList.remove("arm"); bd.textContent = "删除选中"; } }, 5000);
+        return;
+      }
+      bd.disabled = true;
+      fetch("/api/history/delete_batch", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: S.profile.id, token: S.profile.token, ids: ids })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) { toast(d.error || "删除失败"); bd.disabled = false; return; }
+        toast("已删除 " + (d.deleted != null ? d.deleted : ids.length) + " 条");
+        pfState.batchMode = false; pfState.selected = {}; loadProfile();
+      }).catch(function () { toast("删除失败，请稍后再试"); bd.disabled = false; });
+    };
     $$(".p-hist-del", $("#pf-body")).forEach(function (b) {
       b.onclick = function (e) {
         e.stopPropagation();
@@ -2564,9 +2655,17 @@
       var card = document.createElement("div");
       card.className = "p-ai p-hist-detail";
       card.dataset.hbox = id;
+      // 追问已合并进这一条：在同一张详情卡里按时间正序铺出「原问题 + 各轮追问」的完整对话，
+      // 不再让追问散落成多条历史。每轮之间用细分隔线区分。
+      var chain = '<p><b>问：</b>' + esc(it.question) + '</p><hr/>' +
+        (window.marked ? marked.parse(it.answer) : esc(it.answer));
+      (it.followups || []).forEach(function (fu) {
+        chain += '<div class="pf-hist-fu">' +
+          '<p><b>追问：</b>' + esc(fu.question) + '</p>' +
+          (window.marked ? marked.parse(fu.answer) : esc(fu.answer)) + '</div>';
+      });
       card.innerHTML = '<div class="p-ai-head"><span class="dot"></span>历史解读 · ' + esc(it.ts) + '</div>' +
-        '<div class="p-ai-body"><p><b>问：</b>' + esc(it.question) + '</p><hr/>' +
-        (window.marked ? marked.parse(it.answer) : esc(it.answer)) + '</div>';
+        '<div class="p-ai-body">' + chain + '</div>';
       $("#pf-body").appendChild(card);
       // 小字灰色备注放在追问条内部（输入框上方），不再紧跟免责声明、避免像答案的一部分。
       attachFollow(card, id, followNote(it.feature));

@@ -648,6 +648,26 @@ async def api_history_delete(request: Request):
     return {"ok": history.delete_one(pid, hid)}
 
 
+@router.post("/api/history/delete_batch")
+async def api_history_delete_batch(request: Request):
+    """批量删除历史提问（含各自的追问子记录）；仅能删除本人记录，前端负责二次确认。"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": "参数错误"}
+    try:
+        pid = _auth(int(body.get("profile_id") or 0), body.get("token") or "")
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "参数错误"}
+    if not pid:
+        return {"ok": False, "error": "登录状态失效，请重新登录"}
+    ids = body.get("ids") or []
+    if not isinstance(ids, list):
+        return {"ok": False, "error": "参数错误"}
+    n = history.delete_many(pid, ids)
+    return {"ok": True, "deleted": n}
+
+
 @router.get("/api/history/stats")
 async def api_history_stats(profile_id: int = Query(...), token: str = Query(...)):
     pid = _auth(profile_id, token)
@@ -675,15 +695,18 @@ async def api_history_followup(
     feature = item.get("feature", "")
     name = history.FEATURE_NAMES.get(feature, feature)
     up, recent = _personalize(pid, feature)
-    # 对话链：当前被追问的这条（带完整回答要点）+ 更早的近期历史。
-    # recent 里含当前项，先剔除避免重复；反序成 time 从旧到新，
-    # prompt 装配取 [-6:] 得到最近 6 轮，结论保持一致。
+    # 对话链：更早的近期历史 + 当前顶层问题 + 该问题已积压的追问（时间正序）。
+    # 追问现在是同一条顶层记录的子记录，不再出现在 recent 里，需从 detail.followups 取，
+    # 否则多轮追问会丢失前文。recent 里含当前顶层项，先剔除避免重复。
     earlier = [h for h in (recent or [])
                if not (h.get("ts") == item.get("ts") and h.get("question") == item.get("question"))]
     prior = list(reversed(earlier)) + [{
         "ts": item.get("ts", ""), "question": item.get("question", ""),
         "answer": item.get("answer", ""),
     }]
+    for fu in item.get("followups", []):
+        prior.append({"ts": fu.get("ts", ""), "question": fu.get("question", ""),
+                      "answer": fu.get("answer", "")})
 
     if feature == "ziwei":
         # 紫微：用落盘的 ziwei_data 重建命盘事实，无需内存 chart；追问词刷新 RAG 摘录。
@@ -725,9 +748,10 @@ async def api_history_followup(
                     disc = tail[len(full.rstrip()):]
                     full = tail
                     yield f"data: {json.dumps({'delta': disc}, ensure_ascii=False)}\n\n"
-                new_id = history.save(pid, feature, question, full.strip(), payload, None)
-                # 回传新历史 id：追问结果卡继续支持下一轮追问，形成多轮链
-                yield f"data: {json.dumps({'hid': new_id}, ensure_ascii=False)}\n\n"
+                # 追问归到同一条顶层记录（parent_id=root id），历史列表只显示一个问题。
+                # 回传顶层 id：追问卡继续追问仍指向同一轮，多轮问答都挂在这一条下。
+                history.append_followup(pid, item["id"], question, full.strip(), payload)
+                yield f"data: {json.dumps({'hid': item['id']}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         except asyncio.CancelledError:
             raise

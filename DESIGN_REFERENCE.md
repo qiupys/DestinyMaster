@@ -110,3 +110,14 @@
 
 - **命盘类（八字/紫微/占星）**：出生信息固定后，登录态自动出盘、收起表单、结果区直接提问；按出生信息缓存（`CHART_CACHE`），**信息不变不重排**，仅档案出生信息变更时清缓存重排。
 - **占卜类（梅花/塔罗/黄历）**：不自带命盘，导入个人信息 + 提问；档案信息提示框统一置顶。
+
+### 7.7 历史记录：追问合并 + 批量删除（v89）
+
+- **追问合并进同一条历史**（原子记录语义：一次提问 = 原问题 + AI 解读 + 追问链，算一条）：
+  - 数据层 `feature_history` 增 `parent_id` 列（旧库自动 `ALTER TABLE` 补列，索引在补列后建）。顶层记录 `parent_id IS NULL`；追问是子记录 `parent_id=root_id`。
+  - `history.append_followup()` 写子记录（继承顶层 feature/profile，不单列）；`list_history`/`stats` 只算顶层；`get_detail()` 归一子 id 到顶层并带 `followups[]`（时间正序）；`delete_one` 连坐子记录。
+  - followup 端点：`history.append_followup` 代替 `save`，回传顶层 `id` 让追问链始终指向同一轮；对话上下文把 `item.followups` 并入 `prior`，保证多轮追问不丢前文。
+  - 前端：历史列表只显示顶层问题；点开详情在同一张 `.p-ai.p-hist-detail` 内用 `.pf-hist-fu` 铺出追问链；追问框多轮复用同一个（追问结果卡 `tag==="追问"` 不再 `attachFollow`，避免逐层堆叠追问框）。
+- **批量删除**：后端 `POST /api/history/delete_batch`（ids 列表 → `history.delete_many`，顶层+子记录连坐，仅本人）；前端个人中心 `.pf-hist-zone` 历史区加「批量删除」→ 全选 `#pf-selall` / 单选 `.pf-hcard-ck` / 删除选中（两步确认）/ 退出，状态存 `pfState.batchMode/selected`。
+- **历史区宽度**：`.pf-hist-zone` 用 `max-width:var(--content-w);margin:auto` 包住标题+列表，与展开的 `.p-ai.p-hist-detail` 严格同宽居中（曾因列表撑满外层 p-card、详情卡锁 760 导致左右边缘对不齐）。
+- **归档回看标签**：`freezeForReview()` 把归档轮内 `.p-ai-title` 的「新提问 · 问题」改写为「本次解读」——外层 `.round-item-hd .rq` 已显示问题文本，内层重复即残留。
