@@ -249,8 +249,8 @@ def chart(year: int, month: int, day: int, hour: int, minute: int = 0,
         lines.append("大运：" + " → ".join(
             f"{d['age']}~{d['end_age']}岁{d['ganzhi']}({d['shi_shen']})" for d in dayun[:6]))
     if cur_dayun:
-        lines.append(f"当前大运：{cur_dayun['ganzhi']}（{cur_dayun['start_year']}-{cur_dayun['end_year']}，{cur_age}岁）")
-    lines.append("近年流年：" + "　".join(f"{x['year']}{x['ganzhi']}({x['shi_shen']})" for x in liunian[:5]))
+        lines.append(f"排盘基准大运（按 {now_year} 年计）：{cur_dayun['ganzhi']}（{cur_dayun['start_year']}-{cur_dayun['end_year']}，{cur_age}岁）")
+    lines.append(f"基准年起流年（{now_year} 起）：" + "　".join(f"{x['year']}{x['ganzhi']}({x['shi_shen']})" for x in liunian[:5]))
     if birth_place:
         lines.append(f"出生地：{birth_place}")
     fact = "\n".join(lines)

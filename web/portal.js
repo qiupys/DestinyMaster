@@ -1517,12 +1517,14 @@
         lastGua = d;
         $("#mh-result").dataset.roundQ = q0;
         // 卦象身份 = 本卦序 + 动爻 + 变卦序；同问题不同卦是两轮，不能按问题文本去重
-        var mhRk = "gua|" + d.ben_gua.index + "-" + d.moving + "-" + d.bian_gua.index;
+        // 身份含起卦时刻：同一卦不同时辰，外应与时令旺衰不同，属不同轮
+        var mhRk = "gua|" + d.ben_gua.index + "-" + d.moving + "-" + d.bian_gua.index + "|" + (d.when || "");
         $("#mh-result").dataset.rk = mhRk;
-        // 锁定本次卦象：deduce 会以 manual 方式用这组上/下卦与动爻重算，
-        // 保证「用户看到的卦」==「AI 解读的卦」（否则随机起卦会在 deduce 时重新抽数，两者不一致）。
+        // 锁定本次卦象与起卦时刻：deduce 用 manual + 这组上下卦/动爻重算，并沿用 calc 的实际时刻。
+        // 少了 when，用户指定了起卦时间也会被 deduce 的「当前时刻」覆盖，时令旺衰与所见不一致。
         var mhLock = "method=manual&upper=" + encodeURIComponent(d.upper.name) +
-          "&lower=" + encodeURIComponent(d.lower.name) + "&moving=" + d.moving;
+          "&lower=" + encodeURIComponent(d.lower.name) + "&moving=" + d.moving +
+          "&when=" + encodeURIComponent(d.when || "");
         $("#mh-ai").onclick = function () {
           var q = $("#mh-q").value.trim();
           if (!q) { toast("请先写下所问之事"); return; }
@@ -3546,9 +3548,14 @@
     if (!st.id) { toast("命盘未就绪，请稍候"); return; }
     var out = $(outSel || "#zw-ai-out");
     if (!out) return;
-    var rk = "chart|" + st.id;
+    // 运势盘选中的流年必须随提问带给后端，否则后端只拿到命盘 id，只能按今日运限解读
+    // （用户在运势盘选了 2027，AI 却仍按 2026 丙午年作答）。命格/本命视图不传，保持只论本命的口径。
+    var year = st.view === "fortune" ? (parseInt(st.year, 10) || "") : "";
+    // 轮次身份纳入年份：同一问题切到另一个流年是新的一轮，不能命中旧解读或塞进旧轮。
+    var rk = "chart|" + st.id + (year ? "|" + year : "");
     if (!prepareNewQuestion(out, q, rk)) return;
-    var url = "/api/deduce?id=" + encodeURIComponent(st.id) + "&q=" + encodeURIComponent(q) + authParam();
+    var url = "/api/deduce?id=" + encodeURIComponent(st.id) + "&q=" + encodeURIComponent(q) +
+      (year ? "&year=" + year : "") + authParam();
     streamToUrl(url, "AI 解读", q, out, false, rk);
   }
   function zwHoro(retried) {
@@ -4141,7 +4148,12 @@
           root.dataset.rk = "qimen|" + d.when + "|" + method + "|" + d.ju_jieqi + d.ju + "|" + d.dingju_state +
             "|" + ($("#qm-na-on").checked ? $("#qm-na").value : "") +
             "|" + ($("#qm-ys-on").checked ? $("#qm-ys").value : "");
-          var lock = qs;
+          // 起局时刻必须回传 calc 实际使用的 d.when：否则用户未勾选指定时间时，
+          // deduce 会按「此刻」另起一局，AI 解读的盘与屏幕上看到的盘可能不同。
+          var lock = "method=" + method +
+            ($("#qm-na-on").checked ? "&year_na=" + encodeURIComponent($("#qm-na").value) : "") +
+            ($("#qm-ys-on").checked && $("#qm-ys").value ? "&yongshen=" + encodeURIComponent($("#qm-ys").value) : "") +
+            "&when=" + encodeURIComponent(d.when || "");
           $("#qm-ask").onclick = function () {
             var q = $("#qm-q").value.trim();
             if (!q) { toast("请先写下所问之事"); return; }

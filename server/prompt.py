@@ -321,6 +321,17 @@ def assemble_ziwei(data: dict, question: str, history: list | None = None,
     digest = data.get("digest", "")
     target = data.get("target", "")
     kb_block = data.get("kb_block", "")
+    # 用户选定流年/流月时，命盘数据末尾的「当前运限（今日）」与推演目标会冲突，
+    # 模型容易按系统当前日期作答（选了 2027 还在讲丙午年）。此处明确目标运限的优先级。
+    target_priority = ""
+    if target:
+        target_priority = (
+            "【推演目标优先级（最高）】\n"
+            "本轮只推演【推演目标】指定的年份/月份运限。命盘数据末尾的「当前运限（今日）」"
+            "仅为排盘时的参考背景，禁止用它替代目标年份；回答中「今年/当年/流年」一律指目标年份。"
+            "禁止读取系统当前日期、今日流年或今日流月推算应期；若【推演目标】未给出流月盘，"
+            "就不要指定目标年份的具体流月区间，应期按已给出的流年/大限公历区间表述。\n\n"
+        )
     profile_block = ""
     if user_profile:
         profile_block += (
@@ -357,9 +368,13 @@ def assemble_ziwei(data: dict, question: str, history: list | None = None,
                 "用户说「继续／上面／刚才／那之前」即指此处内容，禁止当作全新提问重新推演）】\n"
                 + "\n".join(msgs) + "\n\n"
             )
+            if target:
+                convo += ("注意：历史结论仅作背景；若历史推演的年份/运限与本轮【推演目标】不同，"
+                          "时序与应期一律以本轮目标为准，不得把旧年份的判断套到新年份上。\n\n")
     return (
         f"{SYSTEM_RULES}\n\n"
         f"【命盘数据】\n{digest}\n\n"
+        f"{target_priority}"
         f"{target}"
         f"{kb_block}"
         f"{profile_block}"

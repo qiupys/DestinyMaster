@@ -116,7 +116,7 @@ def query(year: int, month: int, day: int) -> dict:
         f"方位：财神{positions['cai']}　喜神{positions['xi']}　福神{positions['fu']}　阳贵{positions['yanggui']}",
     ]
     if jieqi_info.get("current"):
-        lines.append(f"节气：今日{jieqi}")
+        lines.append(f"节气：该日{jieqi}")
     elif jieqi_info.get("next"):
         lines.append(f"节气：上一节气{jieqi_info.get('prev',{}).get('name','')}，"
                      f"下一节气{jieqi_info['next'].get('name')}"
