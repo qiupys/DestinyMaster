@@ -26,5 +26,5 @@ server/.adminkey
 .vscode/
 *.log
 
-# E2E 测试截图与报告（运行时生成，体积大；测试脚本可随时重跑重建）
-tests/screenshots/
+# 测试目录（本地验证用；E2E 脚本与截图均不入库，可随时重跑重建）
+tests/
