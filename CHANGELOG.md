@@ -11,6 +11,9 @@
 
 ---
 
+## v107.2 (2026-11-24)
+- [refactor] 彻底清除 Git 历史中的 tests/ 文件对象：filter-branch 重写全部提交的 hash、清理原引用与 reflog、force push 覆盖远端。本地 tests/ 文件保留，旧历史仅存于本地 bundle 备份。
+
 ## v107.1 (2026-11-24)
 - [refactor] tests/ 全目录移出版本库（本地保留），取消 17 个 E2E/单元测试脚本的追踪并加入 .gitignore；历史提交中的旧文件不改写。
 
