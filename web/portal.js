@@ -932,15 +932,24 @@
       { feat: "huangli",tag: "其他功能", name: "老黄历", desc: "宜忌、值神、冲煞与物候，结合所选日期作择日答疑。",
         icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01"/>' }
     ];
-    var cards = FEATURES.map(function (f) {
+    function cardHTML(f) {
       return '<button type="button" class="home-card" data-feature="' + f.feat + '">' +
         '<span class="home-card-ic"><svg class="ic" viewBox="0 0 24 24">' + f.icon + '</svg></span>' +
-        '<span class="home-card-tag">' + esc(f.tag) + '</span>' +
         '<span class="home-card-name">' + esc(f.name) + '</span>' +
         '<span class="home-card-desc">' + esc(f.desc) + '</span>' +
         '<span class="home-card-go" aria-hidden="true">→</span>' +
         '</button>';
-    }).join("");
+    }
+    // 按 tag 分类分组：首次出现顺序即分类展示顺序，组内保留原卡片次序。
+    var groupNames = [];
+    FEATURES.forEach(function (f) { if (groupNames.indexOf(f.tag) < 0) groupNames.push(f.tag); });
+    var sections = groupNames.map(function (g) {
+      var items = FEATURES.filter(function (f) { return f.tag === g; });
+      return '<section class="home-group">' +
+        '<h2 class="home-group-h"><span class="home-group-bar"></span>' + esc(g) + '</h2>' +
+        '<div class="home-grid">' + items.map(cardHTML).join('') + '</div>' +
+        '</section>';
+    }).join('');
     stageEl().innerHTML =
       '<div class="home-page">' +
         '<div class="home-hero">' +
@@ -948,7 +957,7 @@
           '<h1>观象 · 知变 · 自省</h1>' +
           '<p>以传统命理与象征体系为镜，照见当下、理解自己。选择一个入口开始，所有推演都可继续追问。</p>' +
         '</div>' +
-        '<div class="home-grid">' + cards + '</div>' +
+        sections +
         '<p class="home-footnote">所有解读仅供自我探索与文化娱乐，不构成现实决策建议。</p>' +
       '</div>';
     $$(".home-card", stageEl()).forEach(function (c) {
