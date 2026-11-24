@@ -3790,8 +3790,9 @@
             return '<div class="mrg-pil"><span>' + ({year:"年",month:"月",day:"日",hour:"时"})[k] + '</span><b>' + esc(gz) + '</b>' +
               '<i>' + esc((p.ten_gods || {})[k] || "") + '</i></div>';
           }).join("") + '</div>' +
-          '<div class="mrg-line">日主 <b>' + esc(p.day_master || "—") + '</b>　' +
-          '强弱 <b>' + esc((p.strength || {}).level || "—") + '</b>　喜忌 <b>' + esc((p.strength || {}).favor || "—") + '</b></div></div>';
+          '<div class="mrg-line"><span>日主 <b>' + esc(p.day_master || "—") + '</b></span>' +
+          '<span>强弱 <b>' + esc((p.strength || {}).level || "—") + '</b></span>' +
+          '<span>喜忌 <b>' + esc((p.strength || {}).favor || "—") + '</b></span></div></div>';
       }
       return '<div class="mrg-p-card">' + head +
         ["命宫","夫妻宫","福德宫"].map(function (pn) {
