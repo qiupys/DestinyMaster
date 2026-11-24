@@ -3539,21 +3539,28 @@
     var feat = isBazi ? "bazi_marriage" : "ziwei_marriage";
     var title = isBazi ? "八字合婚" : "紫微合婚";
     var pfxA = isBazi ? "bza" : "zwa", pfxB = isBazi ? "bzb" : "zwb";
+    var pre = isBazi ? "bzm" : "zm";
     stageEl().innerHTML =
       toolHero(title, isBazi
         ? "分别排定两人四柱，再从日柱夫妻宫、十神交叉与大运流年读出相处中的省力与费力之处。本功能不给匹配分数。"
         : "对照两张完整紫微命盘，从夫妻宫、命宫、福德宫与双向四化交叉看清关系结构。本功能不给匹配分数。") +
-      '<div class="tool-card" id="' + (isBazi ? "bzm" : "zm") + '-form-card"><div class="tool-form" id="' + (isBazi ? "bzm" : "zm") + '-form">' +
-        '<div class="mrg-two">' +
-          '<div class="mrg-person"><div class="mrg-ph">甲方 · 本人</div>' +
-            '<div class="tf-grid"><div class="tf-field"><label>称呼</label><input class="ti" id="' + pfxA + '-name" placeholder="如：我" value="本人" /></div>' +
-            '<div class="tf-field"><label>性别</label><select class="ti" id="' + pfxA + '-gender"><option>男</option><option>女</option></select></div></div>' +
-            birthFieldsHTML(pfxA, { title: "出生信息", noBazi: true }) +
-          '</div>' +
-          '<div class="mrg-person"><div class="mrg-ph">乙方 · 对方</div>' +
-            '<div class="tf-grid"><div class="tf-field"><label>称呼</label><input class="ti" id="' + pfxB + '-name" placeholder="如：伴侣" value="对方" /></div>' +
-            '<div class="tf-field"><label>性别</label><select class="ti" id="' + pfxB + '-gender"><option>女</option><option>男</option></select></div></div>' +
-            birthFieldsHTML(pfxB, { title: "出生信息", noBazi: true }) +
+      '<div class="tool-card" id="' + pre + '-form-card"><div class="tool-form" id="' + pre + '-form">' +
+        '<div class="mrg-person"><div class="mrg-ph">甲方 · 本人</div>' +
+          '<div class="tf-grid"><div class="tf-field"><label>称呼</label><input class="ti" id="' + pfxA + '-name" placeholder="如：我" value="本人" /></div>' +
+          '<div class="tf-field"><label>性别</label><select class="ti" id="' + pfxA + '-gender"><option>男</option><option>女</option></select></div></div>' +
+          birthFieldsHTML(pfxA, { title: "出生信息", noBazi: true }) +
+        '</div>' +
+        // 沿用老黄历「添加第二人八字」的开关 + 展开表单形式（合婚默认展开）
+        '<div class="p-bazi-gate ok" style="margin:14px 0 0"><span class="bg-ic">◈</span>' +
+          '<span class="bg-txt">合婚需要两人的出生信息。甲方默认取你本人，点开下方即可添加乙方的八字。</span></div>' +
+        '<div class="mrg-p2">' +
+          '<label class="p-switch mrg-p2-switch"><input type="checkbox" id="' + pre + '-p2-on" checked /><span>添加另一人八字（乙方 · 对方）</span></label>' +
+          '<div id="' + pre + '-p2-fields">' +
+            '<div class="mrg-person"><div class="mrg-ph">乙方 · 对方</div>' +
+              '<div class="tf-grid"><div class="tf-field"><label>称呼</label><input class="ti" id="' + pfxB + '-name" placeholder="如：伴侣" value="对方" /></div>' +
+              '<div class="tf-field"><label>性别</label><select class="ti" id="' + pfxB + '-gender"><option>女</option><option>男</option></select></div></div>' +
+              birthFieldsHTML(pfxB, { title: "出生信息", noBazi: true }) +
+            '</div>' +
           '</div>' +
         '</div>' +
         '<div class="tf-group" style="margin-top:14px"><div class="tf-gt">你最想看清什么</div>' +
@@ -3577,7 +3584,12 @@
       ], "合婚是关系观察框架，不证明谁是「正缘」，也不能替代真实相处、共同选择与专业建议。");
 
     birthFieldsBind(pfxA); birthFieldsBind(pfxB);
-    var pre = isBazi ? "bzm" : "zm";
+    // 添加另一人八字开关（与老黄历 hl-p2-on 同款）
+    var p2On = $("#" + pre + "-p2-on"), p2Fields = $("#" + pre + "-p2-fields");
+    if (p2On && p2Fields) p2On.onchange = function () {
+      p2Fields.style.display = p2On.checked ? "" : "none";
+      if (!p2On.checked) $("#" + pre + "-err").textContent = "";
+    };
     $$(".p-suggest button", stageEl()).forEach(function (b) {
       b.onclick = function () { pickQuestion(b.dataset.q, "#" + pre + "-q"); };
     });
@@ -3605,8 +3617,16 @@
       return b;
     }
     function pairQS() {
-      var a = personParams(pfxA), b = personParams(pfxB);
-      if (!a || !b) { $("#" + pre + "-err").textContent = "请完整填写双方的出生日期"; return null; }
+      var a = personParams(pfxA);
+      var p2On = $("#" + pre + "-p2-on");
+      if (!a || (p2On && !p2On.checked)) {
+        $("#" + pre + "-err").textContent = (p2On && !p2On.checked)
+          ? "合婚需要两人信息，请勾选「添加另一人八字」并填写对方出生信息"
+          : "请完整填写甲方的出生日期";
+        return null;
+      }
+      var b = personParams(pfxB);
+      if (!b) { $("#" + pre + "-err").textContent = "请完整填写乙方的出生日期"; return null; }
       function put(out, p, prefix, nameSel, genderSel) {
         out.push(prefix + "year=" + p.year, prefix + "month=" + p.month, prefix + "day=" + p.day,
           prefix + "hour=" + p.hour, prefix + "minute=" + p.minute, prefix + "calendar=" + p.calendar,
@@ -3799,16 +3819,35 @@
         '<div class="ly-gua-sub">' + esc((g || {}).gong || "") + '宫 · ' + esc((g || {}).gong_wuxing || "") + '</div></div>';
     }
     var rows = (d.yaos || []).slice().reverse().map(function (y) {
+      // 老阳9记○、老阴6记×（皆为动爻）；少阳7/少阴8为静爻，不加标记
+      var mv = y.value === 9 ? ' <b>○</b>' : y.value === 6 ? ' <b>×</b>' : '';
       return '<div class="ly-yao' + (y.moving ? ' moving' : '') + '">' +
         '<span class="ly-pos">' + esc(y.name) + '</span>' +
-        '<span class="ly-line">' + (y.yang ? '▬▬▬▬▬' : '▬▬ ▬▬') + (y.moving ? ' <b>○</b>' : '') + '</span>' +
+        '<span class="ly-line">' + (y.yang ? '▬▬▬▬▬' : '▬▬ ▬▬') + mv + '</span>' +
         '<span>' + esc(y.gan || "") + esc(y.zhi || "") + '(' + esc(y.wuxing || "") + ')</span>' +
         '<span>' + esc(y.liuqin || "") + '</span><span>' + esc(y.liushen || "") + '</span>' +
         '<span class="ly-sy">' + esc(y.shiying || "") + '</span></div>';
     }).join("");
+    var movings = (d.yaos || []).filter(function (y) { return y.moving; });
+    var movingNote = movings.length
+      ? '动爻 ' + movings.length + ' 个（' + movings.map(function (y) { return y.name; }).join('、') + '）'
+      : '六爻皆静（无动爻），传统称「静卦」，故无变卦——这是正常的起卦结果，不是缺漏';
+    // 铜钱摇卦：把六掷结果逐爻展开，让人看懂静卦从何而来
+    var coinDetail = '';
+    if (d.method === 'coin' && d.deck) {
+      var names = ['初爻','二爻','三爻','四爻','五爻','上爻'];
+      var valName = { 6: '老阴×动', 7: '少阳', 8: '少阴', 9: '老阳○动' };
+      coinDetail = '<div class="ly-coins"><div class="ly-coins-h">铜钱六掷明细（自下而上）</div><div class="ly-coins-row">' +
+        names.map(function (n, i) {
+          var v = +String(d.deck)[i];
+          return '<span class="' + (v === 6 || v === 9 ? 'mv' : '') + '">' + n + ' ' + (valName[v] || v) + '</span>';
+        }).join('') + '</div><div class="ly-coins-note">三枚铜钱每掷求和：三阳=9老阳、二阳一阴=8少阴、一阳二阴=7少阳、三阴=6老阴；老阴老阳为动爻，其余为静爻。</div></div>';
+    }
     return '<div class="p-result">' + resultTitle("六爻卦盘") +
       '<div class="p-card"><div class="ly-gua-row">' + gua(d.ben_gua) + (d.bian_gua ? gua(d.bian_gua) : '') + '</div>' +
         '<div class="ly-meta">月建 ' + esc(d.yuejian || "—") + '　日辰 ' + esc(d.richen || "—") + '　旬空 ' + esc(d.xunkong || "—") + '</div>' +
+        '<div class="ly-meta">' + esc(movingNote) + '</div>' +
+        coinDetail +
         '<div class="ly-yaos">' + rows + '</div>' +
         '<button class="mrg-fact-btn" type="button">展开可核对的装卦事实</button>' +
         '<pre class="mrg-fact hidden">' + esc(d.fact || "") + '</pre>' +
@@ -3830,7 +3869,22 @@
           '<button data-q="近期出行需要注意什么？">出行决策</button></div></div>' +
         '<div class="tf-group"><div class="tf-gt">排盘方式</div>' +
           '<div class="p-seg" id="qm-method"><button class="on" data-v="chaibu">拆补法</button><button data-v="zhirun">置闰法（按拆补近似）</button></div></div>' +
-        '<div class="tf-group"><div class="tf-gt">起局时间</div>' + (function () {
+        '<div class="tf-group"><div class="tf-gt">求测人年命 <span class="tf-req">必填</span></div>' +
+          '<p class="p-note" style="margin:0 0 8px">按出生年份取年命地支，用来标注求测人自身的参照宫；不参与起局定盘。</p>' +
+          '<input class="ti" id="qm-na" type="number" min="1900" max="2100" placeholder="如：1990" value="" />' +
+          '<div class="p-note" id="qm-na-hint" style="margin:6px 0 0"></div></div>' +
+        '<div class="tf-group"><div class="tf-gt">指定用神 <span class="tf-req">必填</span></div>' +
+          '<p class="p-note" style="margin:0 0 8px">按所问之事选定用神，AI 将以此为解读主线；不参与起局定盘。</p>' +
+          '<select class="ti" id="qm-ys"><option value="">请选择用神</option>' +
+          '<option value="开门">事业 / 求职（开门）</option>' +
+          '<option value="生门">财运 / 投资（生门）</option>' +
+          '<option value="休门">感情 / 婚姻（休门）</option>' +
+          '<option value="杜门">学业 / 文书（杜门）</option>' +
+          '<option value="景门">信息 / 消息（景门）</option>' +
+          '<option value="死门">健康 / 疾病（死门）</option>' +
+          '<option value="惊门">官非 / 诉讼（惊门）</option>' +
+          '<option value="伤门">竞争 / 损伤（伤门）</option></select></div>' +
+        '<div class="tf-group"><div class="tf-gt">起局时间 <span class="tf-req">必填</span></div>' + (function () {
           var nw = new Date();
           var h = dateTimeHTML("qmt", { dateLabel: "起局日期", timeLabel: "起局时刻" });
           setTimeout(function () { dateTimeBind("qmt", { year: nw.getFullYear(), month: nw.getMonth() + 1,
@@ -3846,19 +3900,34 @@
         '<b>读盘顺序</b>：先定日干（求测人）与时干（所问之事）落宫，再看宫与宫的生克，最后才讨论应期与行动。'
       ], "奇门为传统时空象征体系，盘面可逐宫复算；解读不替代医疗、法律、财务或人身安全的专业判断。");
     $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#qm-q"); }; });
+    // 年命输入实时提示生肖（与后端干支口径一致：year 生 % 12）
+    (function () {
+      var na = $("#qm-na"), hint = $("#qm-na-hint");
+      var sx = ["鼠","牛","虎","兔","龙","蛇","马","羊","猴","鸡","狗","猪"];
+      function upd() {
+        var y = +na.value;
+        hint.textContent = (y >= 1900 && y <= 2100) ? ("年命：" + y + " 年 · 属" + sx[(y - 4) % 12]) : "";
+      }
+      if (na && hint) { na.oninput = upd; upd(); }
+    })();
     $("#qm-start").onclick = function () {
       var question = $("#qm-q").value.trim();
       if (!question) { toast("请先写下所问之事"); $("#qm-q").focus(); return; }
+      var na = +($("#qm-na").value || 0), ys = $("#qm-ys").value;
+      if (!(na >= 1900 && na <= 2100)) { toast("请填写求测人出生年份（1900–2100）"); $("#qm-na").focus(); return; }
+      if (!ys) { toast("请选择用神"); $("#qm-ys").focus(); return; }
       $("#qm-err").textContent = "";
       var when = dateTimeCollect("qmt").when;
-      var qs = "when=" + encodeURIComponent(when) + "&method=" + segVal($("#qm-method"));
+      var qs = "when=" + encodeURIComponent(when) + "&method=" + segVal($("#qm-method")) +
+        "&year_na=" + na + "&yongshen=" + encodeURIComponent(ys);
       fetch("/api/qimen/calc?" + qs + "&question=" + encodeURIComponent(question))
         .then(function (r) { return r.json(); }).then(function (d) {
           if (!d.ok) { $("#qm-err").textContent = d.error || "起局失败"; return; }
           var root = $("#qm-result");
           archiveRound(root, question, root.dataset.rk);
           root.innerHTML = renderQimenResult(d);
-          root.dataset.rk = "qimen|" + when + "|" + segVal($("#qm-method"));
+          root.dataset.rk = "qimen|" + when + "|" + segVal($("#qm-method")) +
+            "|" + na + "|" + ys;
           $("#qm-ask").onclick = function () {
             var q = $("#qm-q").value.trim();
             if (!q) { toast("请先写下所问之事"); return; }
@@ -3891,6 +3960,14 @@
         '<span>四柱 ' + esc([sz.year, sz.month, sz.day, sz.hour].join(" ")) + '</span>' +
         '<span>' + esc(d.jieqi || "") + ' · ' + esc(d.yinyang || "") + esc(d.ju || "") + '局 · ' + esc(d.yuan || "") + '</span>' +
         '<span>值符 ' + esc(d.zhi_fu || "") + ' · 值使 ' + esc(d.zhi_shi || "") + '</span></div>' +
+        (d.focus && (d.focus.year_na || d.focus.yongshen)
+          ? '<div class="qm-focus">' +
+            (d.focus.year_na ? '<span>年命 <b>' + esc(d.focus.year_na.ganzhi) + '</b> 寄' +
+              esc(d.focus.year_na.gong ? d.focus.year_na.gong + '宫' : '—') +
+              (d.focus.year_na.palace ? '（' + esc(d.focus.year_na.palace) + '）' : '') + '</span>' : '') +
+            (d.focus.yongshen ? '<span>用神 <b>' + esc(d.focus.yongshen.name) + '</b>' +
+              (d.focus.yongshen.gong ? ' 落' + esc(d.focus.yongshen.gong) + '宫（' + esc(d.focus.yongshen.palace) + '）' : '') + '</span>' : '') +
+            '</div>' : '') +
         '<div class="qm-grid">' + cells + '</div>' +
         '<button class="mrg-fact-btn" type="button">展开逐宫盘面事实</button>' +
         '<pre class="mrg-fact hidden">' + esc(d.fact || "") + '</pre>' +
@@ -3900,6 +3977,16 @@
   }
 
   /* ---------------- 启动 ---------------- */
+  // 盘面事实展开按钮（合婚 / 六爻 / 奇门共用）：按钮后紧跟 pre.mrg-fact。
+  // 用事件委托，结果区每次重渲染后无需重新绑定；文案在「展开/收起」间切换。
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest(".mrg-fact-btn");
+    if (!btn) return;
+    var box = btn.nextElementSibling;
+    if (!box || !box.classList || !box.classList.contains("mrg-fact")) return;
+    var hidden = box.classList.toggle("hidden");
+    btn.textContent = btn.textContent.replace(hidden ? "收起" : "展开", hidden ? "展开" : "收起");
+  });
   window.addEventListener("hashchange", function () {
     navigate(parseHash());
   });

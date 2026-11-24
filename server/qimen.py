@@ -143,8 +143,11 @@ def _xunkong_gong(xun_shou: str) -> tuple[list[str], set[int]]:
 
 
 def derive(when: datetime | None = None, method: str = "chaibu",
-           question: str | None = None) -> dict:
-    """时家奇门转盘拆补法定局排盘。question 仅写入 meta，绝不参与定局或星门位置。"""
+           question: str | None = None, year_na: int | None = None,
+           yongshen: str | None = None) -> dict:
+    """时家奇门转盘拆补法定局排盘。question 仅写入 meta，绝不参与定局或星门位置。
+    year_na=求测人出生年（公历），用其年命地支标注落宫；yongshen=用神名称（如「开门」「财星」），
+    二者只作解读焦点的盘面标注，绝不参与定局或星门位置。"""
     steps: list[str] = []
     when = when or datetime.now()
     if method not in ("chaibu", "zhirun"):
@@ -313,6 +316,46 @@ def derive(when: datetime | None = None, method: str = "chaibu",
             + (f" 标注:{'/'.join(tags)}" if tags else "")
             + (f" 注:{p['note']}" if p["note"] and not tags else "")
         )
+    # 求测焦点标注（年命 / 用神）：只标注落宫供 AI 聚焦，不改盘面。
+    focus: dict = {}
+    if year_na:
+        try:
+            yn = int(year_na)
+            year_gz = GANZHI60[(yn - 4) % 60]
+            year_zhi = year_gz[1]
+            # 地支寄宫（奇门通行口径）：子坎一 / 丑未坤二 / 寅艮八 / 卯震三 / 辰巽四 /
+            # 巳午离九 / 申坤二 / 酉兑七 / 戌亥乾六。
+            zhi_gong = dict(zip("子丑寅卯辰巳午未申酉戌亥",
+                                [1, 2, 8, 3, 4, 9, 9, 2, 2, 7, 6, 6]))
+            g = zhi_gong.get(year_zhi)
+            gp = next((p for p in palaces if p["gong"] == g), None)
+            focus["year_na"] = {"ganzhi": year_gz, "gong": g,
+                                "palace": (gp or {}).get("name", ""),
+                                "door": (gp or {}).get("door", ""),
+                                "star": (gp or {}).get("star", "")}
+            lines.append(
+                f"求测人年命：{yn}年生，年命{year_gz}（地支{year_zhi}）寄"
+                f"{str(g) + '宫' if g else '—'}"
+                + (f"（{gp['name']}，门{gp['door']} 星{gp['star']}）" if gp else "")
+                + "——为求测人自身的参照宫，AI 解读时应聚焦此宫与本宫的关系。"
+            )
+        except (ValueError, TypeError):
+            pass
+    if yongshen:
+        ys = str(yongshen).strip()
+        # 用神可为八门名，按门找落宫；其余名称（如「财星」）按字面记录供 AI 结合盘面取用
+        yp = next((p for p in palaces if p["door"] == ys), None)
+        focus["yongshen"] = {"name": ys,
+                             "gong": (yp or {}).get("gong"),
+                             "palace": (yp or {}).get("name", ""),
+                             "star": (yp or {}).get("star", ""),
+                             "gan": (yp or {}).get("tiangan", "")}
+        lines.append(
+            f"指定用神：{ys}"
+            + (f"，落{yp['gong']}宫（{yp['name']}，天盘{yp['tiangan']} 星{yp['star']}）"
+               if yp else "（未对应到具体八门，按事项性质取用，AI 须在盘面中说明取用依据）")
+            + "——AI 应以此为解读主线，说明其落宫、生克与修正条件。"
+        )
     lines.append(
         "说明：中五宫寄坤二（天禽随天芮、携中宫干" + zhong_gong_gan
         + "）；门迫=门克宫，击刑以天盘六仪落宫论，入墓以天盘干落宫论，旬空依时柱旬、驿马依日支三合局。"
@@ -326,11 +369,14 @@ def derive(when: datetime | None = None, method: str = "chaibu",
         f"奇门遁甲 {yinyang}{ju}局 {jieqi}{yuan} 符头{futou} "
         f"值符{zhi_fu} 值使{zhi_shi} 时柱{sz['hour']} 日柱{sz['day']} "
         f"{all_stars} {all_doors} {all_gods}"
+        + (f" 用神{yongshen}" if yongshen else "")
     )
     rag_extra = [
         f"{yinyang}{ju}局", jieqi, yuan, futou, zhi_fu, zhi_shi,
         sz["hour"], sz["day"], all_stars, all_doors, all_gods,
     ]
+    if yongshen:
+        rag_extra.append(str(yongshen).strip())
     return {
         "when": when.isoformat(timespec="seconds"),
         "method": method,
@@ -347,8 +393,11 @@ def derive(when: datetime | None = None, method: str = "chaibu",
         "rag_query": rag_query,
         "rag_extra": rag_extra,
         "steps": steps,
+        "focus": focus,
         "meta": {
             "question": question,
+            "year_na": year_na,
+            "yongshen": yongshen,
             "engine": "时家奇门·转盘排宫·拆补法",
             "note": "问题文本仅记录于此，不参与定局与星门位置；未做真太阳时校正",
         },

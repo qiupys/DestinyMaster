@@ -1538,6 +1538,8 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 /* ================= 合婚 / 六爻 / 奇门（v94） =================
    全部内容区沿用 --content-w 单一宽度源，避免"独一档"。 */
 .mrg-two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.mrg-p2 { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.mrg-p2 .mrg-person { background: var(--panel); margin-top: 10px; }
 .mrg-person { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
 .mrg-ph { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 12px; letter-spacing: .04em; }
 .mrg-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -1586,7 +1588,13 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .ly-gua.bian .ly-gua-tag { color: var(--cinnabar); border-color: var(--cinnabar); }
 .ly-gua-nm { font-family: var(--serif); font-size: 20px; color: var(--ink); margin: 6px 0 2px; }
 .ly-gua-sub { font-size: 11px; color: var(--ink-3); }
-.ly-meta { text-align: center; font-size: 12px; color: var(--ink-2); margin-bottom: 14px; }
+.ly-meta { text-align: center; font-size: 12px; color: var(--ink-2); margin-bottom: 8px; }
+.ly-coins { margin: 10px 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.ly-coins-h { font-size: 11.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 8px; }
+.ly-coins-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.ly-coins-row span { font-size: 11px; color: var(--ink-2); padding: 2px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+.ly-coins-row span.mv { color: var(--cinnabar); border-color: var(--cinnabar); }
+.ly-coins-note { margin-top: 8px; font-size: 10.5px; line-height: 1.6; color: var(--ink-3); }
 .ly-yaos { display: flex; flex-direction: column; gap: 4px; }
 .ly-yao { display: grid; grid-template-columns: 44px 90px 1.1fr 1fr 1fr 32px; align-items: center; gap: 8px;
   padding: 5px 10px; font-size: 11.5px; color: var(--ink-2); border-radius: 6px; background: var(--panel-2); }
@@ -1604,6 +1612,10 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 /* 奇门九宫盘 */
 .qm-head { display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center; margin-bottom: 14px;
   font-size: 12px; color: var(--ink-2); }
+.qm-focus { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: center; margin: 0 0 12px;
+  font-size: 12px; color: var(--ink-2); }
+.qm-focus b { color: var(--cinnabar); font-weight: 600; }
+.tf-req { font-size: 10px; color: var(--cinnabar); font-weight: 400; letter-spacing: 0; margin-left: 6px; }
 .qm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .qm-cell { min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
 .qm-cell.kong { border-style: dashed; }

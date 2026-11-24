@@ -278,6 +278,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             coins: str | None = Query(None, description="六爻：六次铜钱结果 6/7/8/9，逗号分隔"),
             yaos: str | None = Query(None, description="六爻：已确定的六爻(自下而上)，逗号分隔，锁定同一卦"),
             deck: str | None = Query(None, description="通用：calc 已确定的盘面标识，deduce 原样复用"),
+            year_na: int | None = Query(None, description="奇门：求测人出生年（年命落宫标注）"),
+            yongshen: str = Query("", description="奇门：指定用神（如 开门/财星）"),
         ):
             params = dict(method=method, num1=num1, num2=num2, upper=upper, lower=lower,
                           moving=moving, year=year, month=month, day=day, hour=hour,
@@ -291,7 +293,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           p2_name=p2_name, p2_year=p2_year, p2_month=p2_month,
                           p2_day=p2_day, p2_hour=p2_hour, p2_minute=p2_minute,
                           p2_gender=p2_gender, p2_calendar=p2_calendar,
-                          coins=coins, yaos=yaos, deck=deck)
+                          coins=coins, yaos=yaos, deck=deck,
+                          year_na=year_na, yongshen=yongshen)
             try:
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
@@ -346,6 +349,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             name: str = Query("", description="合婚：本人姓名"),
             coins: str | None = Query(None, description="六爻：六次铜钱结果，逗号分隔"),
             yaos: str | None = Query(None, description="六爻：已确定的六爻，逗号分隔"),
+            year_na: int | None = Query(None, description="奇门：求测人出生年（年命落宫标注）"),
+            yongshen: str = Query("", description="奇门：指定用神"),
         ):
             question = (q or "").strip()
             if not question:
@@ -362,7 +367,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           p2_name=p2_name, p2_year=p2_year, p2_month=p2_month,
                           p2_day=p2_day, p2_hour=p2_hour, p2_minute=p2_minute,
                           p2_gender=p2_gender, p2_calendar=p2_calendar,
-                          coins=coins, yaos=yaos)
+                          coins=coins, yaos=yaos,
+                          year_na=year_na, yongshen=yongshen)
             try:
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
@@ -616,7 +622,8 @@ def _calc_qimen(p: dict) -> dict:
         except ValueError:
             raise ValueError("起局时间格式无效")
     return qimen.derive(when=when, method=p.get("method") or "chaibu",
-                        question=p.get("question"))
+                        question=p.get("question"),
+                        year_na=p.get("year_na"), yongshen=p.get("yongshen") or None)
 
 
 def _calc_astrology(p: dict) -> dict:
