@@ -33,9 +33,9 @@ import tarot
 router = APIRouter()
 
 FEATURES = ("bazi", "meihua", "tarot", "huangli", "astrology",
-            "bazi_marriage", "ziwei_marriage", "liuyao", "qimen")
-# 合婚功能共用单人领域的确定性语料：八字合婚→bazi，紫微合婚→ziwei。
-_MARRIAGE_KB = {"bazi_marriage": "bazi", "ziwei_marriage": "ziwei"}
+            "bazi_marriage", "ziwei_marriage", "liuyao", "qimen", "huangli_pair")
+# 组合功能共用单人领域的确定性语料：八字合婚→bazi，紫微合婚→ziwei，双人择日→huangli。
+_MARRIAGE_KB = {"bazi_marriage": "bazi", "ziwei_marriage": "ziwei", "huangli_pair": "huangli"}
 
 
 def _auth(pid: int | None, token: str | None) -> int | None:
@@ -123,9 +123,10 @@ def _bazi_of_profile(pid: int) -> str:
 
 
 def _bazi_of_params(y: int | None, m: int | None, d: int | None,
-                    h: int | None, mi: int | None, gender: str, name: str = "") -> str:
-    """从显式出生参数算一个人的四柱文本，供「添加第二人八字」场景（合婚择日）注入。
-    与 _bazi_of_profile 的区别：后者读登录档案，本函数读用户临时填写的第二人信息。"""
+                    h: int | None, mi: int | None, gender: str, name: str = "",
+                    who: str = "第二人") -> str:
+    """从显式出生参数算一个人的四柱文本，供合婚/双人择日场景注入。
+    与 _bazi_of_profile 的区别：后者读登录档案，本函数读页面临时填写的任一方信息。"""
     if not (y and m and d):
         return ""
     try:
@@ -135,8 +136,9 @@ def _bazi_of_params(y: int | None, m: int | None, d: int | None,
             gen = "男" if gen == "male" else "女"
         pl = bazi.chart(int(y), int(m), int(d), hh, int(mi or 0), gen)
         p = pl["pillars"]
-        who = (name or "对方").strip()
-        return (f"第二人（{who}）八字：{p['year']} {p['month']} {p['day']} {p['hour']}"
+        person = (name or "").strip()
+        label = (who + person) if person and person != who else who
+        return (f"{label}八字：{p['year']} {p['month']} {p['day']} {p['hour']}"
                 f"（{gen}，日主{pl['day_master']}）。择日时请同时核对当日干支与两人的年柱/日柱"
                 f"的生克合冲——尤其关注与双方日主的关系，判断这一天对两人是否都相宜；"
                 f"若有冲突请明确指出，不可只偏袒一方。")
@@ -189,6 +191,9 @@ def _bazi_complete(pid: int) -> bool:
 
 def _augment_profile(pid: int | None, feature: str, up: str,
                      *, use_bazi: int = 0, use_star: int = 0,
+                     y: int | None = None, m: int | None = None, d: int | None = None,
+                     h: int | None = None, mi: int | None = None,
+                     gender: str = "", name: str = "",
                      p2_y: int | None = None, p2_m: int | None = None, p2_d: int | None = None,
                      p2_h: int | None = None, p2_mi: int | None = None,
                      p2_gender: str = "", p2_name: str = "") -> tuple[str, str]:
@@ -217,8 +222,13 @@ def _augment_profile(pid: int | None, feature: str, up: str,
         star, _ok = _star_of_profile(pid)
         if star:
             extra = (extra + "\n" + star).strip()
-    # 黄历「添加第二人八字」：合婚/双人择日，与第二人四柱一并核对所选日子的宜忌
-    if feature == "huangli" and p2_y and p2_m and p2_d:
+    # 双人择日：男方（页面主表单）四柱也须进入解读，不依赖档案，避免「本人=登录者」假设
+    if feature == "huangli_pair" and y and m and d:
+        p1 = _bazi_of_params(y, m, d, h, mi, gender or "男", name, who="男方")
+        if p1:
+            extra = (extra + "\n" + p1).strip()
+    # 双人择日：女方四柱一并核对所选日子的宜忌（单一黄历页已移除第二人表单）
+    if feature in ("huangli", "huangli_pair") and p2_y and p2_m and p2_d:
         p2 = _bazi_of_params(p2_y, p2_m, p2_d, p2_h, p2_mi, p2_gender, p2_name)
         if p2:
             extra = (extra + "\n" + p2).strip()
@@ -411,9 +421,12 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                 payload["_use_bazi"] = 1
             if use_star:
                 payload["_use_star"] = 1
-            # 黄历第二人八字：纳入 payload（=纳入去重身份），换第二人即新一轮，不覆盖旧解读
-            if feature == "huangli" and p2_year and p2_month and p2_day:
+            # 双人四柱纳入 payload（=纳入去重身份），换任一方即新一轮，不覆盖旧解读
+            if feature in ("huangli", "huangli_pair") and p2_year and p2_month and p2_day:
                 payload["_p2"] = [p2_name, p2_year, p2_month, p2_day, p2_hour, p2_minute, p2_gender]
+            # 双人择日：男方信息也属于盘面身份，换任一方即为新一轮
+            if feature == "huangli_pair" and year and month and day:
+                payload["_p1"] = [name, year, month, day, hour, minute, gender, calendar]
             key = _dedupe_key(pid, feature, payload, question)
             if pid and not force:
                 cached = history.find_cached_entry(pid, feature, key)
@@ -430,6 +443,7 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             up, recent = _personalize(pid, feature)
             up, injected = _augment_profile(
                 pid, feature, up, use_bazi=use_bazi, use_star=use_star,
+                y=year, m=month, d=day, h=hour, mi=minute, gender=gender, name=name,
                 p2_y=p2_year, p2_m=p2_month, p2_d=p2_day, p2_h=p2_hour,
                 p2_mi=p2_minute, p2_gender=p2_gender, p2_name=p2_name,
             )
@@ -727,6 +741,7 @@ async def api_huangli_month(year: int = Query(...), month: int = Query(...)):
 _make_calc_and_deduce("meihua", _calc_meihua)
 _make_calc_and_deduce("bazi", _calc_bazi)
 _make_calc_and_deduce("huangli", _calc_huangli)
+_make_calc_and_deduce("huangli_pair", _calc_huangli)
 _make_calc_and_deduce("tarot", _calc_tarot)
 _make_calc_and_deduce("astrology", _calc_astrology)
 _make_calc_and_deduce("bazi_marriage", _calc_bazi_marriage)
