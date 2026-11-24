@@ -969,6 +969,19 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .mh-tri-preview .n { font-size: 14px; color: var(--ink); margin-top: 6px; }
 .mh-tri-preview .tag2 { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
 .mh-tri-preview .taiji { font-size: 22px; color: var(--ink-3); }
+/* 手动起卦：随爻变实时重画的本卦 / 变卦预览（v94） */
+.mh-gua-preview { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin: 14px auto 0; max-width: var(--content-w); }
+.mh-pv-card { min-width: 138px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); text-align: center; }
+.mh-pv-card.bian { border-color: var(--cinnabar); }
+.mh-pv-tag { display: inline-block; font-size: 11px; color: var(--ink-3); border: 1px solid var(--line-strong); border-radius: 5px; padding: 1px 9px; }
+.mh-pv-card.bian .mh-pv-tag { color: var(--cinnabar); border-color: var(--cinnabar); }
+.mh-pv-sym { font-size: 30px; line-height: 1.2; color: var(--ink); margin: 8px 0 4px; letter-spacing: 4px; }
+.mh-pv-lines { display: flex; flex-direction: column; align-items: center; gap: 3px; margin: 6px 0 8px; }
+.mh-pv-line .yao-line { width: 56px; gap: 3px; }
+.mh-pv-line .yao-line i { height: 4px; }
+.mh-pv-line .yao-line.yin { gap: 6px; }
+.mh-pv-nm { font-family: var(--serif); font-size: 16px; color: var(--ink); }
+.mh-pv-sub { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
 
 /* ================= 塔罗：牌面图卡 ================= */
 .tcard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 22px; }
@@ -1516,3 +1529,92 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 #tr-result > .p-ai:first-child,
 #mh-result > .p-ai:first-child,
 #hl-result > .p-ai:first-child { margin-top:16px; }
+
+/* ================= 合婚 / 六爻 / 奇门（v94） =================
+   全部内容区沿用 --content-w 单一宽度源，避免"独一档"。 */
+.mrg-two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.mrg-person { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.mrg-ph { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 12px; letter-spacing: .04em; }
+.mrg-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.mrg-p-card { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.mrg-p-hd { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.mrg-p-hd b { font-family: var(--serif); font-size: 17px; color: var(--ink); }
+.mrg-p-hd span { font-size: 11.5px; color: var(--ink-3); }
+.mrg-pillars { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.mrg-pil { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.mrg-pil span { font-size: 10.5px; color: var(--ink-3); }
+.mrg-pil b { font-family: var(--serif); font-size: 15px; color: var(--ink); }
+.mrg-pil i { font-size: 10.5px; color: var(--cinnabar); font-style: normal; }
+.mrg-line { margin-top: 10px; font-size: 12px; color: var(--ink-3); }
+.mrg-line b { color: var(--ink-2); font-weight: 600; }
+.mrg-pal { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; font-size: 11.5px; }
+.mrg-pal > span { flex: 0 0 92px; color: var(--ink-3); }
+.mrg-pal > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.mrg-star { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border: 1px solid var(--line);
+  border-radius: 5px; background: var(--panel); font-size: 11px; color: var(--ink-2); }
+.mrg-star i { font-style: normal; color: var(--ink-3); font-size: 10px; }
+.mrg-star b { color: var(--cinnabar); font-size: 10px; }
+.mrg-cross-h { margin: 16px 0 8px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.mrg-rels { display: flex; flex-direction: column; gap: 6px; }
+.mrg-rel { display: flex; gap: 10px; font-size: 11.5px; line-height: 1.6; padding: 6px 10px;
+  border-left: 2px solid var(--cinnabar); background: var(--panel-2); }
+.mrg-rel b { flex: 0 0 150px; color: var(--ink); }
+.mrg-rel span { color: var(--ink-2); }
+.mrg-fact-btn { display: block; margin: 16px auto 0; font: inherit; font-size: 11.5px; color: var(--ink-3);
+  border: 1px solid var(--line-strong); background: transparent; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+.mrg-fact { margin: 12px 0 0; padding: 12px; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font: 11.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 8px; }
+@media (max-width: 760px) {
+  .mrg-two, .mrg-pair { grid-template-columns: 1fr; }
+  .mrg-rel { flex-direction: column; gap: 2px; }
+  .mrg-rel b { flex: none; }
+}
+
+/* 六爻盘面 */
+.ly-gua-row { display: flex; gap: 14px; justify-content: center; margin-bottom: 14px; }
+.ly-gua { min-width: 150px; padding: 12px; text-align: center; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.ly-gua.bian { border-color: var(--cinnabar); }
+.ly-gua-tag { display: inline-block; font-size: 10.5px; color: var(--ink-3); border: 1px solid var(--line-strong);
+  border-radius: 5px; padding: 1px 8px; }
+.ly-gua.bian .ly-gua-tag { color: var(--cinnabar); border-color: var(--cinnabar); }
+.ly-gua-nm { font-family: var(--serif); font-size: 20px; color: var(--ink); margin: 6px 0 2px; }
+.ly-gua-sub { font-size: 11px; color: var(--ink-3); }
+.ly-meta { text-align: center; font-size: 12px; color: var(--ink-2); margin-bottom: 14px; }
+.ly-yaos { display: flex; flex-direction: column; gap: 4px; }
+.ly-yao { display: grid; grid-template-columns: 44px 90px 1.1fr 1fr 1fr 32px; align-items: center; gap: 8px;
+  padding: 5px 10px; font-size: 11.5px; color: var(--ink-2); border-radius: 6px; background: var(--panel-2); }
+.ly-yao.moving { background: rgba(141,48,43,.08); }
+.ly-pos { color: var(--ink-3); }
+.ly-line { font-family: var(--serif); color: var(--ink); letter-spacing: 1px; }
+.ly-yao.moving .ly-line { color: var(--cinnabar); }
+.ly-line b { font-size: 13px; }
+.ly-sy { color: var(--cinnabar); font-weight: 600; }
+@media (max-width: 620px) {
+  .ly-yao { grid-template-columns: 40px 74px 1fr 1fr; }
+  .ly-yao > span:nth-child(5) { display: none; }
+}
+
+/* 奇门九宫盘 */
+.qm-head { display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center; margin-bottom: 14px;
+  font-size: 12px; color: var(--ink-2); }
+.qm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.qm-cell { min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.qm-cell.kong { border-style: dashed; }
+.qm-c-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.qm-c-h b { font-size: 11.5px; color: var(--ink-2); }
+.qm-c-h span { font-size: 10px; color: var(--ink-3); }
+.qm-c-main { display: flex; align-items: baseline; gap: 4px; justify-content: center; margin: 4px 0; }
+.qm-c-main i { font-size: 9px; color: var(--ink-3); font-style: normal; }
+.qm-c-tg, .qm-c-dg { font-family: var(--serif); font-size: 17px; color: var(--ink); }
+.qm-c-dg { color: var(--ink-2); }
+.qm-c-row { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink-2); margin-top: 4px; }
+.qm-c-row b { color: var(--cinnabar); font-weight: 500; }
+.qm-c-god { font-size: 10.5px; color: var(--ink-3); text-align: center; margin-top: 2px; }
+.qm-c-note { font-size: 9.5px; color: var(--cinnabar); text-align: center; margin-top: 3px; }
+@media (max-width: 560px) {
+  .qm-cell { padding: 5px; }
+  .qm-c-tg, .qm-c-dg { font-size: 14px; }
+  .qm-c-h b { font-size: 10px; }
+}

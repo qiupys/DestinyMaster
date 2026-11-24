@@ -20,16 +20,22 @@ import astrology
 import bazi
 import history
 import huangli
+import liuyao
+import marriage
 import memory as memory_store
 import meihua
 import profile as profile_store
+import qimen
 import rag  # 紫微 iztro-learn 语料检索（其余功能用 rag_kb）
 import rag_kb
 import tarot
 
 router = APIRouter()
 
-FEATURES = ("bazi", "meihua", "tarot", "huangli", "astrology")
+FEATURES = ("bazi", "meihua", "tarot", "huangli", "astrology",
+            "bazi_marriage", "ziwei_marriage", "liuyao", "qimen")
+# 合婚功能共用单人领域的确定性语料：八字合婚→bazi，紫微合婚→ziwei。
+_MARRIAGE_KB = {"bazi_marriage": "bazi", "ziwei_marriage": "ziwei"}
 
 
 def _auth(pid: int | None, token: str | None) -> int | None:
@@ -40,11 +46,14 @@ def _auth(pid: int | None, token: str | None) -> int | None:
 
 def _retrieve(feature: str, query: str, extra, payload: dict | None = None) -> list[str]:
     """通用功能 RAG 检索。梅花语料含爻辞+各家解卦，需更大额度并让本卦优先。"""
+    feature = _MARRIAGE_KB.get(feature, feature)
     if feature == "meihua":
         return rag_kb.retrieve(feature, query, extra, top_k=10, max_chars=3600,
                                primary=(payload or {}).get("rag_primary_idx"))
     if feature == "astrology":
         return rag_kb.retrieve(feature, query, extra, top_k=8, max_chars=2800)
+    if feature in ("liuyao", "qimen", "bazi", "ziwei"):
+        return rag_kb.retrieve(feature, query, extra, top_k=8, max_chars=2600)
     return rag_kb.retrieve(feature, query, extra, top_k=5, max_chars=1400)
 
 
@@ -234,7 +243,10 @@ def _make_calc_and_deduce(feature: str, compute_fn):
     """工厂：为一个功能生成 calc + deduce 两个端点，避免重复代码。"""
 
     def calc():
-        def endpoint(
+        # 必须 async：py-iztro 依赖 PythonMonkey(SpiderMonkey)，非主线程调用会段错误。
+        # sync def 会被 FastAPI 丢进线程池 —— 紫微合婚在 calc 阶段排两张盘会崩掉整个进程。
+        # 其余功能的 compute_fn 都是轻量确定性计算，跑在事件循环线程没有阻塞问题。
+        async def endpoint(
             method: str | None = Query(None),
             num1: int | None = Query(None), num2: int | None = Query(None),
             upper: str | None = Query(None), lower: str | None = Query(None),
@@ -257,6 +269,15 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             question: str = Query(""),
             profile_id: int | None = Query(None), token: str | None = Query(None),
             save: int = Query(0, description="1=把本次出生信息写回档案（用户主动修改时用）"),
+            name: str = Query("", description="合婚：本人姓名"),
+            p2_name: str = Query("", description="合婚：对方姓名"),
+            p2_year: int | None = Query(None), p2_month: int | None = Query(None),
+            p2_day: int | None = Query(None), p2_hour: int | None = Query(None),
+            p2_minute: int | None = Query(None), p2_gender: str = Query("女"),
+            p2_calendar: str = Query("solar"),
+            coins: str | None = Query(None, description="六爻：六次铜钱结果 6/7/8/9，逗号分隔"),
+            yaos: str | None = Query(None, description="六爻：已确定的六爻(自下而上)，逗号分隔，锁定同一卦"),
+            deck: str | None = Query(None, description="通用：calc 已确定的盘面标识，deduce 原样复用"),
         ):
             params = dict(method=method, num1=num1, num2=num2, upper=upper, lower=lower,
                           moving=moving, year=year, month=month, day=day, hour=hour,
@@ -266,7 +287,11 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           pillar_day=pillar_day, pillar_time=pillar_time,
                           lat=lat, lon=lon, tz=tz, place=place,
                           country=country, province=province, city=city,
-                          question=question)
+                          question=question, name=name,
+                          p2_name=p2_name, p2_year=p2_year, p2_month=p2_month,
+                          p2_day=p2_day, p2_hour=p2_hour, p2_minute=p2_minute,
+                          p2_gender=p2_gender, p2_calendar=p2_calendar,
+                          coins=coins, yaos=yaos, deck=deck)
             try:
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
@@ -310,13 +335,17 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             use_bazi: int = Query(0, description="1=把登录用户档案八字一并作为解读参考"),
             deck: str | None = Query(None, description="塔罗：前端抽牌结果，锁定同一副牌供 AI 解读"),
             use_star: int = Query(0, description="塔罗：1=把登录用户档案生日换算的太阳星座一并作为解读参考"),
-            p2_name: str = Query("", description="黄历：第二人称谓（如伴侣姓名）"),
-            p2_year: int | None = Query(None, description="黄历：第二人八字-出生年"),
-            p2_month: int | None = Query(None, description="黄历：第二人八字-出生月"),
-            p2_day: int | None = Query(None, description="黄历：第二人八字-出生日"),
-            p2_hour: int | None = Query(None, description="黄历：第二人八字-出生时"),
-            p2_minute: int | None = Query(None, description="黄历：第二人八字-出生分"),
-            p2_gender: str = Query("男", description="黄历：第二人性别"),
+            p2_name: str = Query("", description="黄历/合婚：第二人称谓或姓名"),
+            p2_year: int | None = Query(None, description="黄历/合婚：第二人-出生年"),
+            p2_month: int | None = Query(None, description="黄历/合婚：第二人-出生月"),
+            p2_day: int | None = Query(None, description="黄历/合婚：第二人-出生日"),
+            p2_hour: int | None = Query(None, description="黄历/合婚：第二人-出生时"),
+            p2_minute: int | None = Query(None, description="黄历/合婚：第二人-出生分"),
+            p2_gender: str = Query("男", description="黄历/合婚：第二人性别"),
+            p2_calendar: str = Query("solar", description="合婚：第二人历法"),
+            name: str = Query("", description="合婚：本人姓名"),
+            coins: str | None = Query(None, description="六爻：六次铜钱结果，逗号分隔"),
+            yaos: str | None = Query(None, description="六爻：已确定的六爻，逗号分隔"),
         ):
             question = (q or "").strip()
             if not question:
@@ -329,7 +358,11 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           pillar_day=pillar_day, pillar_time=pillar_time,
                           lat=lat, lon=lon, tz=tz, place=place,
                           country=country, province=province, city=city,
-                          question=question)
+                          question=question, name=name,
+                          p2_name=p2_name, p2_year=p2_year, p2_month=p2_month,
+                          p2_day=p2_day, p2_hour=p2_hour, p2_minute=p2_minute,
+                          p2_gender=p2_gender, p2_calendar=p2_calendar,
+                          coins=coins, yaos=yaos)
             try:
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
@@ -339,6 +372,25 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                 locked = tarot.cards_from_deck(deck, spread)
                 if locked:
                     payload = locked
+            # 六爻：前端回传 calc 已确定的六爻(deck="6,7,8,...")，用它覆盖重新起卦，
+            # 保证「用户看到的卦 == AI 解读的卦」；追问也复用同一卦。
+            if feature == "liuyao" and deck:
+                try:
+                    from datetime import datetime as _dt
+                    locked_when = params.get("when")
+                    if isinstance(locked_when, str) and locked_when:
+                        locked_when = _dt.fromisoformat(locked_when.replace("T", " ").replace("Z", ""))
+                    locked = liuyao.derive("manual", yaos=[int(x) for x in deck.split(",") if x.strip()],
+                                           when=locked_when, question=question)
+                    payload = locked
+                except (ValueError, TypeError):
+                    pass
+            # 合婚：双方出生参数是盘面身份的一部分，纳入 payload（=纳入去重 key），
+            # 换任一方出生信息即为新一轮，不覆盖旧解读。
+            if feature in ("bazi_marriage", "ziwei_marriage"):
+                payload["_pair"] = [name, p2_name, year, month, day, hour, minute, gender,
+                                    calendar, p2_year, p2_month, p2_day, p2_hour,
+                                    p2_minute, p2_gender, p2_calendar]
 
             pid = _auth(profile_id, token)
             # AI 解读/问答要求登录（与前端门禁一致；未登录直接拒绝，不消耗模型额度）
@@ -506,6 +558,67 @@ def _calc_tarot(p: dict) -> dict:
                       seed=tarot.question_seed(p.get("question") or ""))
 
 
+def _person_params(p: dict, prefix: str = "") -> dict:
+    """从公共参数里抽出一方出生信息（prefix='p2_' 取对方）。"""
+    g = lambda k: p.get(prefix + k)
+    return {
+        "year": g("year"), "month": g("month"), "day": g("day"),
+        "hour": g("hour"), "minute": g("minute"),
+        "gender": g("gender") or "男", "name": g("name") or "",
+        "calendar": g("calendar") or "solar",
+    }
+
+
+def _calc_bazi_marriage(p: dict) -> dict:
+    return marriage.bazi_marriage(_person_params(p), _person_params(p, "p2_"))
+
+
+def _calc_ziwei_marriage(p: dict) -> dict:
+    return marriage.ziwei_marriage(_person_params(p), _person_params(p, "p2_"))
+
+
+def _calc_liuyao(p: dict) -> dict:
+    from datetime import datetime
+    when = None
+    if p.get("when"):
+        try:
+            when = datetime.fromisoformat(str(p["when"]).replace("T", " ").replace("Z", ""))
+        except ValueError:
+            raise ValueError("起卦时间格式无效")
+    coins = None
+    if p.get("coins"):
+        try:
+            coins = [int(x) for x in str(p["coins"]).split(",") if x.strip()]
+        except ValueError:
+            raise ValueError("铜钱结果格式无效")
+    yaos = None
+    if p.get("yaos"):
+        try:
+            raw = str(p["yaos"]).strip()
+            # 兼容两种回传：calc 的 deck="789786"（6 位连串）与 "7,8,9,7,8,6"
+            parts = list(raw) if ("," not in raw and len(raw) == 6) else raw.split(",")
+            yaos = [int(x) for x in parts if str(x).strip()]
+            if len(yaos) != 6 or any(v not in (6, 7, 8, 9) for v in yaos):
+                raise ValueError
+        except ValueError:
+            raise ValueError("卦象参数格式无效（需 6 个爻值 6/7/8/9）")
+    return liuyao.derive(p.get("method") or "coin", coins=coins,
+                         num1=p.get("num1"), num2=p.get("num2"), yaos=yaos,
+                         when=when, question=p.get("question"))
+
+
+def _calc_qimen(p: dict) -> dict:
+    from datetime import datetime
+    when = None
+    if p.get("when"):
+        try:
+            when = datetime.fromisoformat(str(p["when"]).replace("T", " ").replace("Z", ""))
+        except ValueError:
+            raise ValueError("起局时间格式无效")
+    return qimen.derive(when=when, method=p.get("method") or "chaibu",
+                        question=p.get("question"))
+
+
 def _calc_astrology(p: dict) -> dict:
     from datetime import datetime
     # 年月日时分：显式参数优先，缺省取当前时刻
@@ -609,6 +722,10 @@ _make_calc_and_deduce("bazi", _calc_bazi)
 _make_calc_and_deduce("huangli", _calc_huangli)
 _make_calc_and_deduce("tarot", _calc_tarot)
 _make_calc_and_deduce("astrology", _calc_astrology)
+_make_calc_and_deduce("bazi_marriage", _calc_bazi_marriage)
+_make_calc_and_deduce("ziwei_marriage", _calc_ziwei_marriage)
+_make_calc_and_deduce("liuyao", _calc_liuyao)
+_make_calc_and_deduce("qimen", _calc_qimen)
 
 
 # ---- 历史与个人中心端点 ----

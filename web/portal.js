@@ -50,7 +50,11 @@
     tarot:  { title: "AI 塔罗解读", desc: "基于本次牌阵，可就所问之事继续提问，答复仅供参考。" },
     huangli:{ title: "AI 黄历答疑", desc: "基于当日历注，可就择日事项继续提问，答复仅供参考。" },
     ziwei:  { title: "AI 紫微推演", desc: "基于本次命盘，可就格局与运限继续提问，答复仅供参考。" },
-    astrology: { title: "AI 占星解读", desc: "基于本次本命盘的行星落座、宫位与相位，可就性格与运势继续提问，答复仅供参考。" }
+    astrology: { title: "AI 占星解读", desc: "基于本次本命盘的行星落座、宫位与相位，可就性格与运势继续提问，答复仅供参考。" },
+    bazi_marriage: { title: "AI 八字合婚", desc: "基于双方已排定的四柱与跨盘关系，可就相处模式继续提问，答复仅供参考。" },
+    ziwei_marriage: { title: "AI 紫微合婚", desc: "基于双方已排定的命盘与四化交叉，可就关系结构继续提问，答复仅供参考。" },
+    liuyao: { title: "AI 六爻解卦", desc: "基于本次卦盘的纳甲、六亲、世应与动变，可就所问之事继续提问，答复仅供参考。" },
+    qimen:  { title: "AI 奇门解盘", desc: "基于本次九宫盘的干星门神与格局，可就所问之事继续提问，答复仅供参考。" }
   };
   /* 未登录时的门禁块：模糊的假提问框 + 锁 + 标题说明 + 登录按钮（对齐参考图） */
   function aiGateBlock(feature) {
@@ -195,9 +199,7 @@
   }
 
   function go(feat) {
-    var locked = ["liuyao", "qimen"].indexOf(feat) >= 0;
-    if (locked) { toast("该功能在二期上线，敬请期待"); return; }
-    location.hash = "/meihua" === ("/" + feat) ? feat : feat; // 统一 #/xxx
+    location.hash = feat; // 统一 #/xxx
   }
   /* ---------- 功能页会话快照（reload/重建后保留本会话提问） ----------
      把每个功能的结果区 + 归档区 HTML 存进 sessionStorage。命盘类盘面本就有 chart 缓存，
@@ -277,7 +279,8 @@
     var ab = $("#p-auth-btn");
     if (ab) ab.classList.toggle("current", feat === "profile");
     var names = { home:"首页",bazi:"八字排盘",ziwei:"紫微斗数",meihua:"梅花易数",liuyao:"六爻",qimen:"奇门遁甲",
-      tarot:"塔罗牌",astrology:"占星命盘",huangli:"黄历",profile:"个人中心" };
+      tarot:"塔罗牌",astrology:"占星命盘",huangli:"黄历",profile:"个人中心",
+      bazi_marriage:"八字合婚",ziwei_marriage:"紫微合婚" };
     $("#p-crumb").textContent = names[feat] || feat;
     // 隐藏所有已建舞台，只显示当前功能的；DOM 不销毁 → 提问框/解读/追问/进行中的 SSE 全部保留
     Object.keys(S.stageCache).forEach(function (k) { S.stageCache[k].style.display = "none"; });
@@ -289,7 +292,9 @@
     st.dataset.ready = "1";
     if (feat === "home") { renderHome(); return; }
     if (feat === "ziwei") { renderZiweiEntry(); return; }
-    var fn = { bazi: renderBazi, meihua: renderMeihua, tarot: renderTarot, huangli: renderHuangli, astrology: renderAstrology }[feat];
+    var fn = { bazi: renderBazi, meihua: renderMeihua, tarot: renderTarot, huangli: renderHuangli,
+      astrology: renderAstrology, liuyao: renderLiuyao, qimen: renderQimen,
+      bazi_marriage: renderBaziMarriage, ziwei_marriage: renderZiweiMarriage }[feat];
     if (fn) {
       fn();
       // renderXxx 重建了结果区骨架；若本会话此前有解读快照（reload 后），此刻恢复之
@@ -910,8 +915,16 @@
         icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>' },
       { feat: "ziwei",  tag: "紫微斗数", name: "紫微斗数", desc: "十二宫格局、四化飞星、大限流年，命盘可点宫提问。",
         icon: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/>' },
+      { feat: "bazi_marriage", tag: "双人合婚", name: "八字合婚", desc: "双方四柱对照：夫妻宫、十神交叉与大运流年，只给可核对的论据，不打分数。",
+        icon: '<path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.5-7 10-7 10z"/>' },
+      { feat: "ziwei_marriage", tag: "双人合婚", name: "紫微合婚", desc: "两张命盘的夫妻宫、命宫、福德宫与双向四化交叉，看清关系结构。",
+        icon: '<circle cx="8" cy="12" r="4"/><circle cx="16" cy="12" r="4"/><path d="M12 8v8"/>' },
       { feat: "meihua", tag: "周易占卜", name: "梅花易数", desc: "时间或手动起卦，本卦互卦变卦与动爻，逐层解读。",
         icon: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.1 5-5 2.1 2.1-5 5-2.1z"/>' },
+      { feat: "liuyao", tag: "周易占卜", name: "六爻", desc: "铜钱/时间/数字起卦，纳甲六亲世应与动变，逐爻可核对。",
+        icon: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 8h10M7 12h4M7 16h10"/>' },
+      { feat: "qimen",  tag: "周易占卜", name: "奇门遁甲", desc: "时家转盘拆补定局，九宫八门九星八神与格局，逐宫可复算。",
+        icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>' },
       { feat: "tarot",  tag: "西方占卜", name: "塔罗牌", desc: "三张或凯尔特十字牌阵，先写问题再抽牌，按牌位成文。",
         icon: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M5 20h14"/>' },
       { feat: "astrology", tag: "西方占卜", name: "占星命盘", desc: "按生日与出生地排出完整本命盘：日月上升、行星落座、宫位与相位。",
@@ -1196,6 +1209,8 @@
     var GUA_NAMES = ["乾","兑","离","震","巽","坎","艮","坤"];
     var GUA_SYMBOL = { "乾":"☰","兑":"☱","离":"☲","震":"☳","巽":"☴","坎":"☵","艮":"☶","坤":"☷" };
     var GUA_BITS = { "乾":"111","兑":"011","离":"101","震":"001","巽":"110","坎":"010","艮":"100","坤":"000" };
+    // 文王六十四卦：(上卦,下卦) → 全名。手动起卦预览随爻变实时显示本卦/变卦。
+    var KINGWEN64 = {"乾":{"乾":"乾为天","兑":"天泽履","离":"天火同人","震":"天雷无妄","巽":"天风姤","坎":"天水讼","艮":"天山遁","坤":"天地否"},"兑":{"乾":"泽天夬","兑":"兑为泽","离":"泽火革","震":"泽雷随","巽":"泽风大过","坎":"泽水困","艮":"泽山咸","坤":"泽地萃"},"离":{"乾":"火天大有","兑":"火泽睽","离":"离为火","震":"火雷噬嗑","巽":"火风鼎","坎":"火水未济","艮":"火山旅","坤":"火地晋"},"震":{"乾":"雷天大壮","兑":"雷泽归妹","离":"雷火丰","震":"震为雷","巽":"雷风恒","坎":"雷水解","艮":"雷山小过","坤":"雷地豫"},"巽":{"乾":"风天小畜","兑":"风泽中孚","离":"风火家人","震":"风雷益","巽":"巽为风","坎":"风水涣","艮":"风山渐","坤":"风地观"},"坎":{"乾":"水天需","兑":"水泽节","离":"水火既济","震":"水雷屯","巽":"水风井","坎":"坎为水","艮":"水山蹇","坤":"水地比"},"艮":{"乾":"山天大畜","兑":"山泽损","离":"山火贲","震":"山雷颐","巽":"山风蛊","坎":"山水蒙","艮":"艮为山","坤":"山地剥"},"坤":{"乾":"地天泰","兑":"地泽临","离":"地火明夷","震":"地雷复","巽":"地风升","坎":"地水师","艮":"地山谦","坤":"坤为地"}};
     var manualYaos = [1,1,1,1,1,1];   // 自下而上，1=阳；手动起卦编辑器状态
     var manualMoving = 0;             // 0=未选变爻
     var lastGua = null;               // 最近一次起卦结果，供 AI 解卦用
@@ -1235,9 +1250,21 @@
     }
     function posName(i) { return i === 1 ? "初爻" : (i === 6 ? "上爻" : "二爻 三爻 四爻 五爻".split(" ")[i - 2]); }
     function trigramName(bits3) {   // bits3: 自下而上三爻
-      var key = bits3[2] + bits3[1] + bits3[0];
+      // 必须强制转字符串：数字 + 数字会相加（1+1+1=3），永远匹配不到 "111"，
+      // 导致预览始终是「乾上乾下」——手动起卦改爻不更新卦名的真正原因。
+      var key = String(bits3[2]) + String(bits3[1]) + String(bits3[0]);
       for (var n in GUA_BITS) if (GUA_BITS[n] === key) return n;
       return "乾";
+    }
+    function guaFullName(bits) {
+      var up = trigramName(bits.slice(3)), lo = trigramName(bits.slice(0, 3));
+      return { name: (KINGWEN64[up] || {})[lo] || (up + "上" + lo + "下"),
+               up: up, lo: lo };
+    }
+    function hexLinesHTML(bits, moving) {   // 自上而下画六爻，动爻标红
+      return [6,5,4,3,2,1].map(function (i) {
+        return '<div class="mh-pv-line">' + yaoGlyph(bits[i - 1] === 1, moving === i) + '</div>';
+      }).join("");
     }
     function drawEditor() {
       $("#mh-editor").innerHTML = [6,5,4,3,2,1].map(function (i) {
@@ -1247,10 +1274,29 @@
           '<span class="yy">' + (yang ? '阳爻' : '阴爻') + '</span>' +
           '<button class="mv-toggle' + (mv ? ' on' : '') + '" data-i="' + i + '">' + (mv ? '动爻' : '不变') + '</button></div>';
       }).join("");
-      var up = trigramName(manualYaos.slice(3)), lo = trigramName(manualYaos.slice(0, 3));
-      // 上下卦名并入说明行，不再单独占一块预览（六爻本身已直观表达卦象）
+      var ben = guaFullName(manualYaos);
       var hint = $("#mh-mhint");
-      if (hint) hint.textContent = "本卦 " + up + "上 " + lo + "下 · 点爻线切换阴阳，点“不变/动爻”指定变爻";
+      if (hint) hint.textContent = "本卦 " + ben.up + "上 " + ben.lo + "下 · 点爻线切换阴阳，点“不变/动爻”指定变爻";
+      // 卦象预览：每次点击爻线 / 变爻都实时重画本卦与变卦，让改动立刻对应到具体卦象
+      var pv = $("#mh-gua-preview");
+      if (pv) {
+        var bianBits = manualYaos.slice();
+        if (manualMoving) bianBits[manualMoving - 1] = bianBits[manualMoving - 1] === 1 ? 0 : 1;
+        var bian = guaFullName(bianBits);
+        pv.innerHTML =
+          '<div class="mh-pv-card"><div class="mh-pv-tag">本卦</div>' +
+            '<div class="mh-pv-sym">' + (GUA_SYMBOL[ben.up] || "") + (GUA_SYMBOL[ben.lo] || "") + '</div>' +
+            '<div class="mh-pv-lines">' + hexLinesHTML(manualYaos, manualMoving) + '</div>' +
+            '<div class="mh-pv-nm">' + esc(ben.name) + '</div>' +
+            '<div class="mh-pv-sub">' + esc(ben.up) + '上 ' + esc(ben.lo) + '下</div></div>' +
+          (manualMoving
+            ? '<div class="mh-pv-card bian"><div class="mh-pv-tag">变卦 · 第' + manualMoving + '爻动</div>' +
+              '<div class="mh-pv-sym">' + (GUA_SYMBOL[bian.up] || "") + (GUA_SYMBOL[bian.lo] || "") + '</div>' +
+              '<div class="mh-pv-lines">' + hexLinesHTML(bianBits, 0) + '</div>' +
+              '<div class="mh-pv-nm">' + esc(bian.name) + '</div>' +
+              '<div class="mh-pv-sub">' + esc(bian.up) + '上 ' + esc(bian.lo) + '下</div></div>'
+            : '');
+      }
     }
     // 起卦输入区统一事件委托：避免动态重渲染后绑定丢失导致"点了没反应"
     $("#mh-inputs").addEventListener("click", function (e) {
@@ -1281,7 +1327,8 @@
       } else if (m === "manual") {
         box.innerHTML = '<div class="tf-group" style="margin-top:12px"><div class="tf-gt">卦象预览</div>' +
           '<p class="p-note" id="mh-mhint" style="margin:0 0 8px">点爻线切换阴阳，点“不变/动爻”指定变爻</p>' +
-          '<div class="mh-yaos" id="mh-editor"></div></div>';
+          '<div class="mh-yaos" id="mh-editor"></div>' +
+          '<div class="mh-gua-preview" id="mh-gua-preview"></div></div>';
         drawEditor();
       } else {
         box.innerHTML = '<p class="p-note">系统会结合你所问之事与当下机缘给出两个数：第一数取下卦，第二数取上卦，动爻以两数之和除 6 取余。同一个问题在不同时刻起卦，卦象也会不同。</p>';
@@ -1384,7 +1431,7 @@
         '<div class="tf-group"><div class="tf-gt">提出您的问题</div>' +
           '<p class="p-note" style="margin:0 0 10px">请输入一个明确的问题，程序会结合所问之事与当下机缘抽牌；同一问题每次抽牌也可能不同。确认牌面后，可让 AI 按牌位和正逆位解读</p>' +
           '<input class="ti" id="tr-q" placeholder="例如：创业还是留在大公司更适合我？" />' +
-          '<div class="p-suggest tr-chips"><button data-q="创业还是留在大公司更适合我？">创业还是留在大公司更适合我？</button><button data-q="对方不喜欢我，我该如何让自己放下？">对方不喜欢我，我该如何让自己放下？</button><button data-q="为何我在社交场中难以做真实的自己？">为何我在社交场中难以做真实的自己？</button><button data-q="异地恋还要坚持吗？">异地恋还要坚持吗？</button></div>' +
+          '<div class="p-suggest tr-chips"><button data-q="创业还是留在大公司更适合我？">创业还是留在大公司更适合我？</button><button data-q="对方不喜欢我，我该如何让自己放下？">对方不喜欢我，我该如何让自己放下？</button><button data-q="为何我在社交场中难以做真实的自己？">为何我在社交场中难以做真实的自己？</button></div>' +
         '</div>' +
         '<div class="tf-group"><div class="tf-gt">牌阵</div>' +
           '<div class="p-seg" id="tr-spread"><button class="on" data-v="three">三张牌 · 过去现在未来</button><button data-v="celtic_cross">凯尔特十字（十张）</button></div>' +
@@ -1938,8 +1985,10 @@
      · 新提问：换新问题 → 旧的一整轮折叠归档（功能页内可展开回看）→ 按新问题从头开始。
        塔罗/梅花还会真正重新抽牌/起卦；八字/紫微/黄历的盘固定，只换问题重解。
      归档区挂在结果容器【之外】（stage 层），因为塔罗/梅花重新抽牌会 innerHTML 重建结果容器。 */
-  var ROOT_SEL = { bazi:"#bz-result", meihua:"#mh-result", tarot:"#tr-result", huangli:"#hl-result", ziwei:"#zw-result", astrology:"#as-result" };
-  var QBOX_SEL = { bazi:"#bz-q", meihua:"#mh-q", tarot:"#tr-q", huangli:"#hl-q", ziwei:"#zw-q", astrology:"#as-q" };
+  var ROOT_SEL = { bazi:"#bz-result", meihua:"#mh-result", tarot:"#tr-result", huangli:"#hl-result", ziwei:"#zw-result", astrology:"#as-result",
+    liuyao:"#ly-result", qimen:"#qm-result", bazi_marriage:"#bzm-result", ziwei_marriage:"#zm-result" };
+  var QBOX_SEL = { bazi:"#bz-q", meihua:"#mh-q", tarot:"#tr-q", huangli:"#hl-q", ziwei:"#zw-q", astrology:"#as-q",
+    liuyao:"#ly-q", qimen:"#qm-q", bazi_marriage:"#bzm-q", ziwei_marriage:"#zm-q" };
 
   function archiveHost(container) {
     var st = container.closest(".p-wrap") || stageEl();
@@ -2252,7 +2301,8 @@
   }
 
   /* ================= 个人中心 ================= */
-  var PF_FEATS = [["bazi", "八字"], ["ziwei", "紫微"], ["meihua", "梅花"], ["tarot", "塔罗"], ["astrology", "占星"], ["huangli", "黄历"]];
+  var PF_FEATS = [["bazi", "八字"], ["ziwei", "紫微"], ["bazi_marriage", "八字合婚"], ["ziwei_marriage", "紫微合婚"],
+    ["meihua", "梅花"], ["liuyao", "六爻"], ["qimen", "奇门"], ["tarot", "塔罗"], ["astrology", "占星"], ["huangli", "黄历"]];
   var pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false,
     birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false,
     batchMode: false, selected: {} };
@@ -3473,11 +3523,376 @@
   }
 
 
+  /* ================= 合婚（八字 / 紫微）=================
+     双人盘由确定性引擎先算完，再交给 AI 解读；不给匹配分数，只给可回到柱位/宫位核对的论据。 */
+  function renderMarriage(kind) {
+    var isBazi = kind === "bazi";
+    var feat = isBazi ? "bazi_marriage" : "ziwei_marriage";
+    var title = isBazi ? "八字合婚" : "紫微合婚";
+    var pfxA = isBazi ? "bza" : "zwa", pfxB = isBazi ? "bzb" : "zwb";
+    stageEl().innerHTML =
+      toolHero(title, isBazi
+        ? "分别排定两人四柱，再从日柱夫妻宫、十神交叉与大运流年读出相处中的省力与费力之处。本功能不给匹配分数。"
+        : "对照两张完整紫微命盘，从夫妻宫、命宫、福德宫与双向四化交叉看清关系结构。本功能不给匹配分数。") +
+      '<div class="tool-card" id="' + (isBazi ? "bzm" : "zm") + '-form-card"><div class="tool-form" id="' + (isBazi ? "bzm" : "zm") + '-form">' +
+        '<div class="mrg-two">' +
+          '<div class="mrg-person"><div class="mrg-ph">甲方 · 本人</div>' +
+            '<div class="tf-grid"><div class="tf-field"><label>称呼</label><input class="ti" id="' + pfxA + '-name" placeholder="如：我" value="本人" /></div>' +
+            '<div class="tf-field"><label>性别</label><select class="ti" id="' + pfxA + '-gender"><option>男</option><option>女</option></select></div></div>' +
+            birthFieldsHTML(pfxA, { title: "出生信息", noBazi: true }) +
+          '</div>' +
+          '<div class="mrg-person"><div class="mrg-ph">乙方 · 对方</div>' +
+            '<div class="tf-grid"><div class="tf-field"><label>称呼</label><input class="ti" id="' + pfxB + '-name" placeholder="如：伴侣" value="对方" /></div>' +
+            '<div class="tf-field"><label>性别</label><select class="ti" id="' + pfxB + '-gender"><option>女</option><option>男</option></select></div></div>' +
+            birthFieldsHTML(pfxB, { title: "出生信息", noBazi: true }) +
+          '</div>' +
+        '</div>' +
+        '<div class="tf-group" style="margin-top:14px"><div class="tf-gt">你最想看清什么</div>' +
+          '<input class="ti" id="' + (isBazi ? "bzm" : "zm") + '-q" placeholder="例如：我们相处中反复出现的摩擦来自哪里？" />' +
+          '<div class="p-suggest"><button data-q="我们相处中反复出现的摩擦来自哪里？">相处摩擦</button>' +
+          '<button data-q="双方在感情中的需求与表达方式如何互补？">需求互补</button>' +
+          '<button data-q="未来两年关系推进需要注意哪些阶段？">阶段节奏</button></div>' +
+        '</div>' +
+        '<button class="tool-submit" id="' + (isBazi ? "bzm" : "zm") + '-calc">生成双人' + (isBazi ? '四柱' : '命盘') + '</button>' +
+        '<div class="p-err" id="' + (isBazi ? "bzm" : "zm") + '-err"></div>' +
+      '</div></div>' +
+      '<div id="' + (isBazi ? "bzm" : "zm") + '-result"></div>' +
+      aboutDetails("关于" + title, isBazi ? [
+        '<b>三层结构</b>：各自命局 → 两盘交互 → 大运流年同步；每层都给出具体柱位与十神作为论据。',
+        '<b>16 组柱位对照</b>：双方四柱逐一配对，判定天干五合/相冲、地支六合/半合/暗合/相冲/相刑/相害/相破；日柱夫妻宫权重最高。',
+        '<b>神煞</b>：红鸾、天喜等只作辅助证据，须与喜忌、十神、柱位交叉验证，不作单星断言。'
+      ] : [
+        '<b>先定盘再合盘</b>：两张命盘的十二宫、星曜亮度、四化先由程序确定，再建立跨盘关系，问题不改变盘面。',
+        '<b>六个维度</b>：夫妻宫、命宫、福德宫、四化交叉、桃花星、大限流年时间线，均可回到具体宫位核对。',
+        '<b>四化交叉</b>：一方禄权科忌落在哪一地支宫位，映射到对方同地支的生活领域，双向各做一次。'
+      ], "合婚是关系观察框架，不证明谁是「正缘」，也不能替代真实相处、共同选择与专业建议。");
+
+    birthFieldsBind(pfxA); birthFieldsBind(pfxB);
+    var pre = isBazi ? "bzm" : "zm";
+    $$(".p-suggest button", stageEl()).forEach(function (b) {
+      b.onclick = function () { pickQuestion(b.dataset.q, "#" + pre + "-q"); };
+    });
+    // 登录态：甲方自动带入档案出生信息（命盘类的唯一数据源），字段不变不反复填写
+    if (S.profile) {
+      fetch("/api/profile/get?id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token))
+        .then(function (r) { return r.json(); }).then(function (d) {
+          var b = d.ok && d.profile && d.profile.birth;
+          if (!b || !(b.year || b.date)) return;
+          var seg = String(b.date || "").split("-");
+          birthFieldsBind(pfxA, { calendar: b.calendar || "solar",
+            year: b.year || +seg[0], month: b.month || +seg[1], day: b.day || +seg[2],
+            hour: b.hour != null ? b.hour : 12, minute: b.minute != null ? b.minute : 0,
+            know_time: b.know_time !== false });
+          if ($("#" + pfxA + "-gender")) $("#" + pfxA + "-gender").value =
+            (b.gender === "female" ? "女" : b.gender === "male" ? "男" : (b.gender || $("#" + pfxA + "-gender").value));
+          if ($("#" + pfxA + "-name") && S.profile.name) $("#" + pfxA + "-name").value = S.profile.name;
+          toast("已带入档案中的出生信息");
+        }).catch(function () {});
+    }
+    function personParams(pfx) {
+      var b = birthCollect(pfx);
+      if (b.mode === "bazi") { $("#" + pre + "-err").textContent = "请使用日期方式填写出生信息"; return null; }
+      if (!b.year || !b.month || !b.day) return null;
+      return b;
+    }
+    function pairQS() {
+      var a = personParams(pfxA), b = personParams(pfxB);
+      if (!a || !b) { $("#" + pre + "-err").textContent = "请完整填写双方的出生日期"; return null; }
+      function put(out, p, prefix, nameSel, genderSel) {
+        out.push(prefix + "year=" + p.year, prefix + "month=" + p.month, prefix + "day=" + p.day,
+          prefix + "hour=" + p.hour, prefix + "minute=" + p.minute, prefix + "calendar=" + p.calendar,
+          prefix + "gender=" + encodeURIComponent($("#" + genderSel).value),
+          prefix + "name=" + encodeURIComponent($("#" + nameSel).value || ""));
+      }
+      var q = [];
+      put(q, a, "", pfxA + "-name", pfxA + "-gender");
+      put(q, b, "p2_", pfxB + "-name", pfxB + "-gender");
+      return q.join("&");
+    }
+    var lastPair = "";
+    $("#" + pre + "-calc").onclick = function () {
+      var qs = pairQS();
+      if (!qs) return;
+      $("#" + pre + "-err").textContent = "";
+      $("#" + pre + "-calc").disabled = true;
+      fetch("/api/" + feat + "/calc?" + qs).then(function (r) { return r.json(); }).then(function (d) {
+        $("#" + pre + "-calc").disabled = false;
+        if (!d.ok) { $("#" + pre + "-err").textContent = d.error || "排盘失败"; return; }
+        lastPair = qs;
+        var root = $("#" + pre + "-result");
+        archiveRound(root, $("#" + pre + "-q").value.trim() || title, root.dataset.rk);
+        root.dataset.rk = (isBazi ? "bazi-mar|" : "ziwei-mar|") + qs;
+        root.innerHTML = renderPairResult(d, isBazi, pre);
+        $("#" + pre + "-ask").onclick = function () {
+          var q = $("#" + pre + "-q").value.trim();
+          if (!q) { toast("请先写下你想问的问题"); return; }
+          if (requireLogin()) return;
+          streamAI(feat, qs + "&q=" + encodeURIComponent(q) + authParam(), q, root, root.dataset.rk);
+        };
+        root.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }).catch(function () { $("#" + pre + "-calc").disabled = false; });
+    };
+    applyGate(feat);
+  }
+  function renderPairResult(d, isBazi, pre) {
+    var a = d.a_data || {}, b = d.b_data || {}, cross = d.cross || {};
+    function stars(list) {
+      return (list || []).map(function (s) {
+        return '<span class="mrg-star">' + esc(s.name) + (s.brightness ? '<i>' + esc(s.brightness) + '</i>' : '') +
+          (s.mutagen ? '<b>' + esc(s.mutagen) + '</b>' : '') + '</span>';
+      }).join("");
+    }
+    function personCard(p, who) {
+      var head = '<div class="mrg-p-hd"><b>' + esc(p.name || who) + '</b><span>' + esc(p.gender || "") +
+        ' · ' + esc(p.chineseDate || ((p.pillars ? [p.pillars.year, p.pillars.month, p.pillars.day, p.pillars.hour].join(" ") : ""))) + '</span></div>';
+      if (isBazi) {
+        return '<div class="mrg-p-card">' + head +
+          '<div class="mrg-pillars">' + ["year","month","day","hour"].map(function (k) {
+            var gz = (p.pillars || {})[k]; if (!gz) return "";
+            return '<div class="mrg-pil"><span>' + ({year:"年",month:"月",day:"日",hour:"时"})[k] + '</span><b>' + esc(gz) + '</b>' +
+              '<i>' + esc((p.ten_gods || {})[k] || "") + '</i></div>';
+          }).join("") + '</div>' +
+          '<div class="mrg-line">日主 <b>' + esc(p.day_master || "—") + '</b>　' +
+          '强弱 <b>' + esc((p.strength || {}).level || "—") + '</b>　喜忌 <b>' + esc((p.strength || {}).favor || "—") + '</b></div></div>';
+      }
+      return '<div class="mrg-p-card">' + head +
+        ["命宫","夫妻宫","福德宫"].map(function (pn) {
+          var pc = p[pn] || {};
+          return '<div class="mrg-pal"><span>' + pn + ' · ' + esc(pc.branch || "—") + '</span><div>' +
+            stars(pc.majorStars) + stars(pc.minorStars) + '</div></div>';
+        }).join("") + '</div>';
+    }
+    var groups = (cross.pillar_groups || []).filter(function (g) {
+      return (g.relations || []).some(function (r) { return !/无合冲刑害破/.test(r.relation || ""); });
+    }).slice(0, 8);
+    var crossHtml = isBazi
+      ? '<div class="mrg-cross-h">命中柱位关系（节选 · 完整事实见下方盘面）</div>' +
+        (groups.length ? '<div class="mrg-rels">' + groups.map(function (g) {
+          return '<div class="mrg-rel"><b>' + esc(g.who) + '</b><span>' +
+            (g.relations || []).filter(function (r) { return !/无合冲刑害破/.test(r.relation || ""); })
+              .map(function (r) { return esc(r.relation); }).join("；") + '</span></div>';
+        }).join("") + '</div>' : '<p class="p-note">两盘四柱之间未见显著合冲刑害。</p>')
+      : '<div class="mrg-cross-h">四化交叉与关系宫位</div><div class="mrg-rels">' +
+        Object.keys(cross).filter(function (k) { return cross[k] && typeof cross[k] === "object"; }).slice(0, 6).map(function (k) {
+          return '<div class="mrg-rel"><b>' + esc(k) + '</b><span>已由引擎按双方落宫建立对照，详见盘面事实</span></div>';
+        }).join("") + '</div>';
+    return '<div class="p-result">' + resultTitle(titleForPair(isBazi)) +
+      '<div class="p-card"><div class="mrg-pair">' + personCard(a, "甲方") + personCard(b, "乙方") + '</div>' +
+        crossHtml +
+        '<button class="mrg-fact-btn" type="button">展开可核对的盘面事实</button>' +
+        '<pre class="mrg-fact hidden">' + esc(d.fact || "") + '</pre>' +
+      '</div></div>' +
+      '<div class="bz-ask"><div class="bz-ask-h">就这段关系提问<span>解读基于以上双人盘面，不改变盘面本身</span></div>' +
+        '<input class="ti" id="' + pre + '-q2" style="display:none" />' +
+        '<button class="tool-ai" id="' + pre + '-ask">AI ' + (isBazi ? '合婚解读' : '合婚分析') + '</button></div>';
+  }
+  function titleForPair(isBazi) { return isBazi ? "八字合婚 · 双人四柱对照" : "紫微合婚 · 双人命盘对照"; }
+  function renderBaziMarriage() { renderMarriage("bazi"); }
+  function renderZiweiMarriage() { renderMarriage("ziwei"); }
+
+  /* ================= 六爻 ================= */
+  function renderLiuyao() {
+    stageEl().innerHTML =
+      toolHero("六爻占卜", "一事一占：先确定本卦、动爻与变卦，再装入纳甲、六亲、六神、世应与旬空。AI 只基于已排定的卦盘解读。") +
+      '<div class="tool-card" id="ly-form-card"><div class="tool-form" id="ly-form">' +
+        '<div class="tf-group"><div class="tf-gt">提出一个具体的问题</div>' +
+          '<p class="p-note" style="margin:0 0 10px">一次只问一件事，并写明必要背景与时间范围；起卦后请专注这一卦。</p>' +
+          '<input class="ti" id="ly-q" placeholder="例如：未来三个月是否适合接受这份外地工作？" />' +
+          '<div class="p-suggest"><button data-q="这份工作机会是否值得接受？">工作机会</button>' +
+          '<button data-q="这次合作能否顺利推进？">合作推进</button>' +
+          '<button data-q="遗失的物品还能否找到？">遗失寻找</button></div></div>' +
+        '<div class="tf-group"><div class="tf-gt">起卦方式</div>' +
+          '<div class="p-seg" id="ly-method"><button class="on" data-v="coin">铜钱摇卦</button>' +
+          '<button data-v="time">时间起卦</button><button data-v="number">数字起卦</button>' +
+          '<button data-v="random">随机起卦</button><button data-v="manual">手动起卦</button></div>' +
+          '<div id="ly-inputs"></div></div>' +
+        '<button class="tool-submit" id="ly-cast">起卦</button><div class="p-err" id="ly-err"></div>' +
+      '</div></div>' +
+      '<div id="ly-result"></div>' +
+      aboutDetails("关于六爻", [
+        '<b>六层规则链</b>：起卦成爻 → 本卦/动爻/变卦 → 纳甲装干支 → 卦宫六亲世应 → 月建日辰旬空 → 取用神综合判断。',
+        '<b>用神</b>：问工作看官鬼、问财看妻财、问文书长辈看父母；判断须能回到具体爻位。',
+        '<b>起卦方式</b>：四种方式只决定六爻如何得到；卦成之后，装卦与解读规则完全一致。'
+      ], "六爻卦盘是传统规则生成的结构，AI 解读是有依据的参考而非确定预言；重大事项请以现实证据与专业意见为准。");
+    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#ly-q"); }; });
+    var manualYaos = [7, 7, 7, 7, 7, 7];  // 自下而上，7少阳 8少阴 9老阳动 6老阴动
+    function renderInputs() {
+      var m = segVal($("#ly-method")), box = $("#ly-inputs");
+      if (m === "time") {
+        var nw = new Date();
+        box.innerHTML = dateTimeHTML("lyt", { dateLabel: "起卦日期", timeLabel: "起卦时刻" });
+        dateTimeBind("lyt", { year: nw.getFullYear(), month: nw.getMonth() + 1, day: nw.getDate(),
+          hour: nw.getHours(), minute: nw.getMinutes() });
+      } else if (m === "number") {
+        box.innerHTML = '<div class="tf-grid" style="margin-top:12px">' +
+          '<div class="tf-field"><label>第一个数字（下卦）</label><input class="ti" id="ly-n1" type="number" value="23" /></div>' +
+          '<div class="tf-field"><label>第二个数字（上卦）</label><input class="ti" id="ly-n2" type="number" value="45" /></div></div>';
+      } else if (m === "manual") {
+        box.innerHTML = '<div class="mh-yaos" id="ly-editor" style="margin-top:12px"></div>';
+        drawManual();
+      } else {
+        box.innerHTML = '<p class="p-note">铜钱摇卦由程序按三枚铜钱的六种组合生成六次结果；所问之事与当下时刻共同参与，问题不是唯一决定因素。</p>';
+      }
+    }
+    function drawManual() {
+      var box = $("#ly-editor"); if (!box) return;
+      box.innerHTML = [6,5,4,3,2,1].map(function (i) {
+        var v = manualYaos[i - 1];
+        return '<div class="mh-yao-row"><span class="pos">' + (i === 1 ? "初爻" : i === 6 ? "上爻" : ["","二爻","三爻","四爻","五爻"][i-1]) + '</span>' +
+          '<select class="ti ly-yao-sel" data-i="' + i + '" style="width:auto">' +
+          [[7,"少阳 —"],[8,"少阴 - -"],[9,"老阳 ○ 动"],[6,"老阴 × 动"]].map(function (o) {
+            return '<option value="' + o[0] + '"' + (v === o[0] ? " selected" : "") + '>' + o[1] + '</option>';
+          }).join("") + '</select></div>';
+      }).join("");
+      $$(".ly-yao-sel", box).forEach(function (s) {
+        s.onchange = function () { manualYaos[+s.dataset.i - 1] = +s.value; };
+      });
+    }
+    renderInputs();
+    $$("#ly-method button").forEach(function (b) { b.onclick = function () { segSet($("#ly-method"), b.dataset.v); renderInputs(); }; });
+    function castQS() {
+      var m = segVal($("#ly-method")), q = "method=" + m;
+      if (m === "time") q += "&when=" + encodeURIComponent(dateTimeCollect("lyt").when);
+      if (m === "number") q += "&num1=" + ($("#ly-n1").value || 1) + "&num2=" + ($("#ly-n2").value || 1);
+      if (m === "manual") q += "&yaos=" + manualYaos.join(",");
+      return q;
+    }
+    $("#ly-cast").onclick = function () {
+      var question = $("#ly-q").value.trim();
+      if (!question) { toast("请先写下所问之事"); $("#ly-q").focus(); return; }
+      $("#ly-err").textContent = "";
+      fetch("/api/liuyao/calc?" + castQS() + "&question=" + encodeURIComponent(question))
+        .then(function (r) { return r.json(); }).then(function (d) {
+          if (!d.ok) { $("#ly-err").textContent = d.error || "起卦失败"; return; }
+          var root = $("#ly-result");
+          archiveRound(root, question, root.dataset.rk);
+          root.innerHTML = renderLiuyaoResult(d);
+          root.dataset.rk = "liuyao|" + d.deck;
+          var lock = "deck=" + encodeURIComponent(d.deck) + "&when=" + encodeURIComponent(d.when || "");
+          $("#ly-ask").onclick = function () {
+            var q = $("#ly-q").value.trim();
+            if (!q) { toast("请先写下所问之事"); return; }
+            if (q !== question) { toast("问题已更改，请重新起卦"); return; }
+            if (requireLogin()) return;
+            streamAI("liuyao", lock + "&q=" + encodeURIComponent(q) + authParam(), q, root, root.dataset.rk);
+          };
+          root.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }).catch(function () {});
+    };
+    applyGate("liuyao");
+  }
+  function renderLiuyaoResult(d) {
+    function gua(g) {
+      return '<div class="ly-gua' + (g && d.bian_gua && g.name === d.bian_gua.name ? ' bian' : '') + '">' +
+        '<div class="ly-gua-tag">' + (g && d.bian_gua && g.name === d.bian_gua.name ? '变卦' : '本卦') + '</div>' +
+        '<div class="ly-gua-nm">' + esc((g || {}).name || "—") + '</div>' +
+        '<div class="ly-gua-sub">第' + esc((g || {}).index || "—") + '卦 · 上' + esc((g || {}).upper || "") + '下' + esc((g || {}).lower || "") + '</div>' +
+        '<div class="ly-gua-sub">' + esc((g || {}).gong || "") + '宫 · ' + esc((g || {}).gong_wuxing || "") + '</div></div>';
+    }
+    var rows = (d.yaos || []).slice().reverse().map(function (y) {
+      return '<div class="ly-yao' + (y.moving ? ' moving' : '') + '">' +
+        '<span class="ly-pos">' + esc(y.name) + '</span>' +
+        '<span class="ly-line">' + (y.yang ? '▬▬▬▬▬' : '▬▬ ▬▬') + (y.moving ? ' <b>○</b>' : '') + '</span>' +
+        '<span>' + esc(y.gan || "") + esc(y.zhi || "") + '(' + esc(y.wuxing || "") + ')</span>' +
+        '<span>' + esc(y.liuqin || "") + '</span><span>' + esc(y.liushen || "") + '</span>' +
+        '<span class="ly-sy">' + esc(y.shiying || "") + '</span></div>';
+    }).join("");
+    return '<div class="p-result">' + resultTitle("六爻卦盘") +
+      '<div class="p-card"><div class="ly-gua-row">' + gua(d.ben_gua) + (d.bian_gua ? gua(d.bian_gua) : '') + '</div>' +
+        '<div class="ly-meta">月建 ' + esc(d.yuejian || "—") + '　日辰 ' + esc(d.richen || "—") + '　旬空 ' + esc(d.xunkong || "—") + '</div>' +
+        '<div class="ly-yaos">' + rows + '</div>' +
+        '<button class="mrg-fact-btn" type="button">展开可核对的装卦事实</button>' +
+        '<pre class="mrg-fact hidden">' + esc(d.fact || "") + '</pre>' +
+      '</div></div>' +
+      '<div class="bz-ask"><div class="bz-ask-h">就这一卦提问<span>卦盘已锁定，追问与解读使用同一卦</span></div>' +
+        '<button class="tool-ai" id="ly-ask">AI 解卦</button></div>';
+  }
+
+  /* ================= 奇门遁甲 ================= */
+  function renderQimen() {
+    stageEl().innerHTML =
+      toolHero("奇门遁甲", "时家奇门 · 转盘排宫 · 拆补定局：以起局时刻排定九宫、八门、九星、八神与三奇六仪；问题只决定阅读焦点，不改变局数星门。") +
+      '<div class="tool-card" id="qm-form-card"><div class="tool-form" id="qm-form">' +
+        '<div class="tf-group"><div class="tf-gt">提出一个具体的问题</div>' +
+          '<p class="p-note" style="margin:0 0 10px">写明事情进行到哪一步、有哪些选项、最担心什么；聚焦一件事更容易得到有用的解读。</p>' +
+          '<input class="ti" id="qm-q" placeholder="例如：两个工作机会之间，未来三个月应重点核对哪些风险？" />' +
+          '<div class="p-suggest"><button data-q="这次合作最大的推进阻力在哪里？">合作阻力</button>' +
+          '<button data-q="当前阶段该如何推进这段关系？">关系推进</button>' +
+          '<button data-q="近期出行需要注意什么？">出行决策</button></div></div>' +
+        '<div class="tf-group"><div class="tf-gt">排盘方式</div>' +
+          '<div class="p-seg" id="qm-method"><button class="on" data-v="chaibu">拆补法</button><button data-v="zhirun">置闰法（按拆补近似）</button></div></div>' +
+        '<div class="tf-group"><div class="tf-gt">起局时间</div>' + (function () {
+          var nw = new Date();
+          var h = dateTimeHTML("qmt", { dateLabel: "起局日期", timeLabel: "起局时刻" });
+          setTimeout(function () { dateTimeBind("qmt", { year: nw.getFullYear(), month: nw.getMonth() + 1,
+            day: nw.getDate(), hour: nw.getHours(), minute: nw.getMinutes() }); }, 0);
+          return h;
+        })() + '</div>' +
+        '<button class="tool-submit" id="qm-start">立即起局</button><div class="p-err" id="qm-err"></div>' +
+      '</div></div>' +
+      '<div id="qm-result"></div>' +
+      aboutDetails("关于奇门遁甲", [
+        '<b>先定盘</b>：四柱 → 节气与阴阳遁 → 符头三元定局 → 三奇六仪地盘 → 值符值使 → 天盘九星 → 八门 → 八神。',
+        '<b>九宫承载多层</b>：每宫同时看地盘干、天盘干、星、门、神，再叠加旬空、驿马、门迫、击刑、入墓等修正。',
+        '<b>读盘顺序</b>：先定日干（求测人）与时干（所问之事）落宫，再看宫与宫的生克，最后才讨论应期与行动。'
+      ], "奇门为传统时空象征体系，盘面可逐宫复算；解读不替代医疗、法律、财务或人身安全的专业判断。");
+    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#qm-q"); }; });
+    $("#qm-start").onclick = function () {
+      var question = $("#qm-q").value.trim();
+      if (!question) { toast("请先写下所问之事"); $("#qm-q").focus(); return; }
+      $("#qm-err").textContent = "";
+      var when = dateTimeCollect("qmt").when;
+      var qs = "when=" + encodeURIComponent(when) + "&method=" + segVal($("#qm-method"));
+      fetch("/api/qimen/calc?" + qs + "&question=" + encodeURIComponent(question))
+        .then(function (r) { return r.json(); }).then(function (d) {
+          if (!d.ok) { $("#qm-err").textContent = d.error || "起局失败"; return; }
+          var root = $("#qm-result");
+          archiveRound(root, question, root.dataset.rk);
+          root.innerHTML = renderQimenResult(d);
+          root.dataset.rk = "qimen|" + when + "|" + segVal($("#qm-method"));
+          $("#qm-ask").onclick = function () {
+            var q = $("#qm-q").value.trim();
+            if (!q) { toast("请先写下所问之事"); return; }
+            if (q !== question) { toast("问题已更改，请重新起局"); return; }
+            if (requireLogin()) return;
+            streamAI("qimen", qs + "&q=" + encodeURIComponent(q) + authParam(), q, root, root.dataset.rk);
+          };
+          root.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }).catch(function () {});
+    };
+    applyGate("qimen");
+  }
+  function renderQimenResult(d) {
+    // 洛书九宫展示顺序：4 9 2 / 3 5 7 / 8 1 6
+    var order = [4, 9, 2, 3, 5, 7, 8, 1, 6];
+    var byGong = {}; (d.palaces || []).forEach(function (p) { byGong[p.gong] = p; });
+    var cells = order.map(function (g) {
+      var p = byGong[g] || {};
+      return '<div class="qm-cell' + (p.xunkong ? ' kong' : '') + '">' +
+        '<div class="qm-c-h"><b>' + esc(p.name || "") + '</b><span>' + esc(p.dir || "") + '</span></div>' +
+        '<div class="qm-c-main"><span class="qm-c-tg">' + esc(p.tiangan || "—") + '</span><i>天</i>' +
+          '<span class="qm-c-dg">' + esc(p.digan || "—") + '</span><i>地</i></div>' +
+        '<div class="qm-c-row"><b>' + esc(p.star || "—") + '</b><span>' + esc(p.door || "—") + '</span></div>' +
+        '<div class="qm-c-god">' + esc(p.god || "—") + '</div>' +
+        (p.note ? '<div class="qm-c-note">' + esc(p.note) + '</div>' : '') + '</div>';
+    }).join("");
+    var sz = d.sizhu || {};
+    return '<div class="p-result">' + resultTitle("奇门遁甲 · 九宫盘") +
+      '<div class="p-card"><div class="qm-head">' +
+        '<span>四柱 ' + esc([sz.year, sz.month, sz.day, sz.hour].join(" ")) + '</span>' +
+        '<span>' + esc(d.jieqi || "") + ' · ' + esc(d.yinyang || "") + esc(d.ju || "") + '局 · ' + esc(d.yuan || "") + '</span>' +
+        '<span>值符 ' + esc(d.zhi_fu || "") + ' · 值使 ' + esc(d.zhi_shi || "") + '</span></div>' +
+        '<div class="qm-grid">' + cells + '</div>' +
+        '<button class="mrg-fact-btn" type="button">展开逐宫盘面事实</button>' +
+        '<pre class="mrg-fact hidden">' + esc(d.fact || "") + '</pre>' +
+      '</div></div>' +
+      '<div class="bz-ask"><div class="bz-ask-h">就这一局提问<span>局数星门已锁定，问题只决定阅读焦点</span></div>' +
+        '<button class="tool-ai" id="qm-ask">AI 解盘</button></div>';
+  }
+
   /* ---------------- 启动 ---------------- */
   window.addEventListener("hashchange", function () {
-    var f = parseHash();
-    if (["liuyao","qimen"].indexOf(f) >= 0) { toast("该功能在二期上线"); navigate("bazi"); location.hash = "/bazi"; return; }
-    navigate(f);
+    navigate(parseHash());
   });
   $("#p-navlist").addEventListener("click", function (e) {
     var btn = e.target.closest(".p-navitem");
@@ -3651,7 +4066,6 @@
 
   renderUser();
   var init = parseHash();
-  if (["liuyao","qimen"].indexOf(init) >= 0) init = "bazi";
   // 品牌区点击返回首页
   var brand = $(".p-brand");
   if (brand) {
