@@ -1,39 +1,37 @@
 # 命理工作台 Destiny Master
 
-八字 / 紫微斗数 / 梅花易数 / 塔罗 / 占星命盘 / 老黄历 六合一命理平台：登录后共用出生档案，六类功能共享历史记录与个性化 AI 解读（RAG）。
+八字 / 紫微斗数 / 八字合婚 / 紫微合婚 / 梅花易数 / 六爻 / 奇门遁甲 / 塔罗 / 占星命盘 / 老黄历 十功能命理平台：登录后共用出生档案，所有功能共享历史记录与个性化 AI 解读（RAG）。
 
-## 线上部署（示例）
+## 文档导引
 
-> 生产环境的公网 IP、实例 ID、SSH 用户与部署路径均为私有信息，已用占位符代替；按自己的环境替换即可。
-
-| 项目 | 值 |
-| --- | --- |
-| 访问入口 | `http://<YOUR_SERVER_IP>:8899/`（根路径直接是统一门户） |
-| 服务器 | 任意 Linux 云主机（2C2G 起，Ubuntu），需 nginx + Python 3.10+ |
-| 部署目录 | `/opt/ziwei`（代码 `/opt/ziwei/{server,web}`，虚拟环境 `/opt/ziwei/venv`） |
-
-> 建议防火墙只放行 8899（反代）与 22（SSH），管理端口不下线；后端 uvicorn 仅监听内网 `127.0.0.1:8744`，不对外暴露。生产密钥（`CODEBUDDY_API_KEY`、管理员口令 `.adminkey`）均通过环境变量或服务器本地文件注入，**不在代码仓库中**。
+- 项目功能、接口、架构与知识库说明见本文。
+- 前端设计系统、组件契约与防重复修改规范见 `FRONTEND_DESIGN.md`。
+- 模块边界、开发与版本流程见 `SOFTWARE_ENGINEERING.md`。
+- 各功能实现细节与引擎映射见 `IMPLEMENTATION.md`。
+- 版本变更记录见 `CHANGELOG.md`。
 
 ## 架构
 
 ```
-浏览器
-  │  http://<YOUR_SERVER_IP>:8899/
+浏览器（单页门户）
+  │  HTTP
   ▼
-nginx（/etc/nginx/sites-enabled/ziwei，监听 0.0.0.0:8899）
-  │  限速：/api/profile/ 1r/s 突发 5；/api/deduce SSE 10 次/分、同 IP 并发 2
+Web 层  web/index.html + portal.js + portal.css
+  │  hash 路由 + SSE 流式解读
   ▼
-uvicorn  127.0.0.1:8744（systemd 服务 ziwei.service，仅内网监听，无防火墙规则）
-  ├─ FastAPI  server/main.py      档案、紫微排盘/运限数据层、紫微 AI 推演入口（SSE）
-  ├─ server/feature_api.py         八字/梅花/塔罗/占星/黄历 calc+deduce、全功能统一 history/followup
-  ├─ server/astrology.py           占星本命盘计算（Swiss Ephemeris：日月上升/行星/宫位/相位）
-  ├─ server/ai.py                  统一 prompt 入口（五功能通用 + 紫微专属规则）+ 统一流/免责
-  └─ SQLite   /opt/ziwei/server/ziwei.db  用户档案 + 全功能历史（含紫微）
+FastAPI  server/
+  ├─ main.py          档案、紫微排盘/运限数据层、紫微 AI 推演入口
+  ├─ feature_api.py   十功能 calc/deduce 工厂、统一 history/followup
+  ├─ 各功能引擎       bazi / marriage / ziwei / meihua / liuyao / qimen / tarot / astrology / huangli
+  ├─ ai.py            prompt 装配 + 统一流式输出 + 免责
+  └─ rag_kb.py / rag  知识库检索
+  ▼
+SQLite  用户档案 + 全功能历史（含追问链）
 ```
 
-### 统一 AI 链路（六功能同构）
+### 统一 AI 链路（十功能同构）
 
-六类功能共用同一条 AI 推演与追问链路，差异只在「确定性计算」与「专属 prompt 规则」：
+十类功能共用同一条 AI 推演与追问链路，差异只在「确定性计算」与「专属 prompt 规则」：
 
 - **计算层（各功能特有）**：八字/梅花/塔罗/占星/黄历走 `feature_api` 的 `calc` 工厂（占星由 `astrology.py` 用 pyswisseph 计算完整本命盘，需出生地经纬度）；紫微保留 `/api/chart` 排盘数据层（命盘是有状态的大对象）。
 - **prompt 层**：`ai.build_prompt`（五功能通用铁律 + `FEATURE_GUIDES` 专属规则）；紫微走 `ai.prepare_ziwei` + `ai.build_ziwei_prompt`（`prompt.py` 维护大限/流年/历法对齐法则）——两者都由 `ai.py` 统一导出。
@@ -50,23 +48,29 @@ uvicorn  127.0.0.1:8744（systemd 服务 ziwei.service，仅内网监听，无�
 
 ## 功能一览
 
+入口按五类分组：八字命理（八字排盘 → 八字合婚）、紫微斗数（紫微 → 紫微合婚）、周易占卜（梅花 / 六爻 / 奇门）、西方占卜（占星 → 塔罗）、其他（老黄历）。
+
 | 功能 | 入口 | 说明 |
 | --- | --- | --- |
-| 首页 | `#/home`（默认） | 落地页：六大功能入口卡片，点击品牌区（∞ + Destiny Master）随时返回 |
+| 首页 | `#/home`（默认） | 落地页：十功能入口卡片按五类分组，点击品牌区（∞ + Destiny Master）随时返回 |
 | 八字排盘 | `#/bazi` | 四柱 + 十神 + 藏干 + 五行 + 神煞 + 大运 + 流年；大运/流年可点选后直接提问；支持阳历/农历、日期/四柱反查 |
-| 紫微斗数 | `#/ziwei` | 命格 / 本命 / 运势三视图；星曜竖写（主星加粗）、四化直接标在对应星曜下（生年实心 / 大限实心描金 / 流年描边）、运财·流命与大限数字同排、点宫位可就该宫提问、大限流年单行滑动选择；**本命盘命宫与运势盘运命统一为「淡金底 + 金色描边 + 宫名旁『命』标」**；**手机端命盘改为纵向宫位列表（十二宫逆时针），不再挤压星曜** |
-| 梅花易数 | `#/meihua` | 时间起卦（此刻/指定时间）/ 手动起卦；本卦 + 互卦 + 变卦，动爻标注；**解卦强制结合档案八字命局**（页面顶部显示命局状态，缺出生时间则引导补全） |
-| 塔罗 | `#/tarot` | 三张 / 凯尔特十字（十张）；十张牌阵左列、牌义右列并排；**牌义含「象征 + 代表」完整两行、带与牌面一致的序号角标，右栏与十字区等高并均匀铺满；权杖柱上下与十字齐平、保持 110:188 竖版比例**；必须先写问题再抽牌；可勾选「结合我的太阳星座」 |
-| 占星命盘 | `#/astrology` | 完整本命盘：出生日期/时间 + 出生地与**个人档案共用同一份数据**（见下方「出生信息共用」）。**登录用户不显示出生信息填写表单**，只显示档案出生资料的只读卡（可点「修改出生信息」跳个人中心编辑），未登录才显示临时填写表单。出生地为**国家 / 省份 / 城市三级联动同一行**（`GEO_DATA` 覆盖中国 34 省级行政区的 300+ 地级市 + 14 个国家/地区，港澳台归入中国省级）；太阳/月亮/上升/中天 + 十大行星落座 + 十二宫 + 主要相位 + 元素分布；AI 结构化解读并可追问。依赖 `pyswisseph`（Swiss Ephemeris，回归黄道、Placidus 宫制） |
-| 老黄历 | `#/huangli` | 月历 + 当日历注面板、宜忌、神煞、星历物候；AI 择日答疑（可导入本人八字） |
-| 个人中心 | `#/profile` | 基本信息（出生日期/时间/**出生地三级**/性别）查看与编辑——与占星页**共用同一套出生资料模板**，**用户名/密码**修改、按功能筛选历史对话、按日期查找（点击弹日历）、历史卡**上下滚动**、展开回看、**与解读页同款的追问条**、单条删除（两步确认） |
+| 八字合婚 | `#/bazi_marriage` | 双方四柱排盘 + 跨盘对照，只给可核对论据不给分数；生成双人盘后可独立提问 |
+| 紫微斗数 | `#/ziwei` | 本命/大限/流年三视图，星曜竖写、四化标注、点宫位就该宫提问；手机端纵向宫位列表 |
+| 紫微合婚 | `#/ziwei_marriage` | 双方命盘 + 跨盘对照，只给关系论据不给分数；生成双人盘后可独立提问 |
+| 梅花易数 | `#/meihua` | 时间/数字/手动起卦；本卦 + 互卦 + 变卦与动爻；解卦强制结合档案八字命局（缺出生时间引导补全）；手动改爻实时预览卦象 |
+| 六爻 | `#/liuyao` | 铜钱/时间/数字/随机/手动起卦；本卦变卦、纳甲、六亲六神、世应、月建日辰旬空；实线爻象绘制 |
+| 奇门遁甲 | `#/qimen` | 时家转盘，拆补/置闰双定局；九宫九星八门八神、旬空驿马门迫击刑入墓；年命/用神/起局时间为可选开关（只改解读焦点不改定局） |
+| 塔罗 | `#/tarot` | 三张 / 凯尔特十字；正逆位解读前锁定，必须先写问题再抽牌；可勾选结合太阳星座 |
+| 占星命盘 | `#/astrology` | 完整本命盘（日月上升中天 + 十大行星 + 十二宫 + 相位 + 元素），出生资料与档案共用；登录用户只读档案卡、可就地修改 |
+| 老黄历 | `#/huangli` | 月历 + 当日历注（宜忌/神煞/星历物候），含「个人今日运势」与「双人择日」两个子 tab |
+| 个人中心 | `#/profile` | 基本信息（出生日期/时间/出生地三级/性别）查看与编辑，与占星共用出生资料模板；按功能/日期筛选历史、展开回看追问链、批量与单条删除、个人记忆管理 |
 
 ### AI 解读与连续追问（全功能）
 
 - **一个「问题」绑定一轮完整结果**：每次提问 = 确定性问题结果（塔罗牌面 / 梅花卦象 / 八字四柱 / 紫微命盘 / 占星本命盘 / 黄历历注）+ AI 解读 + 追问链，三者绑定为同一轮。追问沿用本轮的牌/卦/盘（后端用落盘 payload 重建，塔罗按 slug 精确取本轮牌义），可无限多轮。
 - **换问题 = 重新开始**：塔罗/梅花须重新抽牌/起卦才生成新一轮（AI 解读按钮只在牌阵/卦象生成后出现）；占星换出生地/时间即新盘；八字/紫微/黄历盘固定，直接输入新问题点解读即归档旧轮并按新问题重解。旧的一整轮折叠归档到功能页，点「展开回看」可回看正文与追问链（归档轮已移除 AI 解读按钮/快捷问题，不会再拿旧牌解读新问题）。
-- **模板问题跳转定位**：点快捷/模板问题会先填入输入框；若该问题在本会话已解读过（当前轮或归档轮），自动滚动展开那次对话并聚焦追问框，不重复解读。同一问题重复点解读也被拦下并定位到原对话，不再堆重复卡。六功能提问区结构统一为：确定性结果卡 → 独立提问卡 → AI 解读卡。
-- **六功能追问全部走同一条链路 `/api/history/followup`**：deduce 落盘后经 SSE 回传 `hid`，追问卡据此续问、追问结果再回传新 `hid` 形成对话链；prompt 带上此前解读要点保持结论一致。未登录不落盘、无追问条。
+- **模板问题跳转定位**：点快捷/模板问题会先填入输入框；若该问题在本会话已解读过（当前轮或归档轮），自动滚动展开那次对话并聚焦追问框，不重复解读。同一问题重复点解读也被拦下并定位到原对话，不再堆重复卡。各功能提问区结构统一为：确定性结果卡 → 独立提问卡 → AI 解读卡。
+- **全功能追问都走同一条链路 `/api/history/followup`**：deduce 落盘后经 SSE 回传 `hid`，追问卡据此续问、追问结果再回传新 `hid` 形成对话链；prompt 带上此前解读要点保持结论一致。未登录不落盘、无追问条。
 - 紫微的命盘事实在 deduce 时结构化存入历史 payload（`ziwei_data`），追问时据此重建 prompt，服务重启后历史追问仍可用。前端复用通用 `streamToUrl` 渲染与追问条。
 
 ### 出生档案（跨功能唯一数据源）
@@ -83,7 +87,7 @@ uvicorn  127.0.0.1:8744（systemd 服务 ziwei.service，仅内网监听，无�
 ziwei-upgrade/
 ├─ server/                 # FastAPI 后端
 │  ├─ main.py              # 应用入口：档案、紫微排盘/运限数据层、紫微推演入口
-│  ├─ feature_api.py       # 五功能 calc/deduce + 全功能统一 history/followup 路由
+│  ├─ feature_api.py       # 各功能 calc/deduce 工厂 + 统一 history/followup 路由
 │  ├─ astrology.py         # 占星本命盘（Swiss Ephemeris）
 │  ├─ bazi.py              # 八字：四柱、大运、四柱反查
 │  ├─ meihua.py            # 梅花：本卦 / 互卦 / 变卦
@@ -100,47 +104,12 @@ ziwei-upgrade/
 └─ tools/                  # 抓取/预处理脚本
 ```
 
-## 部署
-
-代码在本机修改后推送到服务器，再重启服务：
-
-```bash
-cd ziwei-upgrade
-# 1) 推送改动（按需选择文件）；<USER>@<YOUR_SERVER_IP> 换成自己的 SSH 凭据
-scp web/index.html web/portal.js web/portal.css <USER>@<YOUR_SERVER_IP>:/opt/ziwei/web/
-scp server/feature_api.py <USER>@<YOUR_SERVER_IP>:/opt/ziwei/server/
-# 2) 重启后端
-ssh <USER>@<YOUR_SERVER_IP> 'systemctl restart ziwei && systemctl is-active ziwei'
-```
-
-前端静态资源靠查询串做缓存失效，**改完 css/js 必须同步 bump 版本号**（`web/index.html` 里 `portal.css?v=` / `portal.js?v=`）。
-
 ### 移动端适配约定（≤700px / ≤900px 两档）
 
 - **命盘**：桌面保持 4×4 固定方形（宫位按地支固定方位：巳午未申／辰·酉／卯·戌／寅丑子亥，中宫跨 2×2）；手机端 `display:flex` 改为纵向宫位列表，星曜由竖排改横排，宫位顺序用 `.zw-o-0…11` 类控制（**不要把 `order` 写进行内 style**，会打乱桌面网格的显式定位）。
 - **输入框字号**：表单区输入 16px（防 iOS 聚焦缩放），结果区提问框（`.bz-ask/.zw-ask/.zw-d-ask`）用 14px 与卡片文字同级；iOS 聚焦缩放由 `portal.js` 里的 touchstart 临时提字号方案规避，不动 viewport 的 `maximum-scale`（保留无障碍缩放）。
 - **横向滚动条**：命盘网格轨道必须写 `minmax(0, 1fr)`，否则宫格内容的最小宽度会把整页撑出横向滚动条。
 - **滑动条描边**：大运/流年等横向滚动容器要同时给 `padding-left` 与 `scroll-padding-left`（≥9px），否则首卡 1px 外扩描边会被 `overflow-x` 裁掉。
-
-## 运维
-
-```bash
-systemctl status ziwei --no-pager      # 服务状态
-journalctl -u ziwei -n 100 --no-pager  # 后端日志
-tail -f /var/log/nginx/error.log       # nginx 日志
-nginx -t && systemctl reload nginx     # 改完 nginx 配置先测再重载
-cp /opt/ziwei/server/ziwei.db /root/ziwei.db.bak.$(date +%s)   # 备份数据库
-```
-
-测试账号清理（管理员口令在服务器 `/opt/ziwei/server/.adminkey`）：
-
-```bash
-curl -X POST http://127.0.0.1:8899/api/admin/delete \
-  -H 'Content-Type: application/json' -H "x-admin-key: $(cat /opt/ziwei/server/.adminkey)" \
-  -d '{"name":"测试账号昵称"}'
-```
-
-nginx 注意事项：站点配置在 `/etc/nginx/sites-enabled/`，**不要在该目录留 `.bak` 文件**——`include sites-enabled/*` 会把备份一起加载，导致旧端口继续监听；备份放 `sites-available/`。
 
 ## 主要接口
 
@@ -151,8 +120,8 @@ nginx 注意事项：站点配置在 `/etc/nginx/sites-enabled/`，**不要在�
 | POST | `/api/profile/update` | 改档案：昵称 / 出生信息 / 口令（个人中心「基本信息」用） |
 | GET | `/api/chart` | 紫微排盘（date / timeIndex / gender / calendar；`save=1` 才写回档案） |
 | GET | `/api/horoscope` | 运限（大限、流年） |
-| GET | `/api/{feature}/calc` | 五功能排盘：bazi / meihua / tarot / astrology / huangli（`save=1` 才写回档案）；占星额外传 lat/lon/tz/place + country/province/city（出生地一并写回档案），紫微用 `/api/chart` |
-| GET | `/api/{feature}/deduce` | 紫微 + 五功能统一 AI 解读入口，SSE 流式；登录用户落盘后回传 `{"hid": id}` 供追问。塔罗 `use_star=1` 注入档案星座，黄历 `use_bazi=1` 注入档案八字；梅花强制注入档案八字 |
+| GET | `/api/{feature}/calc` | 各功能排盘：bazi / bazi_marriage / ziwei_marriage / meihua / liuyao / qimen / tarot / astrology / huangli（`save=1` 才写回档案）；占星额外传 lat/lon/tz/place + country/province/city，紫微用 `/api/chart` |
+| GET | `/api/{feature}/deduce` | 全功能统一 AI 解读入口（紫微另有 `/api/deduce`），SSE 流式；登录用户落盘后回传 `{"hid": id}` 供追问。塔罗 `use_star=1` 注入档案星座，黄历 `use_bazi=1` 注入档案八字；梅花强制注入档案八字 |
 | GET | `/api/history/followup` | 全功能统一追问：带 `id`(hid) + 问题，另存新记录并回传新 hid |
 | GET | `/api/bazi/pillars_to_date` | 四柱反查公历日期 |
 | GET | `/api/huangli/month` | 黄历月视图 |
@@ -163,30 +132,21 @@ nginx 注意事项：站点配置在 `/etc/nginx/sites-enabled/`，**不要在�
 
 ## 知识库（RAG 语料）
 
-`tools/crawl_guides.py` 按子 sitemap 抓取 FateMaster `guides` 全部中文页面，按 slug 前缀分域写入 `docs/kb/<domain>/`（frontmatter 含 title/source/slug/domain）。梅花另从 zhouyi.cc 补充 64 篇传统各家解卦（见下）；占星语料为人工撰写的 12 星座 + 发光体/行星/宫位/相位/解盘指南（见下）。当前已入库 **577 篇 / 9 个领域**：
+知识库素材按领域存于 `docs/kb/<domain>/`（frontmatter 含 title/source/slug/domain）。梅花含传统各家解卦，占星为人工撰写的星座/行星/宫位/相位/解盘指南。当前已入库 **628 篇 / 9 个领域**：
 
 | 领域 | 篇数 | 领域 | 篇数 |
 | --- | --- | --- | --- |
 | bazi | 97 | qimen | 132 |
 | ziwei | 89 | huangli | 30 |
-| tarot | 78 | liuyao | 4 |
+| tarot | 78 | liuyao | 8 |
 | meihua | 129 | fengshui | 1 |
 | astrology | 17 | | |
 
-> 梅花 129 篇 = FateMaster 65（01–64.md 每卦含卦辞/**爻辞** + 总览）+ zhouyi.cc 64（zhouyi-01.md…zhouyi-64.md，含白话文解释 /《断易天机》/ 邵雍 / 傅佩荣 / 传统解卦的事业·经商·求名·婚恋·决策）。后者由 `/tmp/crawl_zhouyi.py` 抓取 `zhouyi.cc/zhouyi/yijing64/{4103..4263}.html`（URL 不连续、夹空页，按 title「周易第N卦」过滤）。
+> 梅花 129 篇含每卦卦辞/爻辞与多家解卦；另有 6ygua 学堂古籍 47 本（2252 章）按领域归入。占星 17 篇为人工撰写的文献依据。紫微另有 iztro 官方文档语料 21 篇（`docs/iztro-learn/`，供提示词参考）。
 
-> 占星 17 篇人工撰写（12 星座各一篇 + `luminaries`/`planets`/`houses`/`aspects`/`interpretation-guide`），供本命盘 AI 解读作文献依据，非爬取。
+`server/rag_kb.py` 的 `DOMAIN_VOCAB` 覆盖上述九个领域的术语词表，`kb_stats()` 自动发现目录，新增领域无需改代码。
 
-紫微另有 iztro 官方文档语料存于 `/opt/ziwei/docs/iztro-learn/`（21 篇，供提示词参考）。`server/rag_kb.py` 的 `DOMAIN_VOCAB` 覆盖上述九个领域的术语词表，`kb_stats()` 自动发现目录，新增领域无需改代码。
-
-```bash
-python3 tools/crawl_guides.py --only ziwei --workers 12   # 只补抓某一领域
-python3 tools/crawl_guides.py --force --workers 12        # 全量重抓
-```
-
-> 源站响应慢（单页 5–20s，sitemap 可达数十秒），脚本用 curl 子进程 + 线程池并发；推送知识库后记得清掉 macOS 产生的 `._*` 元数据文件（`find /opt/ziwei/docs/kb -name "._*" -delete`），否则会被计入语料。
-
-**召回要点（实测）**：各功能 deduce 用计算模块给出的 `rag_query` + `rag_extra` 检索。紫微走独立 `rag.retrieve`（命宫主星 + 生年四化作聚焦词）；八字/黄历走 `rag_kb.retrieve`（top5/1400）；梅花语料含爻辞+各家解卦，走 top10/3600 且传 `rag_primary_idx`（本卦序号）让 `rag_kb.retrieve(primary=…)` 按文件 stem 精确锁定本卦语料，压过上下卦，rag_query 含动爻标准爻称（初九/六二…）精确召回爻辞。塔罗不走模糊检索：`tarot.retrieve_excerpts` 按 slug 一牌一篇精确取文献，追问识别焦点牌置顶。塔罗牌数据 78 张、展示名「数字在前」（二宝剑）与语料名「花色在前」（宝剑二）经 `_kb_name` 映射。运行真源是线上 `/opt/ziwei/docs/kb`，本地 `docs/kb` 仅供开发参考、可能不全。
+**召回要点（实测）**：各功能 deduce 用计算模块给出的 `rag_query` + `rag_extra` 检索。紫微走独立 `rag.retrieve`（命宫主星 + 生年四化作聚焦词）；八字/黄历走 `rag_kb.retrieve`（top5/1400）；梅花语料含爻辞+各家解卦，走 top10/3600 且传 `rag_primary_idx`（本卦序号）让 `rag_kb.retrieve(primary=…)` 按文件 stem 精确锁定本卦语料，压过上下卦，rag_query 含动爻标准爻称（初九/六二…）精确召回爻辞。塔罗不走模糊检索：`tarot.retrieve_excerpts` 按 slug 一牌一篇精确取文献，追问识别焦点牌置顶。塔罗牌数据 78 张、展示名「数字在前」（二宝剑）与语料名「花色在前」（宝剑二）经 `_kb_name` 映射。新增/修改语料后需同步到运行目录，并用 `/api/kb/stats` 核对篇数。
 
 **召回要点（占星）**：占星走 `rag_kb.retrieve(top8/2800)`，由 `astrology.derive` 给出的 `rag_query`（日月上升星座 + 行星落座 + 主要相位）+ `rag_extra` 检索，召回太阳/月亮/上升三要素与各星座事业关系篇文献。
 

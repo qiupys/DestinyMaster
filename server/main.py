@@ -227,6 +227,40 @@ async def api_horoscope(
     return {"ok": True, "horoscope": HOROS[key]}
 
 
+def _rebuild_session_from_profile(chart_id: str, pid: int | None):
+    """服务重启后用登录档案的出生信息重建命盘会话。
+
+    排盘是确定性计算（无随机），档案 birth 是登录用户的唯一出生信息源，
+    因此可用它重建与内存会话同构的 chart，让追问不因重启中断。
+    取不到有效出生信息时返回 None，由调用方给出「请重新排盘」提示。
+    """
+    if not pid:
+        return None
+    prof = profile_store.get_profile(pid)
+    b = (prof or {}).get("birth") or {}
+    date = b.get("date")
+    if not date and all(b.get(k) is not None for k in ("year", "month", "day")):
+        date = "%s-%s-%s" % (b["year"], b["month"], b["day"])
+    if not date:
+        return None
+    gender = b.get("gender") or "男"
+    ti = b.get("timeIndex")
+    if ti is None:
+        if b.get("know_time") is False:
+            ti = 6
+        else:
+            h = b.get("hour")
+            ti = 6 if h is None else (12 if int(h) == 23 else (int(h) + 1) // 2)
+    try:
+        chart = get_chart({"date": date, "timeIndex": int(ti), "gender": gender,
+                           "calendar": b.get("calendar", "solar"), "fixLeap": True})
+    except Exception:
+        return None
+    session = {"chart": chart, "history": [], "profile_id": pid, "chart_id": chart_id}
+    CHARTS[chart_id] = session
+    return session
+
+
 @app.get("/api/deduce/check")
 async def api_deduce_check(
     key: str = Query(..., description="去重键（档案+视图+宫位+问题）"),
@@ -302,7 +336,12 @@ async def api_deduce(
 
     session = CHARTS.get(id)
     if not session:
-        return {"ok": False, "error": "命盘缓存失效，请重新排盘"}
+        # 服务重启会清空内存 CHARTS。登录用户的出生信息以档案为唯一源，
+        # 这里用档案 birth 确定性重建同一张盘（排盘纯计算、无随机），
+        # 保证重启后仍能继续追问，不再让用户看到「命盘缓存失效」空白卡。
+        session = _rebuild_session_from_profile(id, pid)
+        if not session:
+            return {"ok": False, "error": "命盘缓存失效，请重新排盘"}
 
     target_horo, target_label = None, ""
     if year and month_q:

@@ -2334,6 +2334,13 @@
     fetch(url)
       .then(function (resp) {
         if (!resp.ok) throw new Error("HTTP " + resp.status);
+        // 错误路径后端返回 JSON（非 SSE）：直接在卡内显示明确原因，不留空白卡
+        var ct = resp.headers.get("content-type") || "";
+        if (ct.indexOf("event-stream") < 0) {
+          return resp.json().then(function (o) {
+            throw new Error((o && o.error) || "解读失败，请稍后重试");
+          });
+        }
         var reader = resp.body.getReader(), decoder = new TextDecoder();
         function pump() {
           return reader.read().then(function (res) {
