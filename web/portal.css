@@ -312,7 +312,8 @@ details.p-disclose .inner { padding-bottom: 12px; }
    只隐藏 AI 按钮，门禁卡仍插在表单之后。 */
 .stage-locked .hl-ai-card:not(.hl-pair-ai-card) { display: none !important; }
 /* 老黄历的两个子功能切换：与全局 .p-seg 同款，居中置于日历之上 */
-.hl-subfn { width: max-content; margin: 0 auto 20px; }
+/* 子功能切换放在日历与历注之后、AI 解答卡之前 */
+.hl-subfn { width: max-content; margin: 22px auto 20px; }
 .hl-subfn button { min-width: 132px; }
 
 /* ---------- AI 解读 ---------- */
@@ -382,16 +383,19 @@ details.p-disclose .inner { padding-bottom: 12px; }
 /* ---------- 个人中心 ---------- */
 .p-profile-head { display:flex; align-items:center; gap:16px; }
 .p-profile-avatar { width:56px;height:56px;border-radius:50%;background:linear-gradient(145deg,#374151,#111827);color:#fff;display:grid;place-items:center;font-family:var(--serif);font-size:26px; }
-.p-stat-row { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; margin-top:14px; }
-.p-stat { flex:1; min-width:100px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:14px; text-align:center; }
-.p-stat .n { font-family:var(--serif); font-size:24px; color:var(--ink); }
-.p-stat .l { font-size:11px; color:var(--ink-3); margin-top:4px; }
+/* 统计卡：与历史区同宽的一行紧凑 chip，11 项自然换行，不再出现 6+5 的大空格 */
+.pf-stat-h { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:22px 0 0; }
+.pf-stat-h .pf-hint { font-size:11px; }
+.p-stat-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.p-stat { flex:0 0 auto; min-width:0; display:inline-flex; align-items:baseline; gap:7px;
+  background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:8px 12px; text-align:left; }
+.p-stat .n { font-family:var(--serif); font-size:16px; line-height:1; color:var(--ink); }
+.p-stat .l { font-size:11px; line-height:1; color:var(--ink-3); }
 /* 功能卡片可点击：查看该功能历史对话 */
 .p-stat-btn { cursor:pointer; font:inherit; transition:border-color .15s, background .15s, transform .15s; }
 .p-stat-btn:hover { border-color:var(--line-strong); background:var(--bg); transform:translateY(-1px); }
 .p-stat-btn.on { border-color:var(--ink); background:var(--bg); box-shadow:0 0 0 1px var(--ink) inset; }
 .p-stat-btn.on .l { color:var(--ink); }
-.pf-tip { margin:10px 0 0; }
 .pf-hist-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; }
 .pf-clear { font-size:12px; color:var(--ink-3); background:none; border:1px solid var(--line); border-radius:6px; cursor:pointer; }
 .pf-clear:hover { color:var(--ink); border-color:var(--line-strong); }
@@ -1117,7 +1121,7 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .hl-ai-card { max-width: var(--content-w); margin: 20px auto 0; }
 /* 黄历页统一 760 宽：AI 解读卡与历注、提问卡同宽 */
 #hl-result .p-ai { max-width: var(--content-w); }
-@media (max-width: 520px) { .p-stat-row { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 520px) { .p-stat-row { gap:6px; } .p-stat { padding:7px 10px; } }
 
 /* ================= 紫微：盘区（无卡片嵌套）+ 三视图切换 ================= */
 /* 与八字一致：视图切换靠左，档案来源提示靠右 */
@@ -1585,11 +1589,6 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
   border-left: 2px solid var(--cinnabar); background: var(--panel-2); }
 .mrg-rel b { flex: 0 0 150px; color: var(--ink); }
 .mrg-rel span { color: var(--ink-2); }
-.mrg-fact-btn { display: block; margin: 16px auto 0; font: inherit; font-size: 11.5px; color: var(--ink-3);
-  border: 1px solid var(--line-strong); background: transparent; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
-.mrg-fact { margin: 12px 0 0; padding: 12px; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word;
-  font: 11.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); background: var(--panel-2);
-  border: 1px solid var(--line); border-radius: 8px; }
 @media (max-width: 760px) {
   .mrg-two, .mrg-pair { grid-template-columns: 1fr; }
   .mrg-rel { flex-direction: column; gap: 2px; }
@@ -1637,6 +1636,14 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
   font-size: 12px; color: var(--ink-2); }
 .qm-focus b { color: var(--cinnabar); font-weight: 600; }
 .tf-req { font-size: 10px; color: var(--cinnabar); font-weight: 400; letter-spacing: 0; margin-left: 6px; }
+/* 奇门表单：年命 / 用神 / 起局时间均为可选开关；说明文字用轻量问号标记 */
+.qm-help { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px;
+  border: 1px solid var(--line-strong); border-radius: 50%; font-size: 10px; font-style: normal;
+  color: var(--ink-3); cursor: help; vertical-align: middle; }
+.qm-toggle { margin-bottom: 8px; }
+.qm-toggle + div { margin-top: 4px; }
+.qm-method-note, .qm-opt-note { font-size: 11.5px; color: var(--ink-3); margin: 8px 0 0 !important; }
+.qm-opt-note { margin-top: 6px !important; }
 .qm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .qm-cell { min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
 .qm-cell.kong { border-style: dashed; }

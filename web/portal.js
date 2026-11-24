@@ -1924,10 +1924,10 @@
     // 旧链接 #/huangli_pair 直达双人择日子功能：切回来时也能定位
     hlApplyMode = function (v) { setMode(v); };
     stageEl().innerHTML =
-      toolHero("老黄历", "以干支、节气与日值辨一日之宜忌。上方日历与历注供两个子功能共用；下方切换「个人今日运势」或「双人择日」，就在同一历注上继续提问。") +
-      '<div class="p-seg hl-subfn" id="hl-tabs"><button class="on" data-v="personal">个人今日运势</button><button data-v="pair">双人择日</button></div>' +
+      toolHero("老黄历", "以干支、节气与日值辨一日之宜忌。上方日历与历注供两个子功能共用；看完历注再选择「个人今日运势」或「双人择日」，就在同一历注上继续提问。") +
       '<div class="tool-card hl-cal" id="hl-cal"><p class="p-note" style="text-align:center">日历加载中…</p></div>' +
       '<div id="hl-day"><p class="p-note" style="text-align:center;margin:18px 0">当日历注加载中…</p></div>' +
+      '<div class="p-seg hl-subfn" id="hl-tabs"><button class="on" data-v="personal">个人今日运势</button><button data-v="pair">双人择日</button></div>' +
       '<div class="tool-card hl-ai-card" id="hl-ai-card"></div>' +
       '<div id="hl-result"></div>' +
       aboutDetails("关于黄历与双人择日", [
@@ -2189,15 +2189,15 @@
     return QBOX_SEL[S.feature] || "#bz-q";
   }
   /* 在本会话已解读的问题里查找「问题文本 q + 确定性结果身份 rk」：先查归档轮 .round-item，再查当前轮 .p-ai。
-     rk 为空（模板问题点击定位）时跨所有轮匹配；rk 非空时只匹配同一结果身份的轮。
-     塔罗三张牌/凯尔特十字、梅花不同卦、黄历不同日期——同问题不同 rk 属于不同轮，不算重复。
+     rk 为空（模板问题点击、当前尚未起局）时跨所有轮匹配；rk 非空时【严格】只匹配同一结果身份的轮。
+     塔罗三张牌/凯尔特十字、梅花不同卦、奇门不同局、黄历不同日期——同问题不同 rk 属于不同轮，不算重复。
      返回 {node, isArchive} 或 null。供模板问题点击与重复解读拦截共用。 */
   function findAnswered(st, q, rk) {
     if (!st || !q) return null;
     function sameRk(node) {
       if (!rk) return true;                          // 无 rk：模板定位，跨所有轮
       var nrk = node.dataset ? (node.dataset.rk || "") : "";
-      return !nrk || nrk === rk;                     // 老归档轮无 rk 时按文本兜底
+      return nrk === rk;                             // 严格按结果身份，不能只按问题文本
     }
     var items = st.querySelectorAll(".round-archive .p-ai-archived");
     for (var i = 0; i < items.length; i++) {
@@ -2223,14 +2223,28 @@
     target.scrollIntoView({ behavior: "smooth", block: "center" });
     toast(msg || "已定位到这次解读，点卡头可展开回看");
   }
-  /* 模板/快捷问题点击：先填入输入框；若本会话中该问题已解读过（当前轮或归档轮），
-     则定位回看而不重复发起解读。新问题只填框等待手动点「AI 解读」。 */
+  /* 当前轮的确定性结果身份：结果容器（或当前解读卡）的 data-rk。
+     重新起卦/抽牌/排盘后容器 rk 已更新，快捷问题也必须按新的 rk 判断，
+     否则「同一问题 + 新卦」会被误认成旧轮、只定位回旧解读。 */
+  function currentRoundRk() {
+    var st = stageEl();
+    var sel = ROOT_SEL[S.feature];
+    var c = sel && st.querySelector(sel);
+    var rk = c && c.dataset ? (c.dataset.rk || "") : "";
+    if (!rk) {
+      var ai = st.querySelector(".p-ai:not(.p-ai-archived):not(.ai-follow)[data-rk]");
+      rk = ai ? (ai.dataset.rk || "") : "";
+    }
+    return rk;
+  }
+  /* 模板/快捷问题点击：先填入输入框；只有「问题文本 + 当前结果身份」都相同才算已解读，
+     才定位回看；重新起卦/抽牌/换宫位后同问题视为新问题，只填框等待手动解读。 */
   function pickQuestion(question, inputSel) {
     var q = (question || "").trim();
     var inp = $(inputSel || qboxForDefault());
     if (inp) { inp.value = q; inp.focus(); }
     if (!q) return;
-    var hit = findAnswered(stageEl(), q);
+    var hit = findAnswered(stageEl(), q, currentRoundRk());
     if (hit) revealAnswered(hit);
   }
   function qboxForDefault() { return QBOX_SEL[S.feature] || "#bz-q"; }
@@ -2520,8 +2534,9 @@
         (pfState.editAccount ? pfAccountForm() : '<p class="p-note pf-hint">可修改用户名与登录密码，不影响你的历史对话。</p>') +
       '</div>' +
       pfMemoryHTML() +
+      '<div class="pf-stat-h"><h3 style="font-family:var(--serif);font-size:15px;margin:0">历史统计</h3>' +
+        '<span class="pf-hint">点击卡片查看该功能的历史对话</span></div>' +
       '<div class="p-stat-row">' + cards + '</div>' +
-      '<p class="p-note pf-hint pf-tip">点击卡片查看该功能的历史对话</p>' +
       '<div class="pf-hist-zone"><div class="pf-hist-head"><h3 style="font-family:var(--serif);font-size:16px;margin:0">' +
         (cur ? esc(cur[1]) + ' · 历史对话' : '历史提问') + '</h3>' +
         '<div class="pf-hist-tools">' +
@@ -3685,15 +3700,29 @@
     $$(".p-suggest button", stageEl()).forEach(function (b) {
       b.onclick = function () { pickQuestion(b.dataset.q, "#" + pre + "-q"); };
     });
-    function pairQS() { return pairFormParams(pfxA, pfxB, "#" + pre + "-err"); }
-    var lastPair = "";
-    $("#" + pre + "-calc").onclick = function () {
-      var qs = pairQS();
-      if (!qs) return;
+    function pairQS(errSel) { return pairFormParams(pfxA, pfxB, errSel || null); }
+    var lastPair = "";                       // 已生成双人盘的参数串；信息不变则盘面一次生成
+    var calcBtn = $("#" + pre + "-calc");
+    function calcLabel() {
+      var now = pairQS();
+      calcBtn.textContent = !lastPair ? "生成双人" + (isBazi ? "四柱" : "命盘")
+        : (now === lastPair ? "AI " + (isBazi ? "合婚解读" : "合婚分析") + "（沿用本次双人盘）"
+          : "重新生成双人" + (isBazi ? "四柱" : "命盘"));
+    }
+    $("#" + pre + "-form").addEventListener("input", calcLabel);
+    $("#" + pre + "-form").addEventListener("change", calcLabel);
+    calcLabel();
+
+    function ask(q, qs) {
+      var root = $("#" + pre + "-result");
+      if (!root.dataset.rk) { toast("请先生成双人" + (isBazi ? "四柱" : "命盘")); return; }
+      streamAI(feat, qs + "&q=" + encodeURIComponent(q) + authParam(), q, root, root.dataset.rk);
+    }
+    function generate(qs, autoQ) {
       $("#" + pre + "-err").textContent = "";
-      $("#" + pre + "-calc").disabled = true;
+      calcBtn.disabled = true;
       fetch("/api/" + feat + "/calc?" + qs).then(function (r) { return r.json(); }).then(function (d) {
-        $("#" + pre + "-calc").disabled = false;
+        calcBtn.disabled = false;
         if (!d.ok) { $("#" + pre + "-err").textContent = d.error || "排盘失败"; return; }
         lastPair = qs;
         var root = $("#" + pre + "-result");
@@ -3704,10 +3733,26 @@
           var q = $("#" + pre + "-q").value.trim();
           if (!q) { toast("请先写下你想问的问题"); return; }
           if (requireLogin()) return;
-          streamAI(feat, qs + "&q=" + encodeURIComponent(q) + authParam(), q, root, root.dataset.rk);
+          ask(q, lastPair);
         };
+        calcLabel();
+        if (autoQ && S.profile && !requireLogin()) ask(autoQ, lastPair);
         root.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }).catch(function () { $("#" + pre + "-calc").disabled = false; });
+      }).catch(function () { calcBtn.disabled = false; });
+    }
+    calcBtn.onclick = function () {
+      var qs = pairQS("#" + pre + "-err");
+      if (!qs) return;
+      var root = $("#" + pre + "-result");
+      // 出生信息未变：盘面一次生成，新问题只重新定义问题并走 AI，绝不重排双人盘。
+      if (lastPair && qs === lastPair && root.dataset.rk) {
+        var q = $("#" + pre + "-q").value.trim();
+        if (!q) { toast("请先写下你想问的问题"); $("#" + pre + "-q").focus(); return; }
+        if (requireLogin()) return;
+        ask(q, lastPair);
+        return;
+      }
+      generate(qs, $("#" + pre + "-q").value.trim());
     };
     applyGate(feat);
   }
@@ -3751,13 +3796,11 @@
         }).join("") + '</div>' : '<p class="p-note">两盘四柱之间未见显著合冲刑害。</p>')
       : '<div class="mrg-cross-h">四化交叉与关系宫位</div><div class="mrg-rels">' +
         Object.keys(cross).filter(function (k) { return cross[k] && typeof cross[k] === "object"; }).slice(0, 6).map(function (k) {
-          return '<div class="mrg-rel"><b>' + esc(k) + '</b><span>已由引擎按双方落宫建立对照，详见盘面事实</span></div>';
+          return '<div class="mrg-rel"><b>' + esc(k) + '</b><span>已由引擎按双方落宫建立对照</span></div>';
         }).join("") + '</div>';
     return '<div class="p-result">' + resultTitle(titleForPair(isBazi)) +
       '<div class="p-card"><div class="mrg-pair">' + personCard(a, "甲方") + personCard(b, "乙方") + '</div>' +
         crossHtml +
-        '<button class="mrg-fact-btn" type="button">展开可核对的盘面事实</button>' +
-        '<pre class="mrg-fact hidden">' + esc(d.fact || "") + '</pre>' +
       '</div></div>' +
       '<div class="bz-ask"><div class="bz-ask-h">就这段关系提问<span>解读基于以上双人盘面，不改变盘面本身</span></div>' +
         '<input class="ti" id="' + pre + '-q2" style="display:none" />' +
@@ -3844,7 +3887,8 @@
           var root = $("#ly-result");
           archiveRound(root, question, root.dataset.rk);
           root.innerHTML = renderLiuyaoResult(d);
-          root.dataset.rk = "liuyao|" + d.deck;
+          // 身份 = 起卦时刻 + 六爻 deck；同一爻象不同月建日辰也属不同轮
+          root.dataset.rk = "liuyao|" + (d.when || "") + "|" + d.deck;
           var lock = "deck=" + encodeURIComponent(d.deck) + "&when=" + encodeURIComponent(d.when || "");
           $("#ly-ask").onclick = function () {
             var q = $("#ly-q").value.trim();
@@ -3906,7 +3950,7 @@
   /* ================= 奇门遁甲 ================= */
   function renderQimen() {
     stageEl().innerHTML =
-      toolHero("奇门遁甲", "时家奇门 · 转盘排宫 · 拆补定局：以起局时刻排定九宫、八门、九星、八神与三奇六仪；问题只决定阅读焦点，不改变局数星门。") +
+      toolHero("奇门遁甲", "时家奇门 · 转盘排宫：可选拆补法或置闰法定局，以起局时刻排定九宫、八门、九星、八神与三奇六仪；问题只决定阅读焦点，不改变局数星门。") +
       '<div class="tool-card" id="qm-form-card"><div class="tool-form" id="qm-form">' +
         '<div class="tf-group"><div class="tf-gt">提出一个具体的问题</div>' +
           '<p class="p-note" style="margin:0 0 10px">写明事情进行到哪一步、有哪些选项、最担心什么；聚焦一件事更容易得到有用的解读。</p>' +
@@ -3914,72 +3958,102 @@
           '<div class="p-suggest"><button data-q="这次合作最大的推进阻力在哪里？">合作阻力</button>' +
           '<button data-q="当前阶段该如何推进这段关系？">关系推进</button>' +
           '<button data-q="近期出行需要注意什么？">出行决策</button></div></div>' +
-        '<div class="tf-group"><div class="tf-gt">排盘方式</div>' +
-          '<p class="p-note" style="margin:0">时家转盘 · 拆补定局。仅提供已实现的拆补法，确保局数与星门可逐宫复算。</p></div>' +
-        '<div class="tf-group"><div class="tf-gt">求测人年命 <span class="tf-req">必填</span></div>' +
-          '<p class="p-note" style="margin:0 0 8px">按出生年份取年命地支，用来标注求测人自身的参照宫；不参与起局定盘。</p>' +
-          '<input class="ti" id="qm-na" type="number" min="1900" max="2100" placeholder="如：1990" value="" />' +
-          '<div class="p-note" id="qm-na-hint" style="margin:6px 0 0"></div></div>' +
-        '<div class="tf-group"><div class="tf-gt">指定用神 <span class="tf-req">必填</span></div>' +
-          '<p class="p-note" style="margin:0 0 8px">按所问之事选定用神，AI 将以此为解读主线；不参与起局定盘。</p>' +
-          '<select class="ti" id="qm-ys"><option value="">请选择用神</option>' +
-          '<option value="开门">事业 / 求职（开门）</option>' +
-          '<option value="生门">财运 / 投资（生门）</option>' +
-          '<option value="休门">感情 / 婚姻（休门）</option>' +
-          '<option value="杜门">学业 / 文书（杜门）</option>' +
-          '<option value="景门">信息 / 消息（景门）</option>' +
-          '<option value="死门">健康 / 疾病（死门）</option>' +
-          '<option value="惊门">官非 / 诉讼（惊门）</option>' +
-          '<option value="伤门">竞争 / 损伤（伤门）</option></select></div>' +
-        '<div class="tf-group"><div class="tf-gt">起局时间 <span class="tf-req">必填</span></div>' + (function () {
-          var nw = new Date();
-          var h = dateTimeHTML("qmt", { dateLabel: "起局日期", timeLabel: "起局时刻" });
-          setTimeout(function () { dateTimeBind("qmt", { year: nw.getFullYear(), month: nw.getMonth() + 1,
-            day: nw.getDate(), hour: nw.getHours(), minute: nw.getMinutes() }); }, 0);
-          return h;
-        })() + '</div>' +
+        '<div class="tf-group"><div class="tf-gt">排盘方式 <i class="qm-help" title="拆补法以节气为君，交节即换；置闰法以符头为纲，按正授/超神/接气定局，在芒种、大雪处置闰。两种口径局数可能不同，解读会标明本局所用口径。">?</i></div>' +
+          '<div class="p-seg" id="qm-method"><button class="on" data-v="chaibu">拆补法</button><button data-v="zhirun">置闰法</button></div>' +
+          '<p class="p-note qm-method-note" id="qm-method-note">拆补法：交节即换节气，三元由最近符头判定；不置闰，局数可逐宫复算。</p></div>' +
+        '<div class="tf-group"><label class="p-switch qm-toggle"><input type="checkbox" id="qm-na-on" /><span>以年命代表求测人 <i class="qm-help" title="可选。按出生年份取年命地支，标注求测人自身的参照宫；不参与起局定盘。">?</i></span></label>' +
+          '<div id="qm-na-fields" style="display:none"><select class="ti" id="qm-na">' +
+            (function () { var out = '', y = new Date().getFullYear(); for (var i = 0; i <= 70; i++) out += '<option value="' + (y - i) + '">' + (y - i) + ' 年生</option>'; return out; })() +
+          '</select><p class="p-note qm-opt-note">选填。不填则以日干代表求测人。</p></div></div>' +
+        '<div class="tf-group"><label class="p-switch qm-toggle"><input type="checkbox" id="qm-ys-on" /><span>指定用神 <i class="qm-help" title="可选。选定后 AI 以此为解读主线；不参与起局定盘。未指定则按日干/时干取用。">?</i></span></label>' +
+          '<div id="qm-ys-fields" style="display:none"><select class="ti" id="qm-ys">' +
+            '<optgroup label="所测之人">' +
+              '<option value="父母长辈（本局年干）">父母长辈（本局年干）</option>' +
+              '<option value="兄弟同辈（本局月干）">兄弟同辈（本局月干）</option>' +
+              '<option value="子女晚辈（本局时干）">子女晚辈（本局时干）</option>' +
+              '<option value="丈夫（庚）">丈夫（庚）</option><option value="妻子（乙）">妻子（乙）</option>' +
+            '</optgroup><optgroup label="专项">' +
+              '<option value="事业（开门）">事业（开门）</option><option value="求财（生门、戊）">求财（生门、戊）</option>' +
+              '<option value="感情婚姻（六合、乙、庚）">感情婚姻（六合、乙、庚）</option>' +
+              '<option value="健康疾病（天芮、天心）">健康疾病（天芮、天心）</option>' +
+              '<option value="考试文书（景门、丁）">考试文书（景门、丁）</option>' +
+              '<option value="寻物失物（本局时干、六合、玄武）">寻物失物（本局时干、六合、玄武）</option>' +
+            '</optgroup><optgroup label="指定天干">' +
+              '甲乙丙丁戊己庚辛壬癸'.split("").map(function (g) { return '<option value="' + g + '">' + g + '</option>'; }).join("") +
+            '</optgroup></select><p class="p-note qm-opt-note">选填。用神只决定阅读焦点，不改变局数星门。</p></div></div>' +
+        '<div class="tf-group"><label class="p-switch qm-toggle"><input type="checkbox" id="qm-when-on" /><span>指定起局时间 <i class="qm-help" title="可选。不指定则以当下时刻起局；复盘已发生的事可指定当时时刻，并在问题中说明。">?</i></span></label>' +
+          '<div id="qm-when-fields" style="display:none">' +
+            dateTimeHTML("qmt", { dateLabel: "起局日期", timeLabel: "起局时刻" }) +
+          '</div><p class="p-note qm-opt-note">选填。带明确问题来问通常取起念当下；复盘往事才指定当时时刻。</p></div>' +
         '<button class="tool-submit" id="qm-start">立即起局</button><div class="p-err" id="qm-err"></div>' +
       '</div></div>' +
       '<div id="qm-result"></div>' +
       aboutDetails("关于奇门遁甲", [
+        '<b>两种定局口径</b>：拆补法以节气为君，交节即换、不置闰；置闰法以符头为纲，按正授/超神/接气定局，在芒种、大雪处置闰。同刻两法局数可能不同，盘面会标明本局所用口径。',
         '<b>先定盘</b>：四柱 → 节气与阴阳遁 → 符头三元定局 → 三奇六仪地盘 → 值符值使 → 天盘九星 → 八门 → 八神。',
         '<b>九宫承载多层</b>：每宫同时看地盘干、天盘干、星、门、神，再叠加旬空、驿马、门迫、击刑、入墓等修正。',
-        '<b>读盘顺序</b>：先定日干（求测人）与时干（所问之事）落宫，再看宫与宫的生克，最后才讨论应期与行动。'
-      ], "奇门为传统时空象征体系，盘面可逐宫复算；解读不替代医疗、法律、财务或人身安全的专业判断。");
+        '<b>读盘顺序</b>：先定日干（求测人）与时干（所问之事）落宫，可选用年命或指定用神聚焦；再看宫与宫的生克，最后才讨论应期与行动。'
+      ], "奇门为传统时空象征体系，盘面可逐宫复算；不同排盘流派不可直接比高低，解读不替代医疗、法律、财务或人身安全的专业判断。");
     $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#qm-q"); }; });
-    // 年命输入实时提示生肖（与后端干支口径一致：year 生 % 12）
-    (function () {
-      var na = $("#qm-na"), hint = $("#qm-na-hint");
-      var sx = ["鼠","牛","虎","兔","龙","蛇","马","羊","猴","鸡","狗","猪"];
-      function upd() {
-        var y = +na.value;
-        hint.textContent = (y >= 1900 && y <= 2100) ? ("年命：" + y + " 年 · 属" + sx[(y - 4) % 12]) : "";
+    // 三个开关均为可选：关闭时不向后端传对应参数，由引擎用当下时刻 / 日干时干默认取用。
+    function toggleOnce(id, fieldId, bind) {
+      var t = $("#" + id), f = $("#" + fieldId);
+      if (!t || !f) return;
+      t.onchange = function () {
+        f.style.display = t.checked ? "" : "none";
+        if (t.checked && bind) bind();
+      };
+    }
+    var nw = new Date();
+    toggleOnce("qm-na-on", "qm-na-fields");
+    toggleOnce("qm-ys-on", "qm-ys-fields");
+    toggleOnce("qm-when-on", "qm-when-fields", function () {
+      if ($("#qmt-date") && !$("#qmt-date").value) {
+        dateTimeBind("qmt", { year: nw.getFullYear(), month: nw.getMonth() + 1,
+          day: nw.getDate(), hour: nw.getHours(), minute: nw.getMinutes() });
       }
-      if (na && hint) { na.oninput = upd; upd(); }
-    })();
+    });
+    var METHOD_NOTE = {
+      chaibu: "拆补法：交节即换节气，三元由最近符头判定；不置闰，局数可逐宫复算。",
+      zhirun: "置闰法：以符头为纲，按正授/超神/接气定局，芒种与大雪处置闰；与拆补法局数可能不同。"
+    };
+    $$("#qm-method button").forEach(function (b) {
+      b.onclick = function () {
+        segSet($("#qm-method"), b.dataset.v);
+        $("#qm-method-note").textContent = METHOD_NOTE[b.dataset.v] || METHOD_NOTE.chaibu;
+      };
+    });
     $("#qm-start").onclick = function () {
       var question = $("#qm-q").value.trim();
       if (!question) { toast("请先写下所问之事"); $("#qm-q").focus(); return; }
-      var na = +($("#qm-na").value || 0), ys = $("#qm-ys").value;
-      if (!(na >= 1900 && na <= 2100)) { toast("请填写求测人出生年份（1900–2100）"); $("#qm-na").focus(); return; }
-      if (!ys) { toast("请选择用神"); $("#qm-ys").focus(); return; }
       $("#qm-err").textContent = "";
-      var when = dateTimeCollect("qmt").when;
-      var qs = "when=" + encodeURIComponent(when) + "&method=chaibu" +
-        "&year_na=" + na + "&yongshen=" + encodeURIComponent(ys);
+      var method = segVal($("#qm-method")) || "chaibu";
+      var qs = "method=" + method;
+      if ($("#qm-na-on").checked) qs += "&year_na=" + encodeURIComponent($("#qm-na").value);
+      if ($("#qm-ys-on").checked && $("#qm-ys").value) qs += "&yongshen=" + encodeURIComponent($("#qm-ys").value);
+      var when = "";
+      if ($("#qm-when-on").checked) {
+        when = dateTimeCollect("qmt").when;
+        if (!when) { toast("请选择起局时间"); return; }
+        qs += "&when=" + encodeURIComponent(when);
+      }
       fetch("/api/qimen/calc?" + qs + "&question=" + encodeURIComponent(question))
         .then(function (r) { return r.json(); }).then(function (d) {
           if (!d.ok) { $("#qm-err").textContent = d.error || "起局失败"; return; }
           var root = $("#qm-result");
           archiveRound(root, question, root.dataset.rk);
           root.innerHTML = renderQimenResult(d);
-          root.dataset.rk = "qimen|" + when + "|chaibu|" + na + "|" + ys;
+          // 轮次身份 = 起局时刻 + 定局口径 + 实际局数/状态 + 年命/用神；同问题重新起局会成新一轮
+          root.dataset.rk = "qimen|" + d.when + "|" + method + "|" + d.ju_jieqi + d.ju + "|" + d.dingju_state +
+            "|" + ($("#qm-na-on").checked ? $("#qm-na").value : "") +
+            "|" + ($("#qm-ys-on").checked ? $("#qm-ys").value : "");
+          var lock = qs;
           $("#qm-ask").onclick = function () {
             var q = $("#qm-q").value.trim();
             if (!q) { toast("请先写下所问之事"); return; }
             if (q !== question) { toast("问题已更改，请重新起局"); return; }
             if (requireLogin()) return;
-            streamAI("qimen", qs + "&q=" + encodeURIComponent(q) + authParam(), q, root, root.dataset.rk);
+            streamAI("qimen", lock + "&q=" + encodeURIComponent(q) + authParam(), q, root, root.dataset.rk);
           };
           root.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }).catch(function () {});
@@ -4004,7 +4078,8 @@
     return '<div class="p-result">' + resultTitle("奇门遁甲 · 九宫盘") +
       '<div class="p-card"><div class="qm-head">' +
         '<span>四柱 ' + esc([sz.year, sz.month, sz.day, sz.hour].join(" ")) + '</span>' +
-        '<span>' + esc(d.jieqi || "") + ' · ' + esc(d.yinyang || "") + esc(d.ju || "") + '局 · ' + esc(d.yuan || "") + '</span>' +
+        '<span>' + esc(d.jieqi || "") + ' · ' + esc(d.yinyang || "") + esc(d.ju || "") + '局 · ' + esc(d.yuan || "") +
+          (d.method === 'zhirun' ? ' · 置闰法' + (d.dingju_state ? '（' + esc(d.dingju_state) + '）' : '') : ' · 拆补法') + '</span>' +
         '<span>值符 ' + esc(d.zhi_fu || "") + ' · 值使 ' + esc(d.zhi_shi || "") + '</span></div>' +
         (d.focus && (d.focus.year_na || d.focus.yongshen)
           ? '<div class="qm-focus">' +
@@ -4021,16 +4096,7 @@
   }
 
   /* ---------------- 启动 ---------------- */
-  // 盘面事实展开按钮（合婚保留；六爻/奇门已按反馈删除）：按钮后紧跟 pre.mrg-fact。
-  // 用事件委托，结果区每次重渲染后无需重新绑定；文案在「展开/收起」间切换。
-  document.addEventListener("click", function (e) {
-    var btn = e.target.closest && e.target.closest(".mrg-fact-btn");
-    if (!btn) return;
-    var box = btn.nextElementSibling;
-    if (!box || !box.classList || !box.classList.contains("mrg-fact")) return;
-    var hidden = box.classList.toggle("hidden");
-    btn.textContent = btn.textContent.replace(hidden ? "收起" : "展开", hidden ? "展开" : "收起");
-  });
+  // 盘面事实不再对用户展开：所有功能由引擎确定性运算保证正确，结果区只展示可读盘面。
   window.addEventListener("hashchange", function () {
     navigate(parseHash());
   });

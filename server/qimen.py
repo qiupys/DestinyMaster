@@ -1,7 +1,14 @@
-"""时家奇门·转盘(排宫)法·拆补法定局 排盘引擎：确定性计算，AI 解读由 ai.py 负责。
+"""时家奇门·转盘(排宫)法排盘引擎：拆补法 / 置闰法两种定局口径，确定性计算。
 
 算法口径：docs/kb/qimen/qimen-dunjia.md 的 7 步流程（四柱→定局→地盘→值符值使
 →天盘→八门→八神），第 8 步为盘面标注（旬空/驿马/门迫/击刑/入墓）。
+
+定局口径区别（可通过 method=chaibu / zhirun 切换，只影响局数，不改星门旋转规则）：
+- 拆补法（默认）：节气为君，交节即换节气；三元由日柱最近符头判定，不置闰。
+- 置闰法：符头为纲。以甲己符头与节气交接的先后判正授 / 超神 / 接气：
+  符头先于节气为超神，节气先到为接气；超神满 9 日则「超用未来之气」（取下一节气
+  同元局数），若恰在芒种 / 大雪则记为「闰奇」、重复本节气三元以校正历法偏差。
+  问题文本不参与定局，同一时刻 + 同一口径必得同一盘。
 
 定局表来源：《奇门遁甲统宗》卷一「阴阳二遁顺逆起例」，并与通行歌诀交叉核对：
   阳遁：冬至惊蛰一七四，小寒二八五，大寒春分三九六，立春八五二，雨水九六三，
@@ -18,7 +25,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 GAN = "甲乙丙丁戊己庚辛壬癸"
 ZHI = "子丑寅卯辰巳午未申酉戌亥"
@@ -119,6 +126,25 @@ def _futou_yuan(day_gz: str) -> tuple[str, str]:
     return futou, yuan
 
 
+JIEQI_ORDER = ("冬至", "小寒", "大寒", "立春", "雨水", "惊蛰", "春分", "清明",
+               "谷雨", "立夏", "小满", "芒种", "夏至", "小暑", "大暑", "立秋",
+               "处暑", "白露", "秋分", "寒露", "霜降", "立冬", "小雪", "大雪")
+
+
+def _jieqi_boundary(when: datetime) -> tuple[str, datetime, str]:
+    """当前节气名、精确交接时刻、下一节气名（跨年按 JIEQI_ORDER 回环）。"""
+    from lunar_python import Solar
+    lunar = Solar.fromYmdHms(when.year, when.month, when.day,
+                             when.hour, when.minute, when.second).getLunar()
+    jq = lunar.getPrevJieQi()
+    name = JIEQI_ALIAS.get(jq.getName(), jq.getName())
+    s = jq.getSolar()
+    boundary = datetime(s.getYear(), s.getMonth(), s.getDay(),
+                        s.getHour(), s.getMinute(), s.getSecond())
+    nxt = JIEQI_ORDER[(JIEQI_ORDER.index(name) + 1) % 24] if name in JIEQI_ORDER else name
+    return name, boundary, nxt
+
+
 def _dipan(ju: int, yinyang: str) -> dict[int, str]:
     """排地盘：戊己庚辛壬癸丁丙乙，阳遁从局数宫顺飞九宫、阴遁逆飞。"""
     res: dict[int, str] = {}
@@ -160,23 +186,67 @@ def derive(when: datetime | None = None, method: str = "chaibu",
         "（年柱立春交接为界、月柱节令交接为界、日柱23:00晚子换日、时柱五鼠遁）"
     )
 
-    # 2 定局（拆补法）
+    # 2 定局：拆补法以节气为君；置闰法以符头为纲，判正授/超神/接气/闰奇。
     jieqi = _current_jieqi(when)
     if jieqi not in JU_TABLE:
         raise ValueError(f"未能识别当前节气：{jieqi!r}，无法定局")
-    yinyang = "阳遁" if jieqi in YANG_JIEQI else "阴遁"
     futou, yuan = _futou_yuan(sz["day"])
-    ju = JU_TABLE[jieqi][("上元", "中元", "下元").index(yuan)]
-    steps.append(
-        f"步骤2 拆补法定局：当前节气「{jieqi}」→{yinyang}；"
-        f"日柱{sz['day']}最近符头{futou}（符头支{futou[1]}属{yuan}）；"
-        f"查定局表得 {yinyang}{ju}局"
-    )
-    if method == "zhirun":
+    yuan_i = ("上元", "中元", "下元").index(yuan)
+    ju_jieqi = jieqi          # 真正用于查定局表的节气（置闰超神时可转到下一节气）
+    dingju_state = "节气定局"
+    dingju_note = ""
+    if method == "chaibu":
+        ju = JU_TABLE[jieqi][yuan_i]
         steps.append(
-            "注：置闰法未独立实现，此处按拆补法近似（三元由日柱符头直接判定，"
-            "不做超神接气的芒种/大雪置闰）"
+            f"步骤2 拆补法定局：当前节气「{jieqi}」→{('阳遁' if jieqi in YANG_JIEQI else '阴遁')}；"
+            f"日柱{sz['day']}最近符头{futou}（符头支{futou[1]}属{yuan}）；"
+            f"查定局表得 {ju_jieqi}{yuan} {ju}局。节气优先，交节即换，不置闰。"
         )
+    else:
+        jq_now, boundary, jq_next = _jieqi_boundary(when)
+        day_idx = GANZHI60.index(sz["day"])
+        fu_idx = GANZHI60.index(futou)
+        futou_date = when.date() - timedelta(days=(day_idx - fu_idx) % 60)
+        lead = (boundary.date() - futou_date).days   # >0 符头先到（超神）；<0 节气先到（接气）
+        since_jq = (when.date() - boundary.date()).days
+        if lead == 0:
+            dingju_state = "正授"
+        elif lead > 0:
+            dingju_state = "超神"
+        else:
+            dingju_state = "接气"
+        # 超神接气以符头相对节气论；累计偏差用「交节后日数」判定（与开源置闰实现同口径）：
+        # 交节满 9 日仍未完成换元 → 超用未来节气；芒种/大雪处改为重复三元（闰奇）。
+        if since_jq >= 9:
+            if jq_now in ("芒种", "大雪"):
+                dingju_state = "闰奇"
+                dingju_note = (
+                    f"{jq_now}交接已过{since_jq}日，符头{futou}仍未对齐（超神累计），"
+                    f"在{jq_now}处置闰，重复本节气上中下三元校正偏差"
+                )
+            else:
+                ju_jieqi = jq_next
+                dingju_note = (
+                    f"{jq_now}交接已过{since_jq}日，符头{futou}仍未对齐（超神累计≥9日），"
+                    f"超用未来节气「{jq_next}」同元局数"
+                )
+        elif lead < 0:
+            dingju_note = (
+                f"{jq_now}交接已过{-lead}日而符头{futou}未到（接气），"
+                f"仍沿用本节气，待符头到位再换元"
+            )
+        yinyang = "阳遁" if ju_jieqi in YANG_JIEQI else "阴遁"
+        ju = JU_TABLE[ju_jieqi][yuan_i]
+        steps.append(
+            f"步骤2 置闰法定局：当前节气「{jq_now}」交接于{boundary:%Y-%m-%d %H:%M}；"
+            f"日柱{sz['day']}最近符头{futou}在{futou_date:%Y-%m-%d}（属{yuan}），"
+            f"与节气相差{lead}日 → {dingju_state}。"
+            + (dingju_note + "；" if dingju_note else "")
+            + f"据「{ju_jieqi}」查定局表得 {yinyang}{ju}局。"
+        )
+    if ju_jieqi != jieqi:
+        steps.append(f"口径提示：置闰法本局取下一节气「{ju_jieqi}」，与拆补法取「{jieqi}」不同。")
+    yinyang = "阳遁" if ju_jieqi in YANG_JIEQI else "阴遁"
 
     # 3 排地盘
     dipan = _dipan(ju, yinyang)
@@ -300,7 +370,9 @@ def derive(when: datetime | None = None, method: str = "chaibu",
     # 盘面事实文本：AI 唯一依据，风格参照 bazi.py 的 fact
     lines = [
         f"起局：{when.strftime('%Y-%m-%d %H:%M:%S')}　四柱：{sz['year']} {sz['month']} {sz['day']} {sz['hour']}（年 月 日 时）",
-        f"节气：{jieqi}　遁甲：{yinyang}{ju}局　三元：{yuan}　符头：{futou}",
+        f"节气：{jieqi}　定局口径：{'拆补法' if method == 'chaibu' else '置闰法'}"
+        f"（{dingju_state}{'；' + dingju_note if dingju_note else ''}）　"
+        f"取局节气：{ju_jieqi}　遁甲：{yinyang}{ju}局　三元：{yuan}　符头：{futou}",
         f"值符：{zhi_fu}（落{zhi_fu_new}宫）　值使：{zhi_shi}（落{target}宫）　旬首：{xun_shou}{yi}　时辰旬内第{shi_xu}位",
         "九宫盘（宫序1-9）：",
     ]
@@ -343,17 +415,59 @@ def derive(when: datetime | None = None, method: str = "chaibu",
             pass
     if yongshen:
         ys = str(yongshen).strip()
-        # 用神可为八门名，按门找落宫；其余名称（如「财星」）按字面记录供 AI 结合盘面取用
-        yp = next((p for p in palaces if p["door"] == ys), None)
-        focus["yongshen"] = {"name": ys,
+        # 用神为可选项：按「所测之人 / 专项 / 指定天干」把标签映射到实际落宫，
+        # 只作解读焦点标注，绝不反过来改变局数或星门。
+        cands: list[dict] = []
+        basis = "字面"
+        if "年干" in ys:
+            cands = [p for p in palaces if p["digan"] == sz["year"][0] or p["tiangan"] == sz["year"][0]]
+            basis = f"本局年干{sz['year'][0]}"
+        elif "月干" in ys:
+            cands = [p for p in palaces if p["digan"] == sz["month"][0] or p["tiangan"] == sz["month"][0]]
+            basis = f"本局月干{sz['month'][0]}"
+        elif "时干" in ys:
+            cands = [p for p in palaces if p["digan"] == sz["hour"][0] or p["tiangan"] == sz["hour"][0]]
+            basis = f"本局时干{sz['hour'][0]}"
+        elif "丈夫" in ys or "庚" in ys and ys in GAN:
+            cands = [p for p in palaces if p["tiangan"] == "庚"]
+            basis = "天盘庚"
+        elif "妻子" in ys or ys == "乙":
+            cands = [p for p in palaces if p["tiangan"] == "乙"]
+            basis = "天盘乙"
+        elif "事业" in ys:
+            cands = [p for p in palaces if p["door"] == "开门"]
+            basis = "开门"
+        elif "求财" in ys:
+            cands = [p for p in palaces if p["door"] == "生门" or p["tiangan"] == "戊" or p["digan"] == "戊"]
+            basis = "生门/戊"
+        elif "感情" in ys or "婚姻" in ys:
+            cands = [p for p in palaces if p["god"] == "六合" or p["tiangan"] in ("乙", "庚")]
+            basis = "六合/乙庚"
+        elif "健康" in ys or "疾病" in ys:
+            cands = [p for p in palaces if p["star"] in ("天芮", "天心")]
+            basis = "天芮/天心"
+        elif "考试" in ys or "文书" in ys:
+            cands = [p for p in palaces if p["door"] == "景门" or p["tiangan"] == "丁"]
+            basis = "景门/丁"
+        elif "寻物" in ys or "失物" in ys:
+            cands = [p for p in palaces if p["god"] in ("六合", "玄武") or p["digan"] == sz["hour"][0]]
+            basis = "时干/六合/玄武"
+        elif ys in GAN:
+            cands = [p for p in palaces if p["tiangan"] == ys]
+            basis = f"天盘{ys}"
+        else:
+            cands = [p for p in palaces if p["door"] == ys]
+            basis = f"{ys}门"
+        yp = cands[0] if cands else None
+        focus["yongshen"] = {"name": ys, "basis": basis,
                              "gong": (yp or {}).get("gong"),
                              "palace": (yp or {}).get("name", ""),
                              "star": (yp or {}).get("star", ""),
                              "gan": (yp or {}).get("tiangan", "")}
         lines.append(
-            f"指定用神：{ys}"
-            + (f"，落{yp['gong']}宫（{yp['name']}，天盘{yp['tiangan']} 星{yp['star']}）"
-               if yp else "（未对应到具体八门，按事项性质取用，AI 须在盘面中说明取用依据）")
+            f"指定用神：{ys}（取用依据：{basis}）"
+            + (f"，落{yp['gong']}宫（{yp['name']}，天盘{yp['tiangan']} 星{yp['star']} 门{yp['door']}）"
+               if yp else "（盘面中未找到对应落宫，按事项性质取用，AI 须说明取用依据）")
             + "——AI 应以此为解读主线，说明其落宫、生克与修正条件。"
         )
     lines.append(
@@ -367,6 +481,7 @@ def derive(when: datetime | None = None, method: str = "chaibu",
     all_gods = " ".join(god_at.get(g, "") for g in RING)
     rag_query = (
         f"奇门遁甲 {yinyang}{ju}局 {jieqi}{yuan} 符头{futou} "
+        f"{'拆补法' if method == 'chaibu' else '置闰法'} {dingju_state} "
         f"值符{zhi_fu} 值使{zhi_shi} 时柱{sz['hour']} 日柱{sz['day']} "
         f"{all_stars} {all_doors} {all_gods}"
         + (f" 用神{yongshen}" if yongshen else "")
@@ -384,6 +499,9 @@ def derive(when: datetime | None = None, method: str = "chaibu",
         "jieqi": jieqi,
         "yinyang": yinyang,
         "ju": ju,
+        "ju_jieqi": ju_jieqi,
+        "dingju_state": dingju_state,
+        "dingju_note": dingju_note,
         "yuan": yuan,
         "futou": futou,
         "zhi_fu": zhi_fu,
@@ -398,7 +516,8 @@ def derive(when: datetime | None = None, method: str = "chaibu",
             "question": question,
             "year_na": year_na,
             "yongshen": yongshen,
-            "engine": "时家奇门·转盘排宫·拆补法",
+            "engine": "时家奇门·转盘排宫·" + ("拆补法" if method == "chaibu" else "置闰法"),
+            "dingju_state": dingju_state,
             "note": "问题文本仅记录于此，不参与定局与星门位置；未做真太阳时校正",
         },
     }
