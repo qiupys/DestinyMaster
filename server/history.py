@@ -107,14 +107,17 @@ def find_cached_entry(profile_id: int, feature: str, dedupe_key: str) -> tuple[i
 def list_history(profile_id: int, feature: str | None = None,
                  limit: int = 50, offset: int = 0,
                  date: str | None = None) -> list[dict]:
-    """按功能 / 日期列出历史。date 为 YYYY-MM-DD，按 ts 前缀精确匹配某一天。"""
+    """按功能 / 日期列出历史。date 为 YYYY-MM-DD，按 ts 前缀精确匹配某一天。
+    feature 支持逗号分隔的多个功能（老黄历的个人运势与双人择日在界面上合并展示）。"""
     _ensure_table()
     c = profile_store.db()
     where = "profile_id=? AND parent_id IS NULL"
     args: list = [profile_id]
     if feature:
-        where += " AND feature=?"
-        args.append(feature)
+        names = [x.strip() for x in str(feature).split(",") if x.strip()]
+        if names:
+            where += " AND feature IN (" + ",".join("?" for _ in names) + ")"
+            args.extend(names)
     if date:
         where += " AND ts LIKE ?"
         args.append(str(date).strip()[:10] + "%")

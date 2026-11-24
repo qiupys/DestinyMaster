@@ -415,7 +415,7 @@ def derive(when: datetime | None = None, method: str = "chaibu",
             pass
     if yongshen:
         ys = str(yongshen).strip()
-        # 用神为可选项：按「所测之人 / 专项 / 指定天干」把标签映射到实际落宫，
+        # 用神为可选项：按「所测之人 / 专项 / 指定八门 / 指定天干」把标签映射到实际落宫，
         # 只作解读焦点标注，绝不反过来改变局数或星门。
         cands: list[dict] = []
         basis = "字面"

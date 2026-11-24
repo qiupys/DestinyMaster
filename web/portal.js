@@ -2110,7 +2110,7 @@
   var ROOT_SEL = { bazi:"#bz-result", meihua:"#mh-result", tarot:"#tr-result", huangli:"#hl-result", huangli_pair:"#hl-result", ziwei:"#zw-result", astrology:"#as-result",
     liuyao:"#ly-result", qimen:"#qm-result", bazi_marriage:"#bzm-result", ziwei_marriage:"#zm-result" };
   var QBOX_SEL = { bazi:"#bz-q", meihua:"#mh-q", tarot:"#tr-q", huangli:"#hl-q", huangli_pair:"#hl-q", ziwei:"#zw-q", astrology:"#as-q",
-    liuyao:"#ly-q", qimen:"#qm-q", bazi_marriage:"#bzm-q", ziwei_marriage:"#zm-q" };
+    liuyao:"#ly-q", qimen:"#qm-q", bazi_marriage:"#bzm-q2", ziwei_marriage:"#zm-q2" };
 
   function archiveHost(container) {
     var st = container.closest(".p-wrap") || stageEl();
@@ -2438,9 +2438,17 @@
   }
 
   /* ================= 个人中心 ================= */
-  var PF_FEATS = [["bazi", "八字"], ["ziwei", "紫微"], ["bazi_marriage", "八字合婚"], ["ziwei_marriage", "紫微合婚"],
-    ["meihua", "梅花"], ["liuyao", "六爻"], ["qimen", "奇门"], ["astrology", "占星"], ["tarot", "塔罗"],
-    ["huangli", "黄历"], ["huangli_pair", "双人择日"]];
+  /* 个人中心统计与首页同分类：双人择日已并入老黄历，不再单列卡片；
+     后端仍按 huangli_pair 存历史，筛选「黄历」时一并取回两种记录。 */
+  var PF_GROUPS = [
+    { tag: "八字命理", feats: [["bazi", "八字"], ["bazi_marriage", "八字合婚"]] },
+    { tag: "紫微斗数", feats: [["ziwei", "紫微"], ["ziwei_marriage", "紫微合婚"]] },
+    { tag: "周易占卜", feats: [["meihua", "梅花"], ["liuyao", "六爻"], ["qimen", "奇门"]] },
+    { tag: "西方占卜", feats: [["astrology", "占星"], ["tarot", "塔罗"]] },
+    { tag: "其他功能", feats: [["huangli", "黄历"]] }
+  ];
+  var PF_FEATS = [].concat.apply([], PF_GROUPS.map(function (g) { return g.feats; }));
+  function pfFeaturesOf(key) { return key === "huangli" ? "huangli,huangli_pair" : key; }
   var pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false,
     birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false,
     batchMode: false, selected: {} };
@@ -2465,7 +2473,7 @@
     var ap = pfAuth();
     var apP = "id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token);
     var listUrl = "/api/history/list?" + ap + "&limit=60" +
-      (pfState.filter ? "&feature=" + pfState.filter : "") +
+      (pfState.filter ? "&feature=" + encodeURIComponent(pfFeaturesOf(pfState.filter)) : "") +
       (pfState.date ? "&date=" + encodeURIComponent(pfState.date) : "");
     Promise.all([
       fetch("/api/history/stats?" + ap).then(function (r) { return r.json(); }),
@@ -2488,11 +2496,18 @@
     pfState.birth = birth;
     var bSeg = birthSegment(birth);
     var cur = PF_FEATS.filter(function (f) { return f[0] === pfState.filter; })[0];
-    // 功能卡片：可点击 → 只看该功能的历史对话
-    var cards = PF_FEATS.map(function (f) {
-      var on = pfState.filter === f[0];
-      return '<button type="button" class="p-stat p-stat-btn' + (on ? ' on' : '') + '" data-f="' + f[0] + '">' +
-        '<div class="n">' + (by[f[0]] || 0) + '</div><div class="l">' + f[1] + '</div></button>';
+    // 功能卡片：按首页分类分组，可点击 → 只看该功能的历史对话；黄历含双人择日子功能
+    function countOf(key) {
+      return key === "huangli" ? (by.huangli || 0) + (by.huangli_pair || 0) : (by[key] || 0);
+    }
+    var cards = PF_GROUPS.map(function (g) {
+      var chips = g.feats.map(function (f) {
+        var on = pfState.filter === f[0];
+        return '<button type="button" class="p-stat p-stat-btn' + (on ? ' on' : '') + '" data-f="' + f[0] + '">' +
+          '<div class="n">' + countOf(f[0]) + '</div><div class="l">' + f[1] + '</div></button>';
+      }).join("");
+      return '<div class="pf-stat-group"><div class="pf-stat-gt">' + esc(g.tag) + '</div>' +
+        '<div class="p-stat-row">' + chips + '</div></div>';
     }).join("");
     // 批量删除模式：全选 / 单选由 pfState.batchMode + pfState.selected 驱动
     var batch = !!pfState.batchMode;
@@ -2536,7 +2551,7 @@
       pfMemoryHTML() +
       '<div class="pf-stat-h"><h3 style="font-family:var(--serif);font-size:15px;margin:0">历史统计</h3>' +
         '<span class="pf-hint">点击卡片查看该功能的历史对话</span></div>' +
-      '<div class="p-stat-row">' + cards + '</div>' +
+      '<div class="pf-stat-groups">' + cards + '</div>' +
       '<div class="pf-hist-zone"><div class="pf-hist-head"><h3 style="font-family:var(--serif);font-size:16px;margin:0">' +
         (cur ? esc(cur[1]) + ' · 历史对话' : '历史提问') + '</h3>' +
         '<div class="pf-hist-tools">' +
@@ -3675,14 +3690,8 @@
         ? "分别排定两人四柱，再从日柱夫妻宫、十神交叉与大运流年读出相处中的省力与费力之处。本功能不给匹配分数。"
         : "对照两张完整紫微命盘，从夫妻宫、命宫、福德宫与双向四化交叉看清关系结构。本功能不给匹配分数。") +
       '<div class="tool-card" id="' + pre + '-form-card"><div class="tool-form" id="' + pre + '-form">' +
-        pairFormHTML(pfxA, pfxB, "男女双方分别填写（或点「导入本人信息」带入档案），性别可按需调整；出生地用于真太阳时校正。") +
-        '<div class="tf-group" style="margin-top:14px"><div class="tf-gt">你最想看清什么</div>' +
-          '<input class="ti" id="' + pre + '-q" placeholder="例如：我们相处中反复出现的摩擦来自哪里？" />' +
-          '<div class="p-suggest"><button data-q="我们相处中反复出现的摩擦来自哪里？">相处摩擦</button>' +
-          '<button data-q="双方在感情中的需求与表达方式如何互补？">需求互补</button>' +
-          '<button data-q="未来两年关系推进需要注意哪些阶段？">阶段节奏</button></div>' +
-        '</div>' +
-        '<button class="tool-submit" id="' + pre + '-calc">生成双人' + (isBazi ? '四柱' : '命盘') + '</button>' +
+        pairFormHTML(pfxA, pfxB, "男女双方分别填写（或点「导入本人信息」带入档案），性别可按需调整；出生地用于真太阳时校正。盘面生成后，在下方提问卡里另起问题。") +
+        '<button class="tool-submit" id="' + pre + '-calc" style="margin-top:14px">生成双人' + (isBazi ? '四柱' : '命盘') + '</button>' +
         '<div class="p-err" id="' + pre + '-err"></div>' +
       '</div></div>' +
       '<div id="' + pre + '-result"></div>' +
@@ -3697,46 +3706,54 @@
       ], "合婚是关系观察框架，不证明谁是「正缘」，也不能替代真实相处、共同选择与专业建议。");
 
     pairFormBind(pfxA, pfxB);
-    $$(".p-suggest button", stageEl()).forEach(function (b) {
-      b.onclick = function () { pickQuestion(b.dataset.q, "#" + pre + "-q"); };
-    });
     function pairQS(errSel) { return pairFormParams(pfxA, pfxB, errSel || null); }
-    var lastPair = "";                       // 已生成双人盘的参数串；信息不变则盘面一次生成
+    var lastPair = "";                       // 已生成双人盘的参数串；出生信息不变则盘面一次生成
     var calcBtn = $("#" + pre + "-calc");
     function calcLabel() {
       var now = pairQS();
       calcBtn.textContent = !lastPair ? "生成双人" + (isBazi ? "四柱" : "命盘")
-        : (now === lastPair ? "AI " + (isBazi ? "合婚解读" : "合婚分析") + "（沿用本次双人盘）"
-          : "重新生成双人" + (isBazi ? "四柱" : "命盘"));
+        : (now === lastPair ? "沿用本次双人盘（在下方提问）" : "重新生成双人" + (isBazi ? "四柱" : "命盘"));
     }
     $("#" + pre + "-form").addEventListener("input", calcLabel);
     $("#" + pre + "-form").addEventListener("change", calcLabel);
     calcLabel();
 
     function ask(q, qs) {
-      var root = $("#" + pre + "-result");
-      if (!root.dataset.rk) { toast("请先生成双人" + (isBazi ? "四柱" : "命盘")); return; }
-      streamAI(feat, qs + "&q=" + encodeURIComponent(q) + authParam(), q, root, root.dataset.rk);
+      var root = $("#" + pre + "-result"), out = $("#" + pre + "-ai-out");
+      if (!root || !root.dataset.rk || !out) { toast("请先生成双人" + (isBazi ? "四柱" : "命盘")); return; }
+      streamAI(feat, qs + "&q=" + encodeURIComponent(q) + authParam(), q, out, root.dataset.rk);
     }
-    function generate(qs, autoQ) {
+    function bindAsk() {
+      var inp = $("#" + pre + "-q2"), askBtn = $("#" + pre + "-ask");
+      if (!inp || !askBtn) return;
+      $$("#" + pre + "-result .zw-chips button").forEach(function (b) {
+        b.onclick = function () { pickQuestion(b.dataset.q, "#" + pre + "-q2"); };
+      });
+      var fire = function () {
+        var q = (inp.value || "").trim();
+        if (!q) { toast("请先写下你想问的问题"); inp.focus(); return; }
+        if (requireLogin()) return;
+        ask(q, lastPair);
+      };
+      askBtn.onclick = fire;
+      inp.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); fire(); } };
+    }
+    function generate(qs) {
+      var out = $("#" + pre + "-ai-out"), root = $("#" + pre + "-result");
+      if (out && containerBusy(out)) { toast("解读进行中，请等完成后再重排"); return; }
       $("#" + pre + "-err").textContent = "";
       calcBtn.disabled = true;
       fetch("/api/" + feat + "/calc?" + qs).then(function (r) { return r.json(); }).then(function (d) {
         calcBtn.disabled = false;
         if (!d.ok) { $("#" + pre + "-err").textContent = d.error || "排盘失败"; return; }
+        // 换双人信息 = 新盘：旧轮（解读 + 追问）先平级归档，再重建盘面与提问卡。
+        if (out && root.dataset.rk) archiveRound(out, out.dataset.lastQ || title, root.dataset.rk);
         lastPair = qs;
-        var root = $("#" + pre + "-result");
-        archiveRound(root, $("#" + pre + "-q").value.trim() || title, root.dataset.rk);
         root.dataset.rk = (isBazi ? "bazi-mar|" : "ziwei-mar|") + qs;
+        root.dataset.lastQ = "";
         root.innerHTML = renderPairResult(d, isBazi, pre);
-        $("#" + pre + "-ask").onclick = function () {
-          var q = $("#" + pre + "-q").value.trim();
-          if (!q) { toast("请先写下你想问的问题"); return; }
-          if (requireLogin()) return;
-          ask(q, lastPair);
-        };
+        bindAsk();
         calcLabel();
-        if (autoQ && S.profile && !requireLogin()) ask(autoQ, lastPair);
         root.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }).catch(function () { calcBtn.disabled = false; });
     }
@@ -3744,15 +3761,14 @@
       var qs = pairQS("#" + pre + "-err");
       if (!qs) return;
       var root = $("#" + pre + "-result");
-      // 出生信息未变：盘面一次生成，新问题只重新定义问题并走 AI，绝不重排双人盘。
+      // 出生信息未变：盘面一次生成；换问题只在下方提问卡里走 AI，绝不重排双人盘。
       if (lastPair && qs === lastPair && root.dataset.rk) {
-        var q = $("#" + pre + "-q").value.trim();
-        if (!q) { toast("请先写下你想问的问题"); $("#" + pre + "-q").focus(); return; }
-        if (requireLogin()) return;
-        ask(q, lastPair);
+        var inp = $("#" + pre + "-q2");
+        if (inp) { inp.scrollIntoView({ behavior: "smooth", block: "center" }); inp.focus(); }
+        toast("双人盘未变化，请在下方提问卡里另起问题");
         return;
       }
-      generate(qs, $("#" + pre + "-q").value.trim());
+      generate(qs);
     };
     applyGate(feat);
   }
@@ -3788,7 +3804,7 @@
       return (g.relations || []).some(function (r) { return !/无合冲刑害破/.test(r.relation || ""); });
     }).slice(0, 8);
     var crossHtml = isBazi
-      ? '<div class="mrg-cross-h">命中柱位关系（节选 · 完整事实见下方盘面）</div>' +
+      ? '<div class="mrg-cross-h">命中柱位关系（节选）</div>' +
         (groups.length ? '<div class="mrg-rels">' + groups.map(function (g) {
           return '<div class="mrg-rel"><b>' + esc(g.who) + '</b><span>' +
             (g.relations || []).filter(function (r) { return !/无合冲刑害破/.test(r.relation || ""); })
@@ -3802,9 +3818,18 @@
       '<div class="p-card"><div class="mrg-pair">' + personCard(a, "甲方") + personCard(b, "乙方") + '</div>' +
         crossHtml +
       '</div></div>' +
+      // 与八字/紫微命盘同构：盘面卡 + 独立提问卡 + AI 解读输出三段平级
       '<div class="bz-ask"><div class="bz-ask-h">就这段关系提问<span>解读基于以上双人盘面，不改变盘面本身</span></div>' +
-        '<input class="ti" id="' + pre + '-q2" style="display:none" />' +
-        '<button class="tool-ai" id="' + pre + '-ask">AI ' + (isBazi ? '合婚解读' : '合婚分析') + '</button></div>';
+        '<div class="p-suggest zw-chips">' +
+          [["相处摩擦", "我们相处中反复出现的摩擦来自哪里？"],
+           ["需求互补", "双方在感情中的需求与表达方式如何互补？"],
+           ["阶段节奏", "未来两年关系推进需要注意哪些阶段？"]].map(function (c) {
+            return '<button type="button" data-q="' + esc(c[1]) + '">' + esc(c[0]) + '</button>';
+          }).join("") + '</div>' +
+        '<div class="zw-ask-row"><input class="ti" id="' + pre + '-q2" placeholder="例如：我们相处中反复出现的摩擦来自哪里？" />' +
+          '<button class="tool-ai zw-ask-btn" id="' + pre + '-ask" type="button">AI 解读</button></div>' +
+      '</div>' +
+      '<div id="' + pre + '-ai-out"></div>';
   }
   function titleForPair(isBazi) { return isBazi ? "八字合婚 · 双人四柱对照" : "紫微合婚 · 双人命盘对照"; }
   function renderBaziMarriage() { renderMarriage("bazi"); }
@@ -3947,6 +3972,43 @@
         '<button class="tool-ai" id="ly-ask">AI 解卦</button></div>';
   }
 
+  /* 奇门表单的「?」是真正的备注触发器：点击弹出说明，再点/点外部/ESC 关闭。
+     舞台会整体重绘，故用 document 事件委托，气泡全局单例。 */
+  var qmNoteEl = null, qmNoteFor = null;
+  function qmNoteClose() {
+    if (qmNoteEl) qmNoteEl.classList.add("hidden");
+    qmNoteFor = null;
+  }
+  function qmNoteOpen(el) {
+    if (qmNoteFor === el && qmNoteEl && !qmNoteEl.classList.contains("hidden")) { qmNoteClose(); return; }
+    if (!qmNoteEl) {
+      qmNoteEl = document.createElement("div");
+      qmNoteEl.className = "qm-note hidden";
+      qmNoteEl.setAttribute("role", "tooltip");
+      document.body.appendChild(qmNoteEl);
+    }
+    qmNoteFor = el;
+    qmNoteEl.textContent = el.getAttribute("data-note") || "";
+    qmNoteEl.classList.remove("hidden");
+    var r = el.getBoundingClientRect(), w = qmNoteEl.offsetWidth, h = qmNoteEl.offsetHeight;
+    qmNoteEl.style.left = Math.max(8, Math.min(r.left - 8, window.innerWidth - w - 8)) + "px";
+    var top = r.bottom + 8;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 8);
+    qmNoteEl.style.top = top + "px";
+  }
+  document.addEventListener("click", function (e) {
+    var h = e.target.closest && e.target.closest(".qm-help");
+    if (h) { e.preventDefault(); qmNoteOpen(h); return; }
+    if (qmNoteEl && !qmNoteEl.classList.contains("hidden")) qmNoteClose();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { qmNoteClose(); return; }
+    if ((e.key === "Enter" || e.key === " ") && e.target.classList && e.target.classList.contains("qm-help")) {
+      e.preventDefault(); qmNoteOpen(e.target);
+    }
+  });
+  window.addEventListener("scroll", qmNoteClose, true);
+
   /* ================= 奇门遁甲 ================= */
   function renderQimen() {
     stageEl().innerHTML =
@@ -3958,14 +4020,14 @@
           '<div class="p-suggest"><button data-q="这次合作最大的推进阻力在哪里？">合作阻力</button>' +
           '<button data-q="当前阶段该如何推进这段关系？">关系推进</button>' +
           '<button data-q="近期出行需要注意什么？">出行决策</button></div></div>' +
-        '<div class="tf-group"><div class="tf-gt">排盘方式 <i class="qm-help" title="拆补法以节气为君，交节即换；置闰法以符头为纲，按正授/超神/接气定局，在芒种、大雪处置闰。两种口径局数可能不同，解读会标明本局所用口径。">?</i></div>' +
+        '<div class="tf-group"><div class="tf-gt">排盘方式 <i class="qm-help" role="button" tabindex="0" data-note="拆补法以节气为君，交节即换；置闰法以符头为纲，按正授/超神/接气定局，在芒种、大雪处置闰。两种口径局数可能不同，解读会标明本局所用口径。">?</i></div>' +
           '<div class="p-seg" id="qm-method"><button class="on" data-v="chaibu">拆补法</button><button data-v="zhirun">置闰法</button></div>' +
           '<p class="p-note qm-method-note" id="qm-method-note">拆补法：交节即换节气，三元由最近符头判定；不置闰，局数可逐宫复算。</p></div>' +
-        '<div class="tf-group"><label class="p-switch qm-toggle"><input type="checkbox" id="qm-na-on" /><span>以年命代表求测人 <i class="qm-help" title="可选。按出生年份取年命地支，标注求测人自身的参照宫；不参与起局定盘。">?</i></span></label>' +
+        '<div class="tf-group"><label class="p-switch qm-toggle"><input type="checkbox" id="qm-na-on" /><span>以年命代表求测人 <i class="qm-help" role="button" tabindex="0" data-note="可选。按出生年份取年命地支，标注求测人自身的参照宫；不参与起局定盘。">?</i></span></label>' +
           '<div id="qm-na-fields" style="display:none"><select class="ti" id="qm-na">' +
             (function () { var out = '', y = new Date().getFullYear(); for (var i = 0; i <= 70; i++) out += '<option value="' + (y - i) + '">' + (y - i) + ' 年生</option>'; return out; })() +
           '</select><p class="p-note qm-opt-note">选填。不填则以日干代表求测人。</p></div></div>' +
-        '<div class="tf-group"><label class="p-switch qm-toggle"><input type="checkbox" id="qm-ys-on" /><span>指定用神 <i class="qm-help" title="可选。选定后 AI 以此为解读主线；不参与起局定盘。未指定则按日干/时干取用。">?</i></span></label>' +
+        '<div class="tf-group"><label class="p-switch qm-toggle"><input type="checkbox" id="qm-ys-on" /><span>指定用神 <i class="qm-help" role="button" tabindex="0" data-note="可选。选定后 AI 以此为解读主线；不参与起局定盘。未指定则按日干/时干取用。">?</i></span></label>' +
           '<div id="qm-ys-fields" style="display:none"><select class="ti" id="qm-ys">' +
             '<optgroup label="所测之人">' +
               '<option value="父母长辈（本局年干）">父母长辈（本局年干）</option>' +
@@ -3978,10 +4040,14 @@
               '<option value="健康疾病（天芮、天心）">健康疾病（天芮、天心）</option>' +
               '<option value="考试文书（景门、丁）">考试文书（景门、丁）</option>' +
               '<option value="寻物失物（本局时干、六合、玄武）">寻物失物（本局时干、六合、玄武）</option>' +
+            '</optgroup><optgroup label="指定八门">' +
+              '休门 生门 伤门 杜门 景门 死门 惊门 开门'.split(" ").map(function (m) {
+                return '<option value="' + m + '">' + m + '</option>';
+              }).join("") +
             '</optgroup><optgroup label="指定天干">' +
               '甲乙丙丁戊己庚辛壬癸'.split("").map(function (g) { return '<option value="' + g + '">' + g + '</option>'; }).join("") +
             '</optgroup></select><p class="p-note qm-opt-note">选填。用神只决定阅读焦点，不改变局数星门。</p></div></div>' +
-        '<div class="tf-group"><label class="p-switch qm-toggle"><input type="checkbox" id="qm-when-on" /><span>指定起局时间 <i class="qm-help" title="可选。不指定则以当下时刻起局；复盘已发生的事可指定当时时刻，并在问题中说明。">?</i></span></label>' +
+        '<div class="tf-group"><label class="p-switch qm-toggle"><input type="checkbox" id="qm-when-on" /><span>指定起局时间 <i class="qm-help" role="button" tabindex="0" data-note="可选。不指定则以当下时刻起局；复盘已发生的事可指定当时时刻，并在问题中说明。">?</i></span></label>' +
           '<div id="qm-when-fields" style="display:none">' +
             dateTimeHTML("qmt", { dateLabel: "起局日期", timeLabel: "起局时刻" }) +
           '</div><p class="p-note qm-opt-note">选填。带明确问题来问通常取起念当下；复盘往事才指定当时时刻。</p></div>' +
