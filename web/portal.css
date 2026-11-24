@@ -508,8 +508,17 @@ details.p-disclose .inner { padding-bottom: 12px; }
 }
 .ai-follow-btn:hover { border-color:var(--wx-jin); color:var(--wx-jin); }
 .ai-follow-btn:disabled { opacity:.55; cursor:wait; }
-/* 追问结果槽在输入栏上方：结果卡之间留间距，输入栏紧随其后（-4px 收紧与上一张结果卡的距离） */
-.ai-follow-slot .p-ai { margin-top:13px; }
+/* 追问结果槽在输入栏上方：结果之间用细分隔线连续铺开，输入栏紧随其后。
+   追问结果不再套圆角卡壳——保留 .p-ai 节点以兼容渲染/测试/快照恢复链路，
+   仅用 CSS 去掉边框和圆角，避免「圆弧矩形叠圆弧矩形」的嵌套感（与历史详情追问链同风格）。 */
+.ai-follow-slot { padding:0 20px; }
+.ai-follow-slot > .p-ai {
+  margin-top:0; padding-top:13px; border:0; border-top:1px dashed var(--line);
+  border-radius:0; overflow:visible; background:none;
+}
+.ai-follow-slot > .p-ai .p-ai-head { padding:0 0 7px; background:none; font-size:12px; font-weight:500; color:var(--ink-3); }
+.ai-follow-slot > .p-ai .p-ai-head .dot { width:5px; height:5px; background:var(--ink-3); }
+.ai-follow-slot > .p-ai .p-ai-body { padding:0; }
 .ai-follow-slot + .ai-follow { margin-top:10px; }
 @media (max-width: 560px) {
   .ai-follow { padding:13px 15px 16px; }
