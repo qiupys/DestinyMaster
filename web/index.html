@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<!-- 单页应用入口必须每次取最新：避免新旧 JS/CSS 混杂导致交互失效（如折叠按钮 open 类生效但样式未更新） -->
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1" />
 <link rel="alternate icon" type="image/png" href="/favicon.png?v=1" />
 <link rel="shortcut icon" href="/favicon.ico?v=1" />
@@ -13,7 +17,7 @@
     document.documentElement.dataset.theme=t==="dark"?"dark":"light";})();
 </script>
 <link rel="stylesheet" href="/style.css?v=45" />
-<link rel="stylesheet" href="/portal.css?v=104" />
+<link rel="stylesheet" href="/portal.css?v=105" />
 <script src="/vendor/marked.min.js"></script>
 </head>
 <body class="portal-body">
@@ -105,6 +109,6 @@
 
 <div class="p-toast" id="p-toast"></div>
 
-<script src="/portal.js?v=104"></script>
+<script src="/portal.js?v=105"></script>
 </body>
 </html>
