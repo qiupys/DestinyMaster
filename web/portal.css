@@ -833,9 +833,13 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .bf-a1 { grid-area: a1; } .bf-b1 { grid-area: b1; } .bf-a2 { grid-area: a2; }
 .bf-b2 { grid-area: b2; } .bf-a3 { grid-area: a3; } .bf-b3 { grid-area: b3; }
 .bf-compact .bf-grid { grid-template-columns: 1fr 1fr; grid-template-areas: "a1 b1" "a2 b2" "a3 b3"; column-gap: 14px; row-gap: 10px; }
-/* 双人表单专用：每栏内单列堆叠（参考合婚设计），避免两列挤压导致「我知道出生时间」折行。
-   顺序与参考一致：出生日期 → 阳历/农历 → 日期按钮 → 时间开关 → 出生时间 → 时分下拉。 */
-.bf-roomy .bf-grid { grid-template-columns: 1fr; grid-template-areas: "a1" "a2" "a3" "b2" "b1" "b3"; column-gap: 0; row-gap: 11px; }
+/* 双人表单专用（roomy）：标签与所属控件绑成 .bf-field，段内 10px、段间 16px，统一设计阶梯。
+   旧版把 6 个元素拆成独立 grid item 共用一个 11px row-gap，标签下面空一大截、控件之间却挤在一起。 */
+.bf-roomy .bf-fields { display: flex; flex-direction: column; gap: var(--gap-md); }
+.bf-roomy .bf-sec { display: flex; flex-direction: column; gap: var(--gap-sm); }
+.bf-roomy .bf-field { display: flex; flex-direction: column; gap: var(--gap-sm); }
+.bf-roomy .bf-head { margin-bottom: var(--gap-md); }
+.bf-roomy .bf-hint { margin-top: 0; }
 .bf-roomy .bf-cal { width: 100%; }
 .bf-roomy .bf-cal button { flex: 1; padding: 8px 12px; }
 .bf-roomy .p-switch { white-space: nowrap; }
@@ -1547,10 +1551,11 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 /* 三级出生地：国家 / 省 / 市 三列同一行，每列「标签在上、下拉在下」 */
 .place-fields { margin-top: 6px; }
 .place-fields .pl-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.place-fields .pl-col { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.place-fields .bf-lab { font-size: 12px; color: var(--ink-3); }
+.place-fields .pl-col { min-width: 0; display: flex; flex-direction: column; gap: var(--gap-sm); }
+/* 三级地址标签与表单其他标签同级：13px / ink-2，不再单独小一号 */
+.place-fields .bf-lab { font-size: var(--fs-base); color: var(--ink-2); }
 .place-fields .ti { width: 100%; }
-.place-fields .pl-hint { margin: 8px 0 0; }
+.place-fields .pl-hint { margin: var(--gap-sm) 0 0; }
 @media (max-width: 620px) { .place-fields .pl-grid { grid-template-columns: 1fr; gap: 10px; } }
 /* 个人档案编辑区里的出生资料组件间距 */
 .pf-birth-form .bf-wrap { margin-bottom: 4px; }
@@ -1585,14 +1590,17 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .mrg-p2 .mrg-person { background: var(--panel); margin-top: 10px; }
 .mrg-person { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
 .mrg-ph { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-md); font-weight: 600; color: var(--ink); margin-bottom: var(--gap-md); letter-spacing: .04em; }
+/* 双方表单内部：每个信息段之间统一 16px（标题/姓名/出生信息/早晚子时/出生地） */
+.mrg-person > .tf-grid { margin-bottom: var(--gap-md); }
 .mrg-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .mrg-import { flex: none; font: inherit; font-size: var(--fs-xs); color: var(--ink-3); background: transparent;
   border: 1px solid var(--line-strong); border-radius: 5px; padding: 3px 8px; cursor: pointer; letter-spacing: 0; }
 .mrg-import:hover { color: var(--cinnabar); border-color: var(--cinnabar); }
 .mrg-pair-note { margin: 10px 0 0; }
-.mrg-zz { margin-top: 12px; }
-.mrg-person .place-fields { margin-top: 12px; }
-.mrg-person .pl-hint { margin: 6px 0 0; }
+/* 用块级 flex 避免 inline-flex 的行盒 descender 让段间距视觉上多出 6px */
+.mrg-zz { display: flex; width: max-content; margin-top: var(--gap-md); }
+.mrg-person .place-fields { margin-top: var(--gap-md); }
+.mrg-person .pl-hint { margin: var(--gap-sm) 0 0; }
 .mrg-p-card { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
 .mrg-p-hd { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .mrg-p-hd b { font-family: var(--serif); font-size: 17px; color: var(--ink); }

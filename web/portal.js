@@ -436,33 +436,49 @@
     var pillars = [["py","年柱"],["pm","月柱"],["pd","日柱"],["pt","时柱"]].map(function (it) {
       return '<div class="tf-field"><label>' + it[1] + '</label><select class="ti" id="' + pfx + '-' + it[0] + '">' + gzOpts + '</select></div>';
     }).join("");
+    var mbazi = '<div id="' + pfx + '-mbazi" style="display:none">' +
+      '<div class="bf-pillars">' + pillars + '</div>' +
+      '<p class="p-note">直接输入已知的四柱干支，系统将反查对应的出生日期后排盘。</p>' +
+    '</div>';
+    var labDate = '<label class="bf-lab">出生日期</label>';
+    var labTime = '<label class="bf-lab" id="' + pfx + '-tlabel" for="' + pfx + '-hour">出生时间</label>';
+    var calHTML = '<div class="p-seg bf-cal" id="' + pfx + '-cal"><button class="on" data-v="solar">阳历</button>' +
+      (hideLunar ? '' : '<button data-v="lunar">农历</button>') + '</div>';
+    var dateHTML = '<button type="button" class="bf-datebtn" id="' + pfx + '-datebtn"><span id="' + pfx + '-datebtn-t">1990年6月15日</span><i>' + CAL_ICON + '</i></button>' +
+      '<input type="hidden" id="' + pfx + '-date" value="1990-06-15" />' +
+      '<input type="hidden" id="' + pfx + '-ly" value="1990" />' +
+      '<input type="hidden" id="' + pfx + '-lm" value="1" />' +
+      '<input type="hidden" id="' + pfx + '-ld" value="1" />';
+    var knowHTML = '<label class="p-switch"><input type="checkbox" id="' + pfx + '-knowtime" checked /><span>我知道出生时间</span></label>';
+    var hintHTML = '<p class="p-note bf-hint" id="' + pfx + '-kthint">如果不知道确切出生时间，可以不选择</p>';
+    var timeHTML = '<div class="bf-time" id="' + pfx + '-time">' +
+      '<select class="ti" id="' + pfx + '-hour">' + hours + '</select>' +
+      '<select class="ti" id="' + pfx + '-minute">' + mins + '</select>' +
+    '</div>';
+    // roomy（双人表单）专用：标签与它所属控件绑成 .bf-field，段与段之间统一间距。
+    // 旧版把标签/控件拆成 6 个 grid item 全用 11px row-gap，标签下空一大截。
+    if (opts.roomy) {
+      return '<div class="bf-wrap bf-roomy">' + head +
+        '<div class="bf-fields">' +
+          '<div class="bf-sec"><div class="bf-field">' + labDate + calHTML + '</div>' + dateHTML + '</div>' +
+          '<div class="bf-sec">' + knowHTML +
+            '<div class="bf-field" id="' + pfx + '-timewrap">' + labTime + timeHTML + '</div>' + hintHTML +
+          '</div>' +
+        '</div>' + mbazi +
+      '</div>';
+    }
     return '' +
-      '<div class="bf-wrap' + (opts.compact ? " bf-compact" : "") + (opts.roomy ? " bf-roomy" : "") + '">' + head +
+      '<div class="bf-wrap' + (opts.compact ? " bf-compact" : "") + '">' + head +
         '<div id="' + pfx + '-mdate">' +
           '<div class="bf-grid">' +
-            '<div class="bf-a1"><label class="bf-lab">出生日期</label></div>' +
-            '<div class="bf-b1"><label id="' + pfx + '-tlabel" class="bf-lab" for="' + pfx + '-hour">出生时间</label></div>' +
-            '<div class="bf-a2"><div class="p-seg bf-cal" id="' + pfx + '-cal"><button class="on" data-v="solar">阳历</button>' +
-              (hideLunar ? '' : '<button data-v="lunar">农历</button>') + '</div></div>' +
-            '<div class="bf-b2"><label class="p-switch"><input type="checkbox" id="' + pfx + '-knowtime" checked /><span>我知道出生时间</span></label>' +
-              '<p class="p-note bf-hint" id="' + pfx + '-kthint">如果不知道确切出生时间，可以不选择</p></div>' +
-            '<div class="bf-a3">' +
-              '<button type="button" class="bf-datebtn" id="' + pfx + '-datebtn"><span id="' + pfx + '-datebtn-t">1990年6月15日</span><i>' + CAL_ICON + '</i></button>' +
-              '<input type="hidden" id="' + pfx + '-date" value="1990-06-15" />' +
-              '<input type="hidden" id="' + pfx + '-ly" value="1990" />' +
-              '<input type="hidden" id="' + pfx + '-lm" value="1" />' +
-              '<input type="hidden" id="' + pfx + '-ld" value="1" />' +
-            '</div>' +
-            '<div class="bf-b3"><div class="bf-time" id="' + pfx + '-time">' +
-              '<select class="ti" id="' + pfx + '-hour">' + hours + '</select>' +
-              '<select class="ti" id="' + pfx + '-minute">' + mins + '</select>' +
-            '</div></div>' +
+            '<div class="bf-a1">' + labDate + '</div>' +
+            '<div class="bf-b1">' + labTime + '</div>' +
+            '<div class="bf-a2">' + calHTML + '</div>' +
+            '<div class="bf-b2">' + knowHTML + hintHTML + '</div>' +
+            '<div class="bf-a3">' + dateHTML + '</div>' +
+            '<div class="bf-b3">' + timeHTML + '</div>' +
           '</div>' +
-        '</div>' +
-        '<div id="' + pfx + '-mbazi" style="display:none">' +
-          '<div class="bf-pillars">' + pillars + '</div>' +
-          '<p class="p-note">直接输入已知的四柱干支，系统将反查对应的出生日期后排盘。</p>' +
-        '</div>' +
+        '</div>' + mbazi +
       '</div>';
   }
   var LN_MONTHS = ["正月","二月","三月","四月","五月","六月","七月","八月","九月","十月","冬月","腊月"];
@@ -501,9 +517,13 @@
     };
     function applyTime() {
       var kt = $("#" + pfx + "-knowtime").checked;
-      $("#" + pfx + "-time").style.display = kt ? "grid" : "none";
-      $("#" + pfx + "-tlabel").style.display = kt ? "" : "none";
-      $("#" + pfx + "-kthint").style.display = kt ? "none" : "";
+      var t = $("#" + pfx + "-time"), l = $("#" + pfx + "-tlabel"), h = $("#" + pfx + "-kthint");
+      if (t) t.style.display = kt ? "grid" : "none";
+      if (l) l.style.display = kt ? "" : "none";
+      if (h) h.style.display = kt ? "none" : "";
+      // roomy 结构里标签与控件同属 .bf-field，整体隐藏才不会留下空标签位
+      var wrap = $("#" + pfx + "-timewrap");
+      if (wrap) wrap.style.display = kt ? "" : "none";
     }
     $("#" + pfx + "-knowtime").onchange = applyTime;
     function applyMode() {
