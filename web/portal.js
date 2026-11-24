@@ -9,6 +9,8 @@
     busy: false,
     stageCache: {},      // feature -> 持久 DOM 容器；切页只隐藏/显示，不销毁
   };
+  // 老黄历的两个子功能共用同一舞台；旧链接 #/huangli_pair 通过它切到双人择日 tab。
+  var hlApplyMode = null;
   // 每个功能持有自己的舞台容器。切到别的功能时只隐藏，正在进行的 AI 流式解读
   // 仍写到原容器里继续跑；切回来时提问框、解读结果、追问链都原样还在。
   function stageEl() {
@@ -273,6 +275,10 @@
   }
 
   function navigate(feat, force) {
+    // 双人择日已改为老黄历内子功能：旧 hash /huangli_pair 复用同一舞台并切到 pair tab，
+    // 不再单独建 stage（否则 #hl-cal/#hl-day 重复 id → 日历恒「加载中」）。
+    var pairAlias = feat === "huangli_pair";
+    if (pairAlias) feat = "huangli";
     var changed = S.feature !== feat;
     S.feature = feat;
     closeNav();
@@ -280,7 +286,7 @@
     var ab = $("#p-auth-btn");
     if (ab) ab.classList.toggle("current", feat === "profile");
     var names = { home:"首页",bazi:"八字排盘",ziwei:"紫微斗数",meihua:"梅花易数",liuyao:"六爻",qimen:"奇门遁甲",
-      tarot:"塔罗牌",astrology:"占星命盘",huangli:"黄历",huangli_pair:"双人择日",profile:"个人中心",
+      tarot:"塔罗牌",astrology:"占星命盘",huangli:"老黄历",profile:"个人中心",
       bazi_marriage:"八字合婚",ziwei_marriage:"紫微合婚" };
     $("#p-crumb").textContent = names[feat] || feat;
     // 隐藏所有已建舞台，只显示当前功能的；DOM 不销毁 → 提问框/解读/追问/进行中的 SSE 全部保留
@@ -289,15 +295,19 @@
     st.style.display = "";
     // 个人中心每次进入都刷新（历史/统计可能已变）；其余功能首次渲染或强制时才重建
     if (feat === "profile") { renderProfile(); return; }
-    if (st.dataset.ready === "1" && !force) return;  // 已有内容，切回来直接复用
+    if (st.dataset.ready === "1" && !force) {  // 已有内容，切回来直接复用
+      if (pairAlias && hlApplyMode) hlApplyMode("pair");
+      return;
+    }
     st.dataset.ready = "1";
     if (feat === "home") { renderHome(); return; }
     if (feat === "ziwei") { renderZiweiEntry(); return; }
     var fn = { bazi: renderBazi, meihua: renderMeihua, tarot: renderTarot, huangli: renderHuangli,
-      huangli_pair: renderHuangliPair, astrology: renderAstrology, liuyao: renderLiuyao, qimen: renderQimen,
+      astrology: renderAstrology, liuyao: renderLiuyao, qimen: renderQimen,
       bazi_marriage: renderBaziMarriage, ziwei_marriage: renderZiweiMarriage }[feat];
     if (fn) {
       fn();
+      if (pairAlias && hlApplyMode) hlApplyMode("pair");
       // renderXxx 重建了结果区骨架；若本会话此前有解读快照（reload 后），此刻恢复之
       restoreStageSnap(feat);
     }
@@ -427,7 +437,7 @@
       return '<div class="tf-field"><label>' + it[1] + '</label><select class="ti" id="' + pfx + '-' + it[0] + '">' + gzOpts + '</select></div>';
     }).join("");
     return '' +
-      '<div class="bf-wrap' + (opts.compact ? " bf-compact" : "") + '">' + head +
+      '<div class="bf-wrap' + (opts.compact ? " bf-compact" : "") + (opts.roomy ? " bf-roomy" : "") + '">' + head +
         '<div id="' + pfx + '-mdate">' +
           '<div class="bf-grid">' +
             '<div class="bf-a1"><label class="bf-lab">出生日期</label></div>' +
@@ -693,9 +703,9 @@
           '<option' + (side === "男" ? " selected" : "") + '>男</option>' +
           '<option' + (side === "女" ? " selected" : "") + '>女</option></select></div>' +
       '</div>' +
-      birthFieldsHTML(pfx, { title: "出生信息", noBazi: true, compact: true }) +
+      birthFieldsHTML(pfx, { title: "出生信息", noBazi: true, roomy: true }) +
       '<label class="p-switch mrg-zz"><input type="checkbox" id="' + pfx + '-earlyzi" /><span>早晚子时</span></label>' +
-      placeFieldsHTML(pfx, { hint: "出生地用于真太阳时校正；列表未含的城市可选邻近城市。" }) +
+      placeFieldsHTML(pfx, { hint: "出生地用于真太阳时校正，未收录城市可选邻近城市。" }) +
     '</div>';
   }
   function pairFormHTML(pfxA, pfxB, note) {
@@ -1012,10 +1022,9 @@
         icon: '<circle cx="12" cy="12" r="9"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="2.5"/>' },
       { feat: "tarot",  tag: "西方占卜", name: "塔罗牌", desc: "三张或凯尔特十字牌阵，先写问题再抽牌，按牌位成文。",
         icon: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M5 20h14"/>' },
-      { feat: "huangli",tag: "其他功能", name: "老黄历", desc: "宜忌、值神、冲煞与物候，结合所选日期作择日答疑。",
+      { feat: "huangli",tag: "其他功能", name: "老黄历", desc: "宜忌、值神、冲煞与物候；内含「个人今日运势」与「双人择日」两个子功能。",
         icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01"/>' },
-      { feat: "huangli_pair",tag: "其他功能", name: "双人择日", desc: "选定日子后并列男女双方八字，双向核对合冲刑害与宜忌。",
-        icon: '<path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.5-7 10-7 10z"/><path d="M8 12h8"/>' }
+      /* 双人择日已并入老黄历作为子功能，不再单列入口 */
     ];
     function cardHTML(f) {
       return '<button type="button" class="home-card" data-feature="' + f.feat + '">' +
@@ -1845,22 +1854,25 @@
   }
 
   /* ================= 黄历（月历视图 + 默认当日历注 + AI 问事） ================= */
-  function renderHuangli(mode) {
-    var isPair = mode === "pair";
-    var feat = isPair ? "huangli_pair" : "huangli";
+  function renderHuangli() {
+    var isPair = false;          // 当前子功能：个人今日运势 / 双人择日
+    var feat = "huangli";        // 双人择日沿用后端 huangli_pair 端点（历史分类不变）
     var pfxA = "hlpa", pfxB = "hlpb";
     var now = new Date();
     var view = { y: now.getFullYear(), m: now.getMonth() + 1 };
     var sel = { y: view.y, m: view.m, d: now.getDate() };
-    var aiCard = isPair
-      ? '<div class="p-bazi-gate ok hl-bazi-gate"><span class="bg-ic">◈</span><span class="bg-txt">双人择日会并列男女双方八字，与上方所选日子的干支双向核对；任一方都可手动填写或导入本人档案。</span></div>' +
+
+    /* 两个子功能共用同一张日历与当日历注（上方），只切换下方提问卡。
+       此前拆成两个 stage 会重复 #hl-cal/#hl-day id，全局选择器命中隐藏舞台 → 日历恒「加载中」。 */
+    function formCard() {
+      if (isPair) return '<div class="p-bazi-gate ok hl-bazi-gate"><span class="bg-ic">◈</span><span class="bg-txt">双人择日会并列男女双方八字，与上方所选日子的干支双向核对；任一方都可手动填写或导入本人档案。</span></div>' +
         pairFormHTML(pfxA, pfxB, "男女双方分别填写，性别可按需调整；出生地用于真太阳时校正。") +
         '<div class="tf-group" style="margin-top:14px"><div class="tf-gt">你想问什么？（结合上方所选日期）</div>' +
           '<input class="ti" id="hl-q" placeholder="例如：这天适合我们订婚吗？" />' +
           '<div class="p-suggest"><button data-q="这天适合我们订婚吗？">订婚择日</button><button data-q="这天适合我们一起搬家吗？">共同搬家</button><button data-q="这天签约对双方都合适吗？">共同签约</button></div>' +
         '</div>' +
-        '<button class="tool-ai" id="hl-ai">AI 双人择日</button>'
-      : (S.profile
+        '<button class="tool-ai" id="hl-ai">AI 双人择日</button>';
+      return (S.profile
           ? '<div class="p-bazi-gate ok hl-bazi-gate"><span class="bg-ic">◈</span><span class="bg-txt">择日答疑将自动结合您档案中的八字（日主与喜忌），让答案更贴合本人。</span></div>'
           : '<div class="p-bazi-gate warn hl-bazi-gate"><span class="bg-ic">◈</span><span class="bg-txt">登录后，择日答疑将自动结合档案里的八字（日主与喜忌），让答案更贴合本人。</span></div>') +
         '<div class="tf-group"><div class="tf-gt">AI 择日答疑</div>' +
@@ -1872,30 +1884,63 @@
         '</div>' +
         '<label class="p-switch hl-bazi-switch"><input type="checkbox" id="hl-bazi"' + (S.profile ? ' checked' : ' disabled') + ' /><span>导入本人八字信息</span></label>' +
         '<button class="tool-ai" id="hl-ai">AI 择日答疑</button>';
+    }
+    function bindAI() {
+      $("#hl-ai").onclick = function () {
+        var q = $("#hl-q").value.trim();
+        if (!q) { toast("请先写下想问的事"); $("#hl-q").focus(); return; }
+        var extra = "";
+        if (isPair) {
+          // 双人择日：复用合婚并列表单，双方出生参数纳入去重身份
+          var pairQs = pairFormParams(pfxA, pfxB, "#hl-err");
+          if (!pairQs) return;
+          extra = pairQs;
+        } else {
+          // 个人今日运势：勾选「导入本人八字信息」时把档案八字一并交给 AI 作择日参考
+          extra = $("#hl-bazi") && $("#hl-bazi").checked && S.profile ? "&use_bazi=1" : "";
+        }
+        var rk = "day|" + sel.y + "-" + sel.m + "-" + sel.d + (isPair ? "|" + extra : "");
+        streamAI(feat, hlParam() + "&q=" + encodeURIComponent(q) + extra + authParam(), q, $("#hl-result"), rk);
+      };
+    }
+    function drawForm() {
+      var card = $("#hl-ai-card");
+      card.className = "tool-card hl-ai-card" + (isPair ? " hl-pair-ai-card" : "");
+      card.innerHTML = '<div class="tool-form" id="hl-form">' + formCard() + '<div class="p-err" id="hl-err"></div></div>';
+      if (isPair) pairFormBind(pfxA, pfxB);
+      $$(".p-suggest button", card).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#hl-q"); }; });
+      bindAI();
+      applyGate(isPair ? "huangli_pair" : "huangli");
+    }
+    function setMode(v) {
+      var next = v === "pair";
+      if (next === isPair) return;
+      isPair = next;
+      feat = isPair ? "huangli_pair" : "huangli";
+      segSet($("#hl-tabs"), isPair ? "pair" : "personal");
+      $("#hl-result").innerHTML = "";   // 切换子功能清空上一子功能的解读，避免混在同一结果区
+      drawForm();
+    }
+    // 旧链接 #/huangli_pair 直达双人择日子功能：切回来时也能定位
+    hlApplyMode = function (v) { setMode(v); };
     stageEl().innerHTML =
-      toolHero(isPair ? "双人择日" : "老黄历", isPair
-        ? "先选定日子，再并列男女双方八字：在完整历注之上双向核对两人四柱与当日干支的合冲刑害，给双方都看得懂的择日参考。"
-        : "以干支、节气与日值辨一日之宜忌，为日常行事提供时间参考。AI 依据完整历注，解释栏目与具体事项的关系。") +
+      toolHero("老黄历", "以干支、节气与日值辨一日之宜忌。上方日历与历注供两个子功能共用；下方切换「个人今日运势」或「双人择日」，就在同一历注上继续提问。") +
+      '<div class="p-seg hl-subfn" id="hl-tabs"><button class="on" data-v="personal">个人今日运势</button><button data-v="pair">双人择日</button></div>' +
       '<div class="tool-card hl-cal" id="hl-cal"><p class="p-note" style="text-align:center">日历加载中…</p></div>' +
       '<div id="hl-day"><p class="p-note" style="text-align:center;margin:18px 0">当日历注加载中…</p></div>' +
-      '<div class="tool-card hl-ai-card' + (isPair ? ' hl-pair-ai-card' : '') + '"><div class="tool-form" id="hl-form">' + aiCard +
-        '<div class="p-err" id="hl-err"></div>' +
-      '</div></div>' +
+      '<div class="tool-card hl-ai-card" id="hl-ai-card"></div>' +
       '<div id="hl-result"></div>' +
-      aboutDetails(isPair ? "关于双人择日" : "关于黄历", isPair ? [
-        '<b>先定日，再看人</b>：日历与历注由程序确定性算出；两人八字只作为对同一日子的双向参照，不反过来改变宜忌。',
-        '<b>双向核对</b>：分别看当日干支与男方、女方年柱/日柱的合冲刑害，并说明对双方各自的影响，不偏袒任一方。',
-        '<b>民俗参考</b>：双人择日不保证关系结果，也不替代现实沟通、法律登记与专业意见。'
-      ] : [
-        '<b>宜 / 忌</b>：传统上认为适合或不适合进行的事项类别；<b>值神</b>分黄道黑道，<b>十二建星</b>（建除满平定执破危成收开闭）描述日的性质。',
-        '<b>冲煞与空亡</b>：冲煞提示日支与哪些生肖相冲、所煞方位；空亡提示力量不足的时段。',
-        '<b>神位与物候</b>：财神喜神等方位、二十八宿、九星、物候，是传统择日的辅助参考层。'
-      ], isPair
-        ? "双人择日是传统民俗参考，不保证关系走向；重大事项请以现实证据与专业意见为准。"
-        : "黄历描述「这一天在传统体系中的位置」，不是针对某个人的命运判断；所有字段由程序确定性计算，宜忌只是醒目结论，孤立的吉凶不等于整天的定论。");
+      aboutDetails("关于黄历与双人择日", [
+        '<b>宜 / 忌</b>：传统上认为适合或不适合进行的事项类别；<b>值神</b>分黄道黑道，<b>十二建星</b>（建除满平定执破危成收开闭）描述日的性质；<b>冲煞空亡</b>、神位与物候是辅助参考层。',
+        '<b>个人今日运势</b>：结合所选日期的完整历注（登录后可带本人八字），解释宜忌与你所想之事的关系。',
+        '<b>双人择日</b>：先由程序定日，再并列双方八字作双向参照；分别看当日干支与男女双方年柱/日柱的合冲刑害，不偏袒任一方。'
+      ], "黄历描述「这一天在传统体系中的位置」，不是针对某个人的命运判断；双人择日属民俗参考，不保证关系结果。所有字段由程序确定性计算，重大事项请以现实证据与专业意见为准。");
 
-    if (isPair) pairFormBind(pfxA, pfxB);
-    $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#hl-q"); }; });
+    $("#hl-tabs").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-v]");
+      if (b) setMode(b.dataset.v);
+    });
+    drawForm();
     function hlParam() { return "year=" + sel.y + "&month=" + sel.m + "&day=" + sel.d; }
 
     /* ---- 月历 ---- */
@@ -2051,28 +2096,10 @@
       }
     }
 
-    $("#hl-ai").onclick = function () {
-      var q = $("#hl-q").value.trim();
-      if (!q) { toast("请先写下想问的事"); $("#hl-q").focus(); return; }
-      var extra = "";
-      if (isPair) {
-        // 双人择日：复用合婚并列表单，双方出生参数纳入去重身份
-        var pairQs = pairFormParams(pfxA, pfxB, "#hl-err");
-        if (!pairQs) return;
-        extra = pairQs;
-      } else {
-        // 单一黄历：勾选「导入本人八字信息」时把档案八字一并交给 AI 作择日参考
-        extra = $("#hl-bazi") && $("#hl-bazi").checked && S.profile ? "&use_bazi=1" : "";
-      }
-      var rk = "day|" + sel.y + "-" + sel.m + "-" + sel.d + (isPair ? "|" + extra : "");
-      streamAI(feat, hlParam() + "&q=" + encodeURIComponent(q) + extra + authParam(), q, $("#hl-result"), rk);
-    };
-
     renderCal();
     loadDay();   // 打开页面默认直接给出当日历注
-    applyGate(feat);
+    // 门禁已由 drawForm() 按当前子功能插入，此处不再重复插入
   }
-  function renderHuangliPair() { renderHuangli("pair"); }
 
   /* ================= 轮次管理：「新提问」与「追问」严格区分 =================
      一次「提问」= 确定性问题结果（牌面/卦象/盘面/历注）+ AI 解读 + 追问链，合称一轮。
@@ -3871,8 +3898,6 @@
         '<div class="ly-meta">' + esc(movingNote) + '</div>' +
         coinDetail +
         '<div class="ly-yaos">' + rows + '</div>' +
-        '<button class="mrg-fact-btn" type="button">展开可核对的装卦事实</button>' +
-        '<pre class="mrg-fact hidden">' + esc(d.fact || "") + '</pre>' +
       '</div></div>' +
       '<div class="bz-ask"><div class="bz-ask-h">就这一卦提问<span>卦盘已锁定，追问与解读使用同一卦</span></div>' +
         '<button class="tool-ai" id="ly-ask">AI 解卦</button></div>';
@@ -3990,15 +4015,13 @@
               (d.focus.yongshen.gong ? ' 落' + esc(d.focus.yongshen.gong) + '宫（' + esc(d.focus.yongshen.palace) + '）' : '') + '</span>' : '') +
             '</div>' : '') +
         '<div class="qm-grid">' + cells + '</div>' +
-        '<button class="mrg-fact-btn" type="button">展开逐宫盘面事实</button>' +
-        '<pre class="mrg-fact hidden">' + esc(d.fact || "") + '</pre>' +
       '</div></div>' +
       '<div class="bz-ask"><div class="bz-ask-h">就这一局提问<span>局数星门已锁定，问题只决定阅读焦点</span></div>' +
         '<button class="tool-ai" id="qm-ask">AI 解盘</button></div>';
   }
 
   /* ---------------- 启动 ---------------- */
-  // 盘面事实展开按钮（合婚 / 六爻 / 奇门共用）：按钮后紧跟 pre.mrg-fact。
+  // 盘面事实展开按钮（合婚保留；六爻/奇门已按反馈删除）：按钮后紧跟 pre.mrg-fact。
   // 用事件委托，结果区每次重渲染后无需重新绑定；文案在「展开/收起」间切换。
   document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest(".mrg-fact-btn");

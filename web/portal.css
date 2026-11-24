@@ -307,10 +307,13 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .stage-locked .ai-follow, .stage-locked #mh-ai, .stage-locked #tr-ai,
 .stage-locked #hl-ai, .stage-locked #bz-ai, .stage-locked #zw-ask,
 .stage-locked #zw-dask { display: none !important; }
-/* 黄历的 AI 区是整张独立提问卡（输入框/快捷问题/八字开关），未登录时整张隐藏，
-   否则门禁卡上方会残留一个用不了的提问框。双人择日沿用合婚结构：表单本身可见，
+/* 黄历的 AI 区是整张独立提问卡（输入框/快捷问题/八字开关），未登录时个人运势整张隐藏，
+   否则门禁卡上方会残留一个用不了的提问框。双人择日子功能沿用合婚结构：表单本身可见，
    只隐藏 AI 按钮，门禁卡仍插在表单之后。 */
 .stage-locked .hl-ai-card:not(.hl-pair-ai-card) { display: none !important; }
+/* 老黄历的两个子功能切换：与全局 .p-seg 同款，居中置于日历之上 */
+.hl-subfn { width: max-content; margin: 0 auto 20px; }
+.hl-subfn button { min-width: 132px; }
 
 /* ---------- AI 解读 ---------- */
 .p-ai { margin-top: 8px; border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
@@ -801,6 +804,12 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .bf-a1 { grid-area: a1; } .bf-b1 { grid-area: b1; } .bf-a2 { grid-area: a2; }
 .bf-b2 { grid-area: b2; } .bf-a3 { grid-area: a3; } .bf-b3 { grid-area: b3; }
 .bf-compact .bf-grid { grid-template-columns: 1fr 1fr; grid-template-areas: "a1 b1" "a2 b2" "a3 b3"; column-gap: 14px; row-gap: 10px; }
+/* 双人表单专用：每栏内单列堆叠（参考合婚设计），避免两列挤压导致「我知道出生时间」折行。
+   顺序与参考一致：出生日期 → 阳历/农历 → 日期按钮 → 时间开关 → 出生时间 → 时分下拉。 */
+.bf-roomy .bf-grid { grid-template-columns: 1fr; grid-template-areas: "a1" "a2" "a3" "b2" "b1" "b3"; column-gap: 0; row-gap: 11px; }
+.bf-roomy .bf-cal { width: 100%; }
+.bf-roomy .bf-cal button { flex: 1; padding: 8px 12px; }
+.bf-roomy .p-switch { white-space: nowrap; }
 /* 阳历/农历切换：连体分段控件（轨道浅灰 + 选中浮起），替代两个独立按钮 */
 .bf-cal { display: flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 4px; width: max-content; }
 .bf-cal button { flex: 0 0 auto; min-width: 0; background: transparent; border: 0; border-radius: 7px; padding: 8px 26px; color: var(--ink-3); font-size: 13.5px; font-family: inherit; cursor: pointer; }
@@ -1541,9 +1550,9 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .mrg-two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .mrg-p2 { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
 .mrg-p2 .mrg-person { background: var(--panel); margin-top: 10px; }
-.mrg-person { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
-.mrg-ph { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 12px; letter-spacing: .04em; }
-.mrg-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.mrg-person { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.mrg-ph { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 16px; letter-spacing: .04em; }
+.mrg-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .mrg-import { flex: none; font: inherit; font-size: 11px; color: var(--ink-3); background: transparent;
   border: 1px solid var(--line-strong); border-radius: 5px; padding: 3px 8px; cursor: pointer; letter-spacing: 0; }
 .mrg-import:hover { color: var(--cinnabar); border-color: var(--cinnabar); }
