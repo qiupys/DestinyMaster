@@ -196,6 +196,7 @@ def derive(method: str, num1: int | None = None, num2: int | None = None,
         lines.append(f"{pos}爻 {_yao_text(y)}{'　← 动爻' if i == moving else ''}")
 
     fact = (
+        f"起卦时刻：{when.strftime('%Y-%m-%d %H:%M')}（时令旺衰以此为准，非系统当前时间）\n"
         f"本卦：第{ben_idx}卦 {ben_name}（上{up[0]}下{lo[0]}，"
         f"{up[2]}/{lo[2]}）\n"
         f"互卦：第{hu_idx}卦 {hu_name}（上{hu_up[0]}下{hu_lo[0]}）\n"

@@ -1837,7 +1837,9 @@
     function doCast(pa, auto) {
       var qs = buildQS(pa);
       var key = astroKey(pa);
-      var rk = "astro|" + pa.y + "-" + pa.m + "-" + pa.d + "|" + pa.h + ":" + pa.mi + "|" + pa.place;
+      // 身份含经纬度/时区：同城同名但坐标或时区不同，星盘会变，必须另起一轮而非命中旧解读
+      var rk = "astro|" + pa.y + "-" + pa.m + "-" + pa.d + "|" + pa.h + ":" + pa.mi + "|" + pa.place +
+        "|" + pa.lat + "," + pa.lon + "," + pa.tz;
       var paint = function (d) {
         asDrawing = false;
         if (d.birth_saved) {
@@ -1921,7 +1923,8 @@
           // 个人今日运势：勾选「导入本人八字信息」时把档案八字一并交给 AI 作择日参考
           extra = $("#hl-bazi") && $("#hl-bazi").checked && S.profile ? "&use_bazi=1" : "";
         }
-        var rk = "day|" + sel.y + "-" + sel.m + "-" + sel.d + (isPair ? "|" + extra : "");
+        // 身份含个人约束：同日同问题先不导入八字、后导入，是两轮，不能被 findAnswered 命中旧卡
+        var rk = "day|" + sel.y + "-" + sel.m + "-" + sel.d + (extra ? "|" + extra : "");
         streamAI(feat, hlParam() + "&q=" + encodeURIComponent(q) + extra + authParam(), q, $("#hl-result"), rk);
       };
     }
