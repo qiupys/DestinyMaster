@@ -300,16 +300,14 @@ async def api_deduce(
             yy, mm = int(m.group(1)), int(m.group(2))
             if 1900 <= yy <= 2100 and 1 <= mm <= 12 and yy >= _date.today().year - 1:
                 year, month_q = yy, mm
-    # 档案身份：优先显式 profile_id+token（与 /api/chart 同规则），回落到命盘会话内绑定的档案
+    # 档案身份：必须是有效的显式凭据（统一链路前端始终带 authParam）。
+    # 绝不再从命盘会话回落 profile_id —— chart_id 只是 12 位随机串，一旦泄露（浏览器历史、
+    # 日志、转发链接），回落会让攻击者仅凭 id 就借用他人身份推演、消耗额度并写入他人历史。
     pid = None
     if profile_id and token and profile_store.auth(profile_id, token):
         pid = profile_id
-    else:
-        session0 = CHARTS.get(id)
-        if session0:
-            pid = session0.get("profile_id")
 
-    # AI 推演要求登录（与前端门禁一致；未登录直接拒绝，不消耗模型额度）
+    # AI 推演要求登录（与前端门禁一致；未登录/凭据失效直接拒绝，不消耗模型额度）
     if not pid:
         return {"ok": False, "error": "请先登录后再使用 AI 解读与追问"}
 
@@ -335,6 +333,10 @@ async def api_deduce(
             )
 
     session = CHARTS.get(id)
+    if session and session.get("profile_id") and session["profile_id"] != pid:
+        # 命盘属于别的账号：即使用户自己的 token 有效，也不能借他人盘面推演、更不能让
+        # _record 把对话写进对方会话/档案。用自己出生信息重新排盘即可正常继续。
+        return {"ok": False, "error": "该命盘属于其他账号，请用您自己的出生信息重新排盘"}
     if not session:
         # 服务重启会清空内存 CHARTS。登录用户的出生信息以档案为唯一源，
         # 这里用档案 birth 确定性重建同一张盘（排盘纯计算、无随机），

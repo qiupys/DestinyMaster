@@ -9,7 +9,11 @@ GAN_YINYANG = dict(zip("甲乙丙丁戊己庚辛壬癸", ["阳","阴","阳","阴
 
 def _solar_to_lunar(year: int, month: int, day: int, hour: int, minute: int = 0):
     from lunar_python import Solar
-    return Solar.fromYmdHms(year, month, day, hour, minute, 0).getLunar()
+    try:
+        return Solar.fromYmdHms(year, month, day, hour, minute, 0).getLunar()
+    except Exception as e:
+        # 2 月 30 日等日历上不存在的日期：lunar_python 抛裸 Exception，转成 ValueError 供接口层处理
+        raise ValueError(f"出生日期无效：{e}")
 
 
 def _ten_god(day_gan: str, other_gan: str) -> str:
@@ -166,12 +170,42 @@ def pillars_to_solar(py: str, pm: str, pd: str, ph: str,
     raise ValueError("在 1901-2099 年间找不到与四柱匹配的出生日期，请核对干支")
 
 
+def _validate_birth(year, month, day, hour, minute, calendar="solar"):
+    """在调用 lunar_python 前校验范围：它对非法日期抛裸 Exception（无 ValueError 子类），
+    直接透传会让 /api/bazi/calc 与合婚返回 500。此处提前拦成 ValueError 由接口层转友好错误。"""
+    if not all(isinstance(v, (int, float)) for v in (year, month, day)):
+        raise ValueError("出生年月日必须为数字")
+    y, mo, d = int(year), int(month), int(day)
+    if not (1900 <= y <= 2100):
+        raise ValueError("出生年份超出支持范围（1900-2100）")
+    # 农历闰月以负数表示（如 -6 = 闰六月），故公历范围 1~12、农历 -12~12 且非 0
+    if calendar == "lunar":
+        if mo == 0 or not (-12 <= mo <= 12):
+            raise ValueError("出生月份无效")
+    elif not (1 <= mo <= 12):
+        raise ValueError("出生月份无效")
+    if not (1 <= d <= 31):
+        raise ValueError("出生日期无效")
+    h = 12 if hour is None else int(hour)
+    if not (0 <= h <= 23):
+        raise ValueError("出生时辰无效（0-23）")
+    mi = int(minute or 0)
+    if not (0 <= mi <= 59):
+        raise ValueError("出生分钟无效（0-59）")
+    return y, mo, d, h, mi
+
+
 def chart(year: int, month: int, day: int, hour: int, minute: int = 0,
           gender: str = "男", birth_place: str = "", calendar: str = "solar") -> dict:
+    # 先校验参数范围（非法值在此转 ValueError，不落到 lunar_python 的裸 Exception）
+    year, month, day, hour, minute = _validate_birth(year, month, day, hour, minute, calendar)
     # 支持农历输入：先换算成公历再统一走公历排盘（闰月以负数月表示，如 -6 = 闰六月）
     if calendar == "lunar":
         from lunar_python import Lunar
-        solar = Lunar.fromYmdHms(year, month, day, hour if hour is not None else 12, minute, 0).getSolar()
+        try:
+            solar = Lunar.fromYmdHms(year, month, day, hour, minute, 0).getSolar()
+        except Exception as e:
+            raise ValueError(f"农历日期无效：{e}")
         year, month, day = solar.getYear(), solar.getMonth(), solar.getDay()
     lunar = _solar_to_lunar(year, month, day, hour, minute)
     ec = lunar.getEightChar()

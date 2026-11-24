@@ -309,6 +309,9 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
                 return {"ok": False, "error": str(e)}
+            except Exception as e:
+                # 兜底：lunar_python 等库对非法输入抛裸 Exception，避免透传成 500
+                return {"ok": False, "error": f"计算失败：{e}"}
             payload["feature"] = feature
             payload["feature_name"] = history.FEATURE_NAMES[feature]
             # 用户主动修改出生信息时，把新的出生信息写回档案（档案是全站唯一数据源）。
@@ -383,6 +386,9 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                 payload = compute_fn(params)
             except (ValueError, TypeError) as e:
                 return {"ok": False, "error": str(e)}
+            except Exception as e:
+                # 兜底：lunar_python 等库对非法输入抛裸 Exception，避免透传成 500
+                return {"ok": False, "error": f"计算失败：{e}"}
             # 塔罗：若前端回传了已抽出的牌，用它覆盖随机抽牌，保证「用户看到的牌 == AI 解读的牌」
             if feature == "tarot" and deck:
                 locked = tarot.cards_from_deck(deck, spread)

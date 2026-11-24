@@ -194,8 +194,18 @@ def delete_one(profile_id: int, history_id: int) -> bool:
 
 def delete_many(profile_id: int, history_ids: list[int]) -> int:
     """批量删除顶层问题及其追问子记录；返回实际删除的顶层条数。"""
-    ids = [int(i) for i in history_ids if isinstance(i, (int, float, str))][:500]
-    ids = [i for i in dict.fromkeys(ids) if i > 0]
+    # 逐项安全转换：ids 来自前端 JSON，可能混入 'abc'、超大整数等，int() 会抛 ValueError/OverflowError
+    safe: list[int] = []
+    for i in history_ids[:500]:
+        if isinstance(i, bool) or not isinstance(i, (int, float, str)):
+            continue
+        try:
+            n = int(i)
+        except (ValueError, TypeError, OverflowError):
+            continue
+        if 0 < n < 2**63:  # SQLite INTEGER 上界，超大整数会抛 OverflowError
+            safe.append(n)
+    ids = list(dict.fromkeys(safe))
     if not ids:
         return 0
     _ensure_table()
