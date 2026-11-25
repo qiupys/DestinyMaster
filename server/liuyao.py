@@ -33,6 +33,28 @@ VALID_YAO = (6, 7, 8, 9)
 YAO_NAMES = ("初爻", "二爻", "三爻", "四爻", "五爻", "上爻")
 YAO_POS = ("初", "二", "三", "四", "五", "上")
 
+
+def parse_yaos(raw) -> list[int] | None:
+    """解析前端回传的六爻码，供 calc 与 deduce 锁盘共用。
+
+    calc 的 ``deck`` 是 6 位连串（如 "879877"），手动起卦表单回传的是逗号串
+    （如 "8,7,9,8,7,7"）；两种格式必须还原为同一个六爻码，否则 deduce
+    会误判为无效并重新起卦，造成「页面卦盘 ≠ AI 解读卦盘」。
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        parts = list(text) if ("," not in text and len(text) == 6) else text.split(",")
+        yaos = [int(x) for x in parts if str(x).strip()]
+    except (ValueError, TypeError):
+        return None
+    if len(yaos) != 6 or any(v not in VALID_YAO for v in yaos):
+        return None
+    return yaos
+
 # 地支五行（与 bazi.py 一致）
 ZHI_WUXING = dict(zip(BRANCHES, ["水", "土", "木", "木", "土", "火",
                                  "火", "土", "金", "金", "土", "水"]))

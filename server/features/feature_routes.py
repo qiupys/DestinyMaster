@@ -95,26 +95,31 @@ def _compute(feature: str, compute_fn, params: dict) -> dict | None:
 
 
 def _lock_deck(feature: str, params: dict, payload: dict, question: str) -> dict:
-    """把前端已展示的牌/卦锁定给 AI，保证「用户看到的 == AI 解读的」。"""
+    """把前端已展示的牌/卦锁定给 AI，保证「用户看到的 == AI 解读的」。
+
+    deck 一旦回传就必须还原成功；绝不能静默回退到重新计算的 payload——
+    那会让 AI 解读另一副牌/另一卦，用户看到的两套结果对不上且无从察觉。
+    """
     deck = params.get("deck")
     if not deck:
         return payload
     if feature == "tarot":
         locked = tarot.cards_from_deck(deck, params.get("spread") or "three")
-        return locked or payload
+        if not locked:
+            raise ValueError("牌阵标识无效，请重新抽牌后再解读")
+        return locked
     if feature == "liuyao":
+        yaos = liuyao.parse_yaos(deck)
+        if yaos is None:
+            raise ValueError("卦象标识无效，请重新起卦后再解读")
         try:
             from datetime import datetime as dt
             when = params.get("when")
             if isinstance(when, str) and when:
                 when = dt.fromisoformat(when.replace("T", " ").replace("Z", ""))
-            locked = liuyao.derive(
-                "manual", yaos=[int(x) for x in deck.split(",") if x.strip()],
-                when=when, question=question,
-            )
-            return locked or payload
-        except (ValueError, TypeError):
-            pass
+            return liuyao.derive("manual", yaos=yaos, when=when, question=question)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"起卦时间或卦象无效：{exc}") from exc
     return payload
 
 
@@ -160,12 +165,18 @@ def _make_calc_and_deduce(feature: str, compute_fn):
         question = (p.get("q") or "").strip()
         if not question:
             return {"ok": False, "error": "问题不能为空"}
+        # calc 用 question= 起卦，deduce 用 q= 提问；把 q 回填到 question，
+        # 让 compute_fn / 锁盘重算看到同一个问题（fact 的「所问」与检索词才一致）。
+        p["question"] = question
         payload = _compute(feature, compute_fn, p)
         if payload is None:
             return {"ok": False, "error": "计算失败"}
         if not payload.get("ok", True):
             return payload
-        payload = _lock_deck(feature, p, payload, question)
+        try:
+            payload = _lock_deck(feature, p, payload, question)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
         _mark_identity(feature, p, payload)
 
         pid = common.auth(p.get("profile_id"), p.get("token"))

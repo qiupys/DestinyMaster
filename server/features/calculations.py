@@ -105,17 +105,9 @@ def calc_liuyao(p: dict) -> dict:
             coins = [int(x) for x in str(p["coins"]).split(",") if x.strip()]
         except ValueError:
             raise ValueError("铜钱结果格式无效")
-    yaos = None
-    if p.get("yaos"):
-        try:
-            raw = str(p["yaos"]).strip()
-            # 兼容两种回传：calc 的 deck="789786"（6 位连串）与 "7,8,9,7,8,6"
-            parts = list(raw) if ("," not in raw and len(raw) == 6) else raw.split(",")
-            yaos = [int(x) for x in parts if str(x).strip()]
-            if len(yaos) != 6 or any(v not in (6, 7, 8, 9) for v in yaos):
-                raise ValueError
-        except ValueError:
-            raise ValueError("卦象参数格式无效（需 6 个爻值 6/7/8/9）")
+    yaos = liuyao.parse_yaos(p.get("yaos"))
+    if p.get("yaos") and yaos is None:
+        raise ValueError("卦象参数格式无效（需 6 个爻值 6/7/8/9）")
     return liuyao.derive(p.get("method") or "coin", coins=coins,
                          num1=p.get("num1"), num2=p.get("num2"), yaos=yaos,
                          when=when, question=p.get("question"))

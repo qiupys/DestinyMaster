@@ -212,6 +212,44 @@ class TestAllFeatures(ApiTestCase):
         detail = self.client.get("/api/history/detail", params={**auth, "id": hid}).json()["item"]
         self.assertIn("命主本人八字", detail["payload"].get("_injected", ""))
 
+    def test_liuyao_deck_lock_uses_exact_chart_shown_to_user(self):
+        """页面展示的卦必须就是 AI 解读的卦：deck 连串与逗号串都要能锁定。"""
+        pid, token = self.new_user()
+        auth = self.auth_params(pid, token)
+        deck = "879877"  # calc 返回的 6 位连串；mock derive 会把 yaos 原样写进 fact
+        when = "2027-03-04T10:00:00"
+        q = "宁德时代能够长持吗？"
+
+        events, _ = self.get_sse("/api/liuyao/deduce", {
+            **auth, "q": q, "deck": deck, "when": when,
+        })
+        self.assertIsNotNone(event_hid(events), events)
+        prompt = self.ai_mock.prompts[-1]
+        # mock 引擎把锁定的 yaos 放进 fact；解析失败时会变成 yaos=None 并重新起卦
+        self.assertIn(str([8, 7, 9, 8, 7, 7]), prompt, prompt)
+        detail = self.client.get("/api/history/detail",
+                                 params={**auth, "id": event_hid(events)}).json()["item"]
+        self.assertIn(str([8, 7, 9, 8, 7, 7]), detail["payload"].get("fact", ""))
+
+        # 手动起卦回传的逗号串必须等价（force=1 避免命中同 key 缓存跳过锁盘）
+        self.get_sse("/api/liuyao/deduce", {
+            **auth, "q": q, "deck": "8,7,9,8,7,7", "when": when, "force": 1,
+        })
+        self.assertIn(str([8, 7, 9, 8, 7, 7]), self.ai_mock.prompts[-1])
+
+    def test_liuyao_invalid_deck_never_silently_recasts(self):
+        """deck 无效必须明示错误，绝不静默换一卦给 AI 解读。"""
+        pid, token = self.new_user()
+        auth = self.auth_params(pid, token)
+        before = len(self.ai_mock.prompts)
+        bad = self.client.get("/api/liuyao/deduce", params={
+            **auth, "q": "坏 deck", "deck": "9999999", "when": "2027-03-04T10:00:00",
+        })
+        self.assertEqual(bad.status_code, 200, bad.text)
+        self.assertFalse(bad.json().get("ok"), bad.json())
+        self.assertIn("卦象标识无效", bad.json().get("error", ""))
+        self.assertEqual(len(self.ai_mock.prompts), before)
+
     def test_auth_boundaries(self):
         pid, token = self.new_user()
         events, _ = self.get_sse("/api/qimen/deduce", {**FEATURE_PARAMS["qimen"], **self.auth_params(pid, token), "q": "鉴权边界"})
@@ -230,3 +268,51 @@ class TestAllFeatures(ApiTestCase):
             bad = self.client.get("/api/bazi/calc", params=FEATURE_PARAMS["bazi"])
         self.assertFalse(bad.json().get("ok"))
         self.assertEqual(bad.json().get("error"), "测试非法输入")
+
+
+class TestRealEngineLock(ApiTestCase):
+    """不 mock 引擎：验证「页面看到的盘 == AI prompt 里的盘」真实链路。
+
+    TestAllFeatures 把引擎也 mock 掉，正好掩盖了六爻 deck 连串解析失败、
+    deduce 静默重新起卦的严重 bug。这里用真实引擎守住这条铁律。
+    """
+
+    def test_liuyao_calc_deck_equals_deduce_fact(self):
+        pid, token = self.new_user()
+        auth = self.auth_params(pid, token)
+        q = "卦面与解读必须同一卦？"
+        when = "2027-03-04T10:00:00"
+        calc = self.client.get("/api/liuyao/calc", params={
+            "method": "coin", "coins": "8,7,9,8,7,7", "when": when, "question": q,
+        }).json()
+        self.assertTrue(calc.get("ok"), calc)
+        self.assertEqual(calc["deck"], "879877")
+        self.assertIn("巽为风", calc["fact"])
+
+        events, _ = self.get_sse("/api/liuyao/deduce", {
+            **auth, "q": q, "deck": calc["deck"], "when": calc["when"],
+        })
+        self.assertIsNotNone(event_hid(events), events)
+        prompt = self.ai_mock.prompts[-1]
+        # calc 展示的每一层关键事实都必须逐字出现在 AI 看到的 prompt 中
+        for line in calc["fact"].splitlines():
+            if line.startswith(("本卦：", "纳甲：", "动爻：")):
+                self.assertIn(line, prompt, f"展示的盘面事实未进入 prompt：{line}")
+        self.assertIn(q, prompt)  # q 回填到 question，fact 的「所问」才不丢
+
+    def test_tarot_calc_deck_equals_deduce_fact(self):
+        pid, token = self.new_user()
+        auth = self.auth_params(pid, token)
+        q = "牌面与解读必须同一副牌？"
+        calc = self.client.get("/api/tarot/calc", params={
+            "spread": "three", "question": q,
+        }).json()
+        self.assertTrue(calc.get("ok"), calc)
+        deck = ",".join(f"{c['slug']}|{1 if c['reversed'] else 0}" for c in calc["cards"])
+        events, _ = self.get_sse("/api/tarot/deduce", {
+            **auth, "q": q, "spread": "three", "deck": deck,
+        })
+        self.assertIsNotNone(event_hid(events), events)
+        prompt = self.ai_mock.prompts[-1]
+        for line in calc["fact"].splitlines()[1:]:  # 跳过牌阵标题行
+            self.assertIn(line, prompt, f"展示的牌面未进入 prompt：{line}")
