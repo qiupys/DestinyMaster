@@ -21,7 +21,8 @@ server/
   meihua.py / liuyao.py / qimen.py / tarot.py / astrology.py / huangli.py
 web/
   index.html        单页入口（版本号在这里 bump）
-  portal.js         全部前端逻辑、hash 路由、组件模板、SSE 渲染
+  reading-core.js   AI 解读统一对象模型（纯数据、可 node 单测）：Person/Reading/ReadingSession + 功能注册表
+  portal.js         前端视图层：hash 路由、组件模板、盘面渲染、SSE 渲染；解读状态一律经对象模型
   portal.css        设计系统 token + 原子组件层 + 功能样式
   *.json            静态数据（塔罗牌义等）
 docs/kb/<domain>/    RAG 语料（九领域）
@@ -45,6 +46,7 @@ tests/
 
 **模块边界铁律**：
 - 一个功能只在一个引擎文件实现确定性计算，在 `ai.py` 只有一个 prompt 入口，在 `features/feature_routes.py` 只有一个工厂路由。新增功能不得在前端自写 fetch 渲染或后端另起一套落盘逻辑。
+- **前端解读状态只在 `reading-core.js` 建模**（v117）：一次解读 = `Reading` 对象，参与人 = `Person` 快照（双人=2 个），会话 = `ReadingSession`。新增功能只需在 `FEATURES` 注册表加一行（root/qbox/out/note/arity/needsBirth），再加自己的盘面 `renderXxx`（视图），**不得**另写去重/归档/追问/快照逻辑。DOM 的 `data-rk/data-hid/data-archQ` 是对象投影：写给 CSS/E2E 看，判断状态一律问对象，禁止从 DOM 文本反推「是否解读过」。
 - 数据落盘只走 `history.save`（deduce 时）/`history.append_followup`（追问时），calc 从不落库。追问只走 `/api/history/followup`。
 - 个人化文本只来自 `personal_memory`（`memory.personalization_text()` → `history.personalization()`），不得恢复已删除的自动画像链路。
 

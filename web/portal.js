@@ -3,12 +3,28 @@
 (function () {
   "use strict";
 
+  // v116：统一解读对象模型（web/reading-core.js，纯数据层，可 node 单测）。
+  // 一次 AI 解读 = 一个 Reading 对象；当前轮/归档/追问/去重全由 ReadingSession 管理。
+  // DOM 上的 data-rk / data-hid / data-archQ 只是对象的渲染投影：写给 CSS/E2E 看，
+  // 判断状态一律问对象，不再扫 DOM 文本——杜绝「展示与解读脱节」。
+  var Core = window.ReadingCore;
+  if (!Core) throw new Error("reading-core.js 未加载：请检查 index.html 脚本顺序");
+
   var S = {
     feature: "home",
     profile: null,       // {id, token, name}
     busy: false,
     stageCache: {},      // feature -> 持久 DOM 容器；切页只隐藏/显示，不销毁
   };
+
+  /* 容器 → 解读会话：feature 显式传入优先；紫微运势盘用独立 slot 与命格盘隔离。
+     黄历 personal/pair 共用 #hl-result，靠调用方传入的 feature 区分（不靠 DOM）。 */
+  var SLOT_CONTAINERS = { "zw-d-ai-out": "zw-d", "zw-d-result": "zw-d" };
+  function sessOf(container, feature) {
+    var f = feature || S.feature;
+    var slot = (container && SLOT_CONTAINERS[container.id]) || "";
+    return Core.session(f, slot);
+  }
   // 老黄历的两个子功能共用同一舞台；旧链接 #/huangli_pair 通过它切到双人择日 tab。
   var hlApplyMode = null;
   // 每个功能持有自己的舞台容器。切到别的功能时只隐藏，正在进行的 AI 流式解读
@@ -144,6 +160,7 @@
   function clearUserData() {
     clearAllSnaps();
     dropStages();
+    Core.clearAll();                    // v116：解读对象仓库随用户数据一起清空
     S.profileBirth = null;
     S.zw = null; S.zwFromProfile = false;
     try { sessionStorage.removeItem("zw-chart-v1"); } catch (e) { warn("清理紫微盘缓存失败", e); }
@@ -228,6 +245,8 @@
     if (!root && !arc) return;
     try {
       sessionStorage.setItem(snapKey(feat), JSON.stringify({
+        // v116：解读状态以对象为真相源（含轮次/归档/追问链）；DOM 仅作视觉投影。
+        core: Core.serializeFeature(feat),
         rootHtml: root ? root.innerHTML : null,
         rootId: root ? root.id : null,
         arcHtml: arc ? arc.innerHTML : null,
@@ -270,7 +289,12 @@
         var fc = $(".tool-card[id$='-form-card']", st);
         if (fc) fc.style.display = "none";
       }
-      if (restored) { st.dataset.snapRestored = "1"; rebindFollows(st); }
+      if (restored) {
+        // 对象状态与 DOM 投影同步恢复：追问/去重判断从对象读，必须与画面一致。
+        Core.restoreFeature(snap.core || {});
+        st.dataset.snapRestored = "1";
+        rebindFollows(st);
+      }
     }
     setTimeout(attempt, 0);
   }
@@ -799,6 +823,16 @@
     }
     put(a, "", pfxA);
     put(b, "p2_", pfxB);
+    // v116：把表单里这双方的信息存为 Person 快照，供对话对象导入（合婚/双人择日）。
+    // 与查询串同源，避免「AI 读的年份 ≠ 用户填的年份」这类脱节。
+    if (typeof setPartner === "function") {
+      setPartner(new Core.Person({
+        role: "partner",
+        name: ($("#" + pfxB + "-name").value || "").trim(),
+        gender: $("#" + pfxB + "-gender").value,
+        birth: b
+      }));
+    }
     return out.join("&");
   }
 
@@ -2150,10 +2184,12 @@
      · 新提问：换新问题 → 旧的一整轮折叠归档（功能页内可展开回看）→ 按新问题从头开始。
        塔罗/梅花还会真正重新抽牌/起卦；八字/紫微/黄历的盘固定，只换问题重解。
      归档区挂在结果容器【之外】（stage 层），因为塔罗/梅花重新抽牌会 innerHTML 重建结果容器。 */
-  var ROOT_SEL = { bazi:"#bz-result", meihua:"#mh-result", tarot:"#tr-result", huangli:"#hl-result", huangli_pair:"#hl-result", ziwei:"#zw-result", astrology:"#as-result",
-    liuyao:"#ly-result", qimen:"#qm-result", bazi_marriage:"#bzm-result", ziwei_marriage:"#zm-result", astrology_marriage:"#asm-result" };
-  var QBOX_SEL = { bazi:"#bz-q", meihua:"#mh-q", tarot:"#tr-q", huangli:"#hl-q", huangli_pair:"#hl-q", ziwei:"#zw-q", astrology:"#as-q",
-    liuyao:"#ly-q", qimen:"#qm-q", bazi_marriage:"#bzm-q2", ziwei_marriage:"#zm-q2", astrology_marriage:"#asm-q2" };
+  /* v116：选择器不再各功能抄一张表，统一从对象模型的注册表读取（单一来源）。 */
+  function rootSel(feature) { var d = Core.def(feature || S.feature); return d ? d.root : null; }
+  function qboxSel(feature) { var d = Core.def(feature || S.feature); return d ? d.qbox : null; }
+  // 兼容旧变量名（其余代码仍有引用），值来自注册表。
+  var ROOT_SEL = {}, QBOX_SEL = {};
+  Object.keys(Core.FEATURES).forEach(function (f) { ROOT_SEL[f] = Core.def(f).root; QBOX_SEL[f] = Core.def(f).qbox; });
 
   function archiveHost(container) {
     var st = container.closest(".p-wrap") || stageEl();
@@ -2161,7 +2197,7 @@
     if (!host) {
       host = document.createElement("div");
       host.className = "round-archive";
-      var root = st.querySelector(ROOT_SEL[S.feature]) || container;
+      var root = st.querySelector(rootSel()) || container;
       if (root.parentNode) root.parentNode.insertBefore(host, root.nextSibling);
       else st.appendChild(host);
     }
@@ -2227,6 +2263,14 @@
       '<div class="p-ai-body">' + factHtml + bodyHtml + '</div>';
     host.insertBefore(item, host.firstChild);   // 最新一轮置顶
     if (archHid) attachFollow(item, archHid, followNote(S.feature));
+    // v116：对象状态同步归档——DOM 投影归档后，真相源也必须从 current 移到 archived。
+    // 用 DOM 上的 hid 校正对象（流式落盘可能晚于归档发生），保证追问挂回同一条历史链。
+    var sess = sessOf(container);
+    if (sess.current) {
+      if (archHid) sess.current.id = Number(archHid) || sess.current.id;
+      sess.current.answer = sess.current.answer || $(".p-ai-body", main).textContent;
+      sess.archive();
+    }
     // 清空本轮结果容器（盘面 + 解读 + 追问槽一次性移除）
     Array.prototype.slice.call(container.children).forEach(function (n) { n.parentNode.removeChild(n); });
     container.dataset.lastQ = "";
@@ -2242,25 +2286,31 @@
      返回 {node, isArchive} 或 null。供模板问题点击与重复解读拦截共用。 */
   function findAnswered(st, q, rk) {
     if (!st || !q) return null;
-    function sameRk(node) {
-      if (!rk) return true;                          // 无 rk：模板定位，跨所有轮
-      var nrk = node.dataset ? (node.dataset.rk || "") : "";
-      return nrk === rk;                             // 严格按结果身份，不能只按问题文本
+    // v116：真相源是 ReadingSession 对象——严格按 question + rk 判断，不再扫 DOM 文本。
+    // rk 为空时对象只按 question 跨轮匹配（模板定位）。
+    var sess = Core.session(S.feature);
+    var hit = sess.find(q, rk);
+    if (!hit) return null;
+    // 对象命中后再到 DOM 找到对应视觉节点（供滚动/展开）；DOM 找不到只说明尚未渲染，
+    // 不影响「已解读」判断——这正是对象模型带来的健壮性。
+    var node = null;
+    if (hit.archived) {
+      var items = st.querySelectorAll(".round-archive .p-ai-archived");
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].dataset.archQ === hit.reading.question &&
+            (!rk || items[i].dataset.rk === hit.reading.rk)) { node = items[i]; break; }
+      }
+    } else {
+      var ais = st.querySelectorAll(".p-ai:not(.p-ai-archived)");
+      for (var j = 0; j < ais.length; j++) {
+        if (ais[j].closest(".round-archive") || ais[j].closest(".ai-follow")) continue;
+        if (ais[j].dataset.hid && hit.reading.id && Number(ais[j].dataset.hid) === hit.reading.id) {
+          node = ais[j]; break;
+        }
+        if (!hit.reading.id && (!rk || ais[j].dataset.rk === hit.reading.rk)) { node = ais[j]; break; }
+      }
     }
-    var items = st.querySelectorAll(".round-archive .p-ai-archived");
-    for (var i = 0; i < items.length; i++) {
-      if (!sameRk(items[i])) continue;
-      var aq = items[i].dataset.archQ || "";
-      if (aq === q) return { node: items[i], isArchive: true };
-    }
-    var ais = st.querySelectorAll(".p-ai:not(.p-ai-archived)");
-    for (var j = 0; j < ais.length; j++) {
-      if (ais[j].closest(".round-archive") || ais[j].closest(".ai-follow")) continue;  // 归档轮/追问子卡不参与
-      if (!sameRk(ais[j])) continue;
-      var t = $(".p-ai-title", ais[j]);
-      if (t && t.textContent.indexOf(q) >= 0) return { node: ais[j], isArchive: false };
-    }
-    return null;
+    return { node: node, isArchive: hit.archived, reading: hit.reading };
   }
   /* 定位到某次已解读：归档卡展开、滚动到视野，给出提示。
      归档卡是只读回看（不再挂追问框），追问请回到当前轮。 */
@@ -2275,10 +2325,13 @@
      重新起卦/抽牌/排盘后容器 rk 已更新，快捷问题也必须按新的 rk 判断，
      否则「同一问题 + 新卦」会被误认成旧轮、只定位回旧解读。 */
   function currentRoundRk() {
+    // v116：从对象读当前盘面身份；DOM dataset 作为兜底（例如对象尚未 begin 的模板定位场景）。
+    var rk = Core.session(S.feature).boardRk || "";
+    if (rk) return rk;
     var st = stageEl();
-    var sel = ROOT_SEL[S.feature];
+    var sel = rootSel();
     var c = sel && st.querySelector(sel);
-    var rk = c && c.dataset ? (c.dataset.rk || "") : "";
+    rk = c && c.dataset ? (c.dataset.rk || "") : "";
     if (!rk) {
       var ai = st.querySelector(".p-ai:not(.p-ai-archived):not(.ai-follow)[data-rk]");
       rk = ai ? (ai.dataset.rk || "") : "";
@@ -2322,9 +2375,35 @@
     }
     container.dataset.lastQ = question;
     container.dataset.rk = rk || "";
+    sessOf(container).setBoard(question, rk);   // v116：盘面身份写入对象，供 currentRoundRk 读取
     return true;
   }
   /* ================= AI 流式解读（共用） ================= */
+  /* 从 deduce URL 反推 feature（/api/<feat>/deduce 或 /api/deduce 紫微） */
+  function featureOfUrl(url) {
+    var m = /\/api\/([a-z_]+)\/deduce/.exec(url);
+    if (m) return m[1];
+    return "ziwei";   // /api/deduce 是紫微专用
+  }
+  /* 对话导入用户信息：按注册表 arity 造 Person 快照。
+     本人来自登录档案 S.profile / S.profileBirth；对方信息由双人功能在发起解读前
+     调用 setPartner() 写入临时槽（见下）。追究其来源统一收口于此，功能代码不各自拼。 */
+  var _partnerDraft = null;
+  function setPartner(person) { _partnerDraft = person; }
+  function currentPersons(feature) {
+    var d = Core.def(feature);
+    if (!d || !d.needsBirth || !S.profile) return [];
+    var self = new Core.Person({
+      role: "self", name: S.profile.name || "", profileId: S.profile.id || 0,
+      birth: S.profileBirth || null
+    });
+    var persons = [self];
+    if (d.arity === 2) {
+      var mate = _partnerDraft ? Core.Person.fromJSON(_partnerDraft) : new Core.Person({ role: "partner" });
+      persons.push(mate);
+    }
+    return persons;
+  }
   function streamAI(feature, query, question, container, rk) {
     if (!prepareNewQuestion(container, question, rk)) return;
     streamToUrl("/api/" + feature + "/deduce?" + query, "AI 解读", question, container, false, rk);
@@ -2365,6 +2444,17 @@
     // 点击 AI 解读后立即滚到解读框，避免停留在结果上方
     $("#" + holderId).scrollIntoView({ behavior: "smooth", block: "nearest" });
     var full = "", buf = "", hid = 0;
+    // v116：对象联动。新解读=创建 Reading（带参与人快照）；追问=定位所属 Reading。
+    // 参与人快照从当前登录档案构造，解读一旦开始即冻结，追问沿用同一份。
+    var sess = sessOf(container);
+    var reading = null, isFollow = tag === "追问";
+    if (isNewQuestion) {
+      reading = sess.begin(question, rk, currentPersons(featureOfUrl(url)));
+    } else {
+      var m = /[?&]id=([^&]+)/.exec(url);
+      var rootId = m ? Number(decodeURIComponent(m[1])) : 0;
+      reading = sess.findById(rootId) || sess.current;
+    }
 
     fetch(url)
       .then(function (resp) {
@@ -2417,6 +2507,9 @@
       // 用 .done 作为「流结束」信号，供测试与追问定位。
       var card = $("#" + holderId);
       if (card) card.classList.add("done");
+      // v116：流结束把结果写回对象——对象才是真相源，DOM 只是投影。
+      if (reading && !isFollow) sess.finish(hid || reading.id, full);
+      if (reading && isFollow) reading.addFollowup(question, full, hid);
       // 每一处【首轮解读】都支持「继续追问」：有 hid（登录且已落盘）时在卡底挂追问条。
       // 追问结果卡（tag=追问）不再挂新追问框——追问链沿用触发它的那条追问条继续输入，
       // 避免每追问一次就多堆叠一个追问框（用户反馈「追问后仍有追问框」）。
@@ -2428,23 +2521,8 @@
     }
   }
 
-  /* 追问备注：按功能给出准确说法（塔罗是「牌阵」不重新抽牌，梅花才叫「起卦」）。
-     放在追问条内、输入框上方作为提示，不写「说明：」前缀。 */
-  function followNote(feature) {
-    var MAP = {
-      bazi: "追问会沿用这一次的八字盘，不会重新排盘",
-      meihua: "追问会沿用这一次的卦象，不会重新起卦",
-      tarot: "追问会沿用这一次的牌阵与抽牌结果，不会重新抽牌",
-      huangli: "追问会沿用这一次的黄历信息，不会重新查询",
-      huangli_pair: "追问会沿用这一天与双方八字，不会重新查询",
-      ziwei: "追问会沿用这一次的命盘，不会重新排盘",
-      astrology: "追问会沿用这一次的本命盘，不会重新排盘",
-      astrology_marriage: "追问会沿用这一次的双人合盘，不会重新排盘",
-      ziwei_marriage: "追问会沿用这一次的双人命盘，不会重新排盘",
-      bazi_marriage: "追问会沿用这一次的双人四柱，不会重新排盘"
-    };
-    return MAP[feature] || "追问会沿用这一次的解读内容，不会重新推演";
-  }
+  /* 追问备注：文案由 reading-core 注册表统一维护（单一来源），此处只做转发。 */
+  function followNote(feature) { return Core.followNote(feature); }
 
   /* AI 解读卡通用追问条：复用 /api/history/followup，沿用本次盘面事实，可无限多轮。
      card 为 .p-ai 节点，hid 为该解读落盘后的历史 id。追问结果由 streamToUrl 渲染进

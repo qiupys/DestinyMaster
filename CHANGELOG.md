@@ -11,6 +11,12 @@
 
 ---
 
+## v117 (2026-11-25)
+- [refactor][架构] AI 解读从「散在 DOM dataset」升级为统一对象模型。新增 `web/reading-core.js`（纯数据、无 DOM、可 node 单测）：`Person`（用户信息快照）/`Reading`（一次对话：问题+rk+正文+追问链+参与人）/`ReadingSession`（当前轮+归档+去重+快照）+ 12 项功能声明式注册表（root/qbox/out/note/arity/needsBirth）。对象为唯一真相源，DOM 的 data-rk/data-hid/data-archQ 降为渲染投影。
+- [refactor] portal.js 解读链路全部改走对象：findAnswered 严格按 question+rk 查对象、currentRoundRk 读对象 boardRk、归档同步迁移 current→archived、streamToUrl 结束时写回 answer/hid、追问 append 到对应 Reading.followups；选择器表与 followNote MAP 由注册表生成（消除两处「一个功能一份」的重复）。
+- [feat] 对话导入用户信息：注册表 arity 声明单人=1/双人合婚与择日=2、needsBirth 声明是否由出生资料定盘；`currentPersons()` 从登录档案构造 Person 快照，双人功能经 `pairFormParams` 写入对方快照。对话一旦建立即冻结参与人，用户中途改档案不影响旧解读追问的一致性。
+- [test] 新增 `tests/js/test_reading_core.js`（13 项：去重/归档/追问/快照/双人 Person/六爻换爻隔离）与 `tests/api/test_reading_core_guard.py`（锁单一来源：注册表 arity/needsBirth、无散写 MAP、find/begin/finish 走对象、脚本加载顺序）。API 回归 39 项全过；浏览器实测解读写回/DOM 投影/追问挂接/双人快照全通过。
+
 ## v116 (2026-11-25)
 - [fix][解读口径] 紫微点名某宫 = 以它为主体、据三方四正与四化展开，不是「只看」单宫。根因：宫位提问区把「（只看「XX宫」）」硬拼进问题文本，随 q 直接进 AI【用户问题】，压过后端三方四正框架；UI「三方四正」快捷跳转偏移 `[1,5,7]` 亦与命格解析口径 `[4,8,6]` 不一致。
 - [fix] 前端：提问前缀改「（以「XX宫」为主体，结合三方四正与四化）」（含主体措辞的 chips 不重复加）；三个 chips 与输入框占位改为为主体口径；zwAsk 新增 focusPalace 参数，把主体宫+方法论词结构化传后端；三方四正跳转偏移修正为 `[4,8,6]`。

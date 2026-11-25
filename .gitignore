@@ -26,7 +26,9 @@ server/.adminkey
 .vscode/
 *.log
 
-# 测试目录：E2E 脚本与截图只留本地；API 回归框架需入库，作为重构护栏
+# 测试目录：E2E 脚本与截图只留本地；API 回归框架与对象模型单测需入库，作为重构护栏
 tests/**
 !tests/api/
 !tests/api/*.py
+!tests/js/
+!tests/js/*.js

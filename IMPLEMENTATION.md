@@ -35,6 +35,7 @@
 ## 3. 数据模型与链路
 
 - **原子记录**：`feature_history` 一条 = 问题 + AI 解读 + 个人信息 + 追问链。`parent_id` 实现追问父子链（list/stats 只算顶层）；`get_detail()` 归一到 root 带 `followups[]`；删除连坐子记录。
+- **前端对象模型**（v117，`web/reading-core.js`）：后端一行 ↔ 前端一个 `Reading`。`Person`=用户信息快照（本人来自登录档案，双人功能经 `pairFormParams`→`setPartner` 写入对方），`Reading.persons` 冻结解读当时的参与人（中途改档案不影响旧解读追问）；`ReadingSession` 管当前轮/归档/去重/快照，按 `feature+slot` 隔离（紫微命格盘 vs 运势盘不同 slot）。注册表 `FEATURES` 声明每功能 `arity`（1/2）与 `needsBirth`，`currentPersons()` 据此构造快照。DOM 属性只是对象的渲染投影。单测 `node tests/js/test_reading_core.js`，架构护栏 `tests/api/test_reading_core_guard.py`。
 - **落盘**：只在 deduce 经 `history.save` 落库（calc 从不）；payload 含 fact / 盘面 / 注入文本 `_injected`，追问据此重建，不依赖内存会话。
 - **去重 key**：`_dedupe_key` = 问题 + 完整 payload；前端 rk = 问题 + 确定性盘面身份（塔罗 deck、梅花卦象、六爻 when+deck、奇门 method+局、黄历日期+双人、八字出生参数+scope、紫微 chart id、占星生日+时分+出生地）。严格相等才算同轮。
 - **归档**：`archiveRound` 只归档含 `.p-ai` 的轮；双人合婚盘面/提问卡不被归档清空。
