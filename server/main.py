@@ -33,6 +33,7 @@ import ai  # 统一 AI 解读层（prompt 装配 / stream_answer / 免责）
 import history  # 统一历史落盘与追问（feature_history 表）
 import profile as profile_store
 import feature_api  # 全功能统一路由（含紫微 deduce / 历史 / followup）
+from applog import log
 
 # API key：优先读环境变量，其次读 server/.apikey
 if not os.environ.get("CODEBUDDY_API_KEY"):
@@ -428,7 +429,9 @@ def _record(session: dict, question: str, full: str, key: str | None = None):
             asyncio.get_running_loop().create_task(maybe_compress_async(pid))
             # 自动画像已废弃：个性化记忆唯一来源改为用户手动维护的个人记忆（personal_memory）
         except Exception:
-            pass
+            # 历史落盘失败是真实错误：解读正文已返回，但记录没写进去，必须留痕可排查。
+            log.warning("紫微推演历史落盘失败 pid=%s chart=%s", pid,
+                        session.get("chart_id"), exc_info=True)
 
 
 async def maybe_compress_async(pid: int):

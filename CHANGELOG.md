@@ -11,6 +11,11 @@
 
 ---
 
+## v115.1 (2026-11-25)
+- [refactor] 消灭全仓静默吞异常：新增 `server/applog.py` 统一日志，后端 10 处 `except: pass` 全部改为留痕（warning + exc_info），前端 16 处空 `.catch(function(){})` / `catch(e){}` 改为 `console.warn`，其中六爻起卦、奇门起局失败改为用户可见错误提示。
+- [test] 新增 `tests/api/test_no_silent_except.py` 静态护栏：禁止 `except:pass` 与空 catch 回潮，并要求留痕基础设施在位。API 回归 24 项 + 单元 14 项全过。
+- [docs] 前端 portal.js bump 至 v115.1。
+
 ## v115 (2026-11-25)
 - [fix][严重] 六爻「看到的卦 ≠ AI 解读的卦」：calc 回传 6 位连串 deck（如 `879877`），deduce 只按逗号切分导致解析失败，静默回退为重新起卦；页面显示巽为风、AI 却解读随机新卦。现统一由 `liuyao.parse_yaos` 解析连串与逗号串，锁盘失败一律显式报错，绝不静默换卦。
 - [fix] 全部 deduce 把 `q` 回填到 `question`，保证 compute_fn/锁盘重算的「所问」与 calc 一致（此前 deduuce 重算时问题文本丢失）。

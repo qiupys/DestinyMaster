@@ -27,6 +27,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from applog import log
+
 GAN = "甲乙丙丁戊己庚辛壬癸"
 ZHI = "子丑寅卯辰巳午未申酉戌亥"
 GANZHI60 = [GAN[i % 10] + ZHI[i % 12] for i in range(60)]
@@ -412,7 +414,7 @@ def derive(when: datetime | None = None, method: str = "chaibu",
                 + "——为求测人自身的参照宫，AI 解读时应聚焦此宫与本宫的关系。"
             )
         except (ValueError, TypeError):
-            pass
+            log.warning("奇门年命解析失败（year_na=%r），跳过年命标注", year_na, exc_info=True)
     if yongshen:
         ys = str(yongshen).strip()
         # 用神为可选项：按「所测之人 / 专项 / 指定八门 / 指定天干」把标签映射到实际落宫，

@@ -29,10 +29,13 @@
   try {
     var raw = localStorage.getItem("zw-profile");
     if (raw) S.profile = JSON.parse(raw);
-  } catch (e) {}
+  } catch (e) { warn("读取本地登录态失败", e); }
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  // 静默失败留痕：以前大量 .catch(function(){}) 把网络/解析错误吞掉，
+  // 用户点了没反应、开发者也查不到。降级场景至少进 console，关键操作给用户提示。
+  function warn(tag, e) { if (window.console && console.warn) console.warn("[命理馆] " + tag, e || ""); }
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
     return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c];
   }); };
@@ -109,17 +112,21 @@
     try { return JSON.parse(sessionStorage.getItem(CHART_CACHE[feature]) || "null"); } catch (e) { return null; }
   }
   function chartCacheSet(feature, obj) {
-    try { sessionStorage.setItem(CHART_CACHE[feature], JSON.stringify(obj)); } catch (e) {}
+    try { sessionStorage.setItem(CHART_CACHE[feature], JSON.stringify(obj)); }
+    catch (e) { warn("命盘缓存写入失败（不影响排盘）", e); }
   }
   /* 档案出生信息变更后：清掉全部命盘缓存（否则旧盘仍被复用），并刷新档案副本 */
   function profileBirthChanged() {
-    Object.keys(CHART_CACHE).forEach(function (f) { try { sessionStorage.removeItem(CHART_CACHE[f]); } catch (e) {} });
+    Object.keys(CHART_CACHE).forEach(function (f) {
+      try { sessionStorage.removeItem(CHART_CACHE[f]); }
+      catch (e) { warn("清理命盘缓存失败", e); }
+    });
     if (S.zw) { S.zw.chart = null; S.zw.id = null; S.zw.key = null; S.zw.horo = null; }
     if (S.profile) {
       fetch("/api/profile/get?id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token))
         .then(function (r) { return r.json(); }).then(function (d) {
           if (d.ok && d.profile) S.profileBirth = d.profile.birth || null;
-        }).catch(function () {});
+        }).catch(function (e) { warn("刷新档案出生信息失败", e); });
     }
   }
   /* 销毁所有功能舞台缓存（提问/解读/追问/门禁 DOM）。登录或退出都必须调用：
@@ -139,7 +146,7 @@
     dropStages();
     S.profileBirth = null;
     S.zw = null; S.zwFromProfile = false;
-    try { sessionStorage.removeItem("zw-chart-v1"); } catch (e) {}
+    try { sessionStorage.removeItem("zw-chart-v1"); } catch (e) { warn("清理紫微盘缓存失败", e); }
     pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false,
       birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false };
   }
@@ -147,7 +154,8 @@
     var wasLogged = !!S.profile;
     var changed = wasLogged !== !!p;
     S.profile = p;
-    try { p ? localStorage.setItem("zw-profile", JSON.stringify(p)) : localStorage.removeItem("zw-profile"); } catch (e) {}
+    try { p ? localStorage.setItem("zw-profile", JSON.stringify(p)) : localStorage.removeItem("zw-profile"); }
+    catch (e) { warn("保存登录态失败", e); }
     if (changed) {
       if (!p) clearUserData();
       else dropStages();   // 登录：清掉"未登录态"的舞台，切到任何功能都按已登录重建
@@ -228,12 +236,12 @@
           return fc ? fc.style.display === "none" : false;
         })()
       }));
-    } catch (e) {}
+    } catch (e) { warn("保存舞台快照失败（不影响使用）", e); }
   }
   function restoreStageSnap(feat) {
     if (!S.profile) return;
     var raw;
-    try { raw = sessionStorage.getItem(snapKey(feat)); } catch (e) {}
+    try { raw = sessionStorage.getItem(snapKey(feat)); } catch (e) { warn("读取舞台快照失败", e); }
     if (!raw) return;
     var snap;
     try { snap = JSON.parse(raw); } catch (e) { return; }
@@ -271,7 +279,7 @@
       Object.keys(sessionStorage).forEach(function (k) {
         if (k && k.indexOf(SNAP_PREFIX) === 0) sessionStorage.removeItem(k);
       });
-    } catch (e) {}
+    } catch (e) { warn("清理舞台快照失败", e); }
   }
 
   function navigate(feat, force) {
@@ -1304,7 +1312,7 @@
             if ($("#bz-date").value) { autoCalcFlag = true; $("#bz-calc").click(); }
             collapseBirth();
           }
-        }).catch(function () {});
+        }).catch(function (e) { warn("八字页载入档案出生信息失败", e); });
     }
     applyGate("bazi");
   }
@@ -1583,7 +1591,7 @@
     $$(".p-suggest button", stageEl()).forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#tr-q"); }; });
     // 牌义清单（78 张：中英文名 / 牌面图 / 正逆位关键词 / 简介），一次加载全站复用
     if (!S.tarotCards) {
-      fetch("/tarot-cards.json").then(function (r) { return r.json(); }).then(function (j) { S.tarotCards = j; }).catch(function () {});
+      fetch("/tarot-cards.json").then(function (r) { return r.json(); }).then(function (j) { S.tarotCards = j; }).catch(function (e) { warn("塔罗牌义表加载失败", e); });
     }
     function trParam() { return "spread=" + segVal($("#tr-spread")); }
     /* 单张牌面（十字布局用小图 + 序号角标） */
@@ -1758,7 +1766,7 @@
             // 出生日期 + 经纬度齐全才自动出盘；缺项则保留表单让用户补全
             if (b.year && b.month && b.day && b.lat != null && b.lon != null) autoCastAstro();
           }
-        }).catch(function () {});
+        }).catch(function (e) { warn("占星页载入档案出生信息失败", e); });
     }
     function posLine(label, sym, sign, deg, house) {
       return '<div class="as-pos"><span class="as-pos-sym">' + sym + '</span>' +
@@ -2383,7 +2391,7 @@
                   if (o.cached) { full = ""; }
                   if (o.delta) { full += o.delta; render(); }
                   if (o.hid) { hid = o.hid; }
-                } catch (e) {}
+                } catch (e) { warn("跳过一条非 JSON 的 SSE 增量", e); }
               }
             });
             return pump();
@@ -3013,7 +3021,8 @@
       if (!d.ok) { toast(d.error || "保存失败"); return; }
       if (kind === "name" && d.name) {
         S.profile.name = d.name;
-        try { localStorage.setItem("zw-profile", JSON.stringify(S.profile)); } catch (e) {}
+        try { localStorage.setItem("zw-profile", JSON.stringify(S.profile)); }
+        catch (e) { warn("保存登录态失败", e); }
         renderUser();
       }
       pfState.editAccount = false;
@@ -3074,7 +3083,7 @@
     try { return JSON.parse(sessionStorage.getItem(ZW_STORE) || "null"); } catch (e) { return null; }
   }
   function zwStoreSet(o) {
-    try { sessionStorage.setItem(ZW_STORE, JSON.stringify(o)); } catch (e) {}
+    try { sessionStorage.setItem(ZW_STORE, JSON.stringify(o)); } catch (e) { warn("紫微会话缓存写入失败", e); }
   }
   function zwStoreSync() {
     var st = zwS();
@@ -3596,7 +3605,7 @@
         st.horo = null;
         // 缓存的盘 id 失效（服务重启 / 记录过期）：清缓存后按档案重排一次，保留当前视图
         if (!retried && st.birth) {
-          try { sessionStorage.removeItem(ZW_STORE); } catch (e) {}
+          try { sessionStorage.removeItem(ZW_STORE); } catch (e) { warn("清理紫微会话缓存失败", e); }
           st.key = null;
           zwStart(st.birth, true, true);
         }
@@ -4026,7 +4035,10 @@
             streamAI("liuyao", lock + "&q=" + encodeURIComponent(q) + authParam(), q, root, root.dataset.rk);
           };
           root.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }).catch(function () {});
+        }).catch(function (e) {
+          warn("六爻起卦请求失败", e);
+          $("#ly-err").textContent = "起卦失败：网络或服务异常，请重试";
+        });
     };
     applyGate("liuyao");
   }
@@ -4230,7 +4242,10 @@
             streamAI("qimen", lock + "&q=" + encodeURIComponent(q) + authParam(), q, root, root.dataset.rk);
           };
           root.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }).catch(function () {});
+        }).catch(function (e) {
+          warn("奇门起局请求失败", e);
+          $("#qm-err").textContent = "起局失败：网络或服务异常，请重试";
+        });
     };
     applyGate("qimen");
   }
@@ -4309,7 +4324,7 @@
     var cur = document.documentElement.dataset.theme;
     var next = cur === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
-    try { localStorage.setItem("zw-theme", next); } catch (e) {}
+    try { localStorage.setItem("zw-theme", next); } catch (e) { warn("保存主题偏好失败", e); }
   };
   $("#p-modal-x").onclick = function () { $("#p-modal").classList.add("hidden"); };
   $("#p-modal").addEventListener("click", function (e) { if (e.target === this) this.classList.add("hidden"); });
@@ -4429,7 +4444,7 @@
   window.addEventListener("storage", function (e) {
     if (e.key !== "zw-profile") return;
     var p = null;
-    try { p = e.newValue ? JSON.parse(e.newValue) : null; } catch (err) {}
+    try { p = e.newValue ? JSON.parse(e.newValue) : null; } catch (err) { warn("跨标签页登录态解析失败，忽略本次同步", err); }
     if (JSON.stringify(p) === JSON.stringify(S.profile)) return;
     var wasLogged = !!S.profile;
     S.profile = p && p.id && p.token ? { id: p.id, token: p.token, name: p.name } : null;

@@ -10,6 +10,8 @@ from pathlib import Path
 
 from py_iztro import Astro
 
+from applog import log
+
 BASE = Path(__file__).resolve().parent.parent
 # node 可执行文件：环境变量 ZIWEI_NODE 优先，其次 PATH，最后本机 WorkBuddy 托管版本
 import os
@@ -57,8 +59,10 @@ def _get_horoscope(solar_date: str, time_index: int, gender: str, fix_leap: bool
         out = subprocess.run(cmd, cwd=str(BASE), capture_output=True, text=True, timeout=20)
         if out.returncode == 0 and out.stdout.strip():
             return _normalize(json.loads(out.stdout))
+        log.warning("紫微点查询运限返回异常 rc=%s stderr=%s",
+                    out.returncode, (out.stderr or "")[:200])
     except Exception:
-        pass
+        log.warning("紫微点查询运限调用失败，降级为空运限", exc_info=True)
     return None
 
 
@@ -78,8 +82,10 @@ def _get_horoscope_mode(b: dict, mode: str, arg: str) -> dict | None:
         out = subprocess.run(cmd, cwd=str(BASE), capture_output=True, text=True, timeout=30)
         if out.returncode == 0 and out.stdout.strip():
             return _normalize(json.loads(out.stdout))
+        log.warning("紫微整年/整月运限返回异常 rc=%s stderr=%s",
+                    out.returncode, (out.stderr or "")[:200])
     except Exception:
-        pass
+        log.warning("紫微整年/整月运限调用失败，降级为空", exc_info=True)
     return None
 
 

@@ -6,6 +6,8 @@ import json
 import os
 import socket
 
+from applog import log
+
 # 推演模型：默认 glm-5.3-flash（响应快、流式体验好），可用环境变量 ZIWEI_MODEL 覆盖，
 # 可选值参考 `codebuddy --help` 中 --model 列表（如 glm-5.3 更深度、kimi-k3-1 等）。
 MODEL = os.environ.get("ZIWEI_MODEL", "glm-5.3-flash")
@@ -72,5 +74,5 @@ async def stream_deduce(prompt: str, timeout: float = 300.0):
             try:
                 proc.kill()
             except ProcessLookupError:
-                pass
+                log.debug("推演子进程已自行退出，无需 kill")
         await proc.wait()

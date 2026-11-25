@@ -19,6 +19,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from applog import log
+
 DB_PATH = Path(__file__).resolve().parent / "ziwei.db"
 COMPRESS_THRESHOLD = 20   # 未压缩消息条数阈值（user+assistant 合计）
 COMPRESS_BATCH = 12       # 每次压缩的最旧条数
@@ -223,7 +225,9 @@ def _birth_to_solar(birth: dict) -> dict:
             b["lunar_original"] = {"year": b["year"], "month": b["month"], "day": b["day"]}
             b["year"], b["month"], b["day"] = solar.getYear(), solar.getMonth(), solar.getDay()
         except Exception:
-            pass
+            # 农历转换失败却标成 solar 会把农历日期当公历排盘——必须留痕，
+            # 否则用户拿到的是一张日期错位却毫无提示的盘。
+            log.warning("农历转公历失败，出生日期保持原值（可能日期错位）", exc_info=True)
     b["calendar"] = "solar"
     return b
 
@@ -361,7 +365,7 @@ async def maybe_compress(profile_id: int, compress_fn) -> None:
         if digest:
             apply_summary(profile_id, digest, batch[-1]["id"])
     except Exception:
-        pass
+        log.warning("档案对话压缩失败 pid=%s，本轮跳过", profile_id, exc_info=True)
     finally:
         _compressing.discard(profile_id)
 

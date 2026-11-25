@@ -10,6 +10,7 @@ from datetime import datetime
 
 import profile as profile_store
 import memory as memory_store
+from applog import log
 
 FEATURES = ("bazi", "ziwei", "meihua", "liuyao", "qimen", "tarot", "huangli", "astrology",
             "bazi_marriage", "ziwei_marriage", "astrology_marriage", "huangli_pair")
@@ -241,11 +242,12 @@ def personalization(profile_id: int, feature: str) -> dict:
         if p:
             ctx["birth"] = p.get("birth") or {}
     except Exception:
-        pass
+        log.warning("读取档案出生信息失败，个性化注入降级为空 birth", exc_info=True)
     # 唯一个性化记忆源：个人记忆卡
     try:
         ctx["user_profile"] = memory_store.personalization_text(profile_id)
     except Exception:
+        log.warning("读取个人记忆失败，个性化注入降级为空", exc_info=True)
         ctx["user_profile"] = ""
     ctx["recent"] = [
         {"ts": h["ts"], "question": h["question"], "answer": h.get("answer", "")}

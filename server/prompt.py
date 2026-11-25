@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import rag
+from applog import log
 
 MUTAGEN_ORDER = ["禄", "权", "科", "忌"]
 BRANCH_ORDER = ["寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥", "子", "丑"]
@@ -220,7 +221,8 @@ def chart_digest(chart: dict) -> str:
     try:
         birth_year = int(str(chart.get("solarDate", "")).split("-")[0])
     except Exception:
-        pass
+        log.warning("紫微出生年解析失败（solarDate=%r），大限岁数标注可能缺省",
+                    chart.get("solarDate"), exc_info=True)
     lines.append("【十二宫（按地支序，寅起；大限岁数均为虚岁）】")
     for p in sorted(chart.get("palaces", []), key=lambda x: x.get("index", 0)):
         lines.append("- " + _palace_line(p, birth_year))

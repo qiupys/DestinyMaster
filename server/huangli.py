@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from applog import log
+
 # 二十八宿全称：宿简称 →（宫 + 宿名 + 五行 + 动物）
 XIU_FULL = {
     "角": "东宫 角木蛟", "亢": "东宫 亢金龙", "氐": "东宫 氐土貉",
@@ -26,6 +28,7 @@ def _call(lunar, name, default=""):
         v = fn()
         return default if v is None else v
     except Exception:
+        log.warning("黄历字段 %s 读取失败，降级为默认值", name, exc_info=True)
         return default
 
 
@@ -54,7 +57,7 @@ def query(year: int, month: int, day: int) -> dict:
             try:
                 jieqi_info[tag] = {"name": jq.getName(), "time": jq.getSolar().toYmdHms()}
             except Exception:
-                pass
+                log.warning("黄历节气 %s 详情解析失败，跳过该节气", tag, exc_info=True)
         elif jq and tag != "current":
             jieqi_info[tag] = {"name": jq}
 
