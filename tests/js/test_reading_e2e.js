@@ -75,9 +75,9 @@ function login(page, reg) {
 }
 
 // 读取某功能会话的对象快照（纯 JSON，便于断言）
-function sessionState(page, feature) {
-  return page.evaluate(function (f) {
-    var s = window.ReadingCore.session(f);
+function sessionState(page, feature, slot) {
+  return page.evaluate(function (o) {
+    var s = window.ReadingCore.session(o.f, o.slot || "");
     function rd(r) {
       if (!r) return null;
       return { id: r.id, question: r.question, rk: r.rk, answer: r.answer,
@@ -89,7 +89,7 @@ function sessionState(page, feature) {
       archived: s.archived.map(rd),
       boardRk: s.boardRk, lastQ: s.lastQ, busy: s.busy
     };
-  }, feature);
+  }, { f: feature, slot: slot });
 }
 
 (async function () {
@@ -295,6 +295,58 @@ function sessionState(page, feature) {
       return last ? last.textContent.indexOf("模拟服务端错误") >= 0 : false;
     });
     check(errShown, "G1 非 SSE 错误在卡内显示原因，不留空白卡");
+
+    // ---- I. 紫微：切宫位/切视图不得丢对话（对象与 DOM 投影必须一致） ----
+    console.log("\n[I] 紫微切宫位保留解读与追问");
+    await page.evaluate(function () { window.ReadingCore.clearAll(); });
+    await page.route("**/api/deduce*", function (route) {
+      route.fulfill({ status: 200, contentType: "text/event-stream",
+        body: sse("紫微 mock 宫位解读：以该宫为主体，结合三方四正。", 400001) });
+    });
+    // 本地 dev 环境缺 horoscope.js，运限会失败；mock 掉避免 zwHoro 重试导致重复排盘。
+    await page.route("**/api/horoscope*", function (route) {
+      route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify({ ok: true, horoscope: {} }) });
+    });
+    await page.goto(BASE + "/#/ziwei", { waitUntil: "domcontentloaded" });
+    await page.waitForSelector("#zw-plate .zw-pal", { timeout: 12000 });
+    await page.click("#zw-plate .zw-pal");
+    await page.waitForSelector("#zw-dq", { timeout: 5000 });
+    await page.fill("#zw-dq", "这一宫有什么特点？");
+    await page.click("#zw-dask");
+    await page.waitForSelector("#zw-d-ai-out .p-ai.done", { timeout: 10000 });
+    var zObjBefore = await sessionState(page, "ziwei", "zw-d");
+    check(!!zObjBefore.current && zObjBefore.current.answer.indexOf("紫微 mock") >= 0,
+      "I1 宫位解读写入 zw-d slot 的 Reading", zObjBefore.current && String(zObjBefore.current.id));
+
+    // 切到另一宫：会触发 zwRender() 整块重建 #zw-result，对话卡不能被 innerHTML 冲掉
+    await page.evaluate(function () {
+      var ps = document.querySelectorAll("#zw-plate .zw-pal");
+      if (ps[1]) ps[1].click();
+    });
+    await page.waitForTimeout(300);
+    var zAfterSwitch = await page.evaluate(function () {
+      var card = document.querySelector("#zw-d-ai-out .p-ai.done");
+      return { hasCard: !!card, hasFollow: !!document.querySelector("#zw-d-ai-out .ai-follow"),
+        text: card ? card.textContent : "" };
+    });
+    var zObjAfter = await sessionState(page, "ziwei", "zw-d");
+    check(!!zObjAfter.current && zObjAfter.current.answer.indexOf("紫微 mock") >= 0,
+      "I2 切宫位后 Reading 对象仍保留当前解读");
+    check(zAfterSwitch.hasCard && zAfterSwitch.hasFollow && zAfterSwitch.text.indexOf("紫微 mock") >= 0,
+      "I3 切宫位后 DOM 解读卡与追问框仍在", JSON.stringify(zAfterSwitch).slice(0, 120));
+
+    // 切宫位后追问仍可用：事件绑定随保留的 DOM 节点走，不能变成死按钮
+    if (zAfterSwitch.hasFollow) {
+      await page.fill("#zw-d-ai-out .ai-follow input", "再问一句？");
+      await page.press("#zw-d-ai-out .ai-follow input", "Enter");
+      await page.waitForFunction(function () {
+        var c = window.ReadingCore.session("ziwei", "zw-d").current;
+        return c && c.followups.length === 1;
+      }, { timeout: 10000 });
+      var zFu = await sessionState(page, "ziwei", "zw-d");
+      check(zFu.current && zFu.current.followups.length === 1, "I4 切宫位后追问仍挂到同一 Reading");
+    } else no("I4 切宫位后追问仍挂到同一 Reading", "追问框已丢失");
 
     check(jsErrors.length === 0, "Z. 全程无前端 JS 报错", jsErrors.slice(0, 2).join(" | "));
     await browser.close();

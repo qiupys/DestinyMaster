@@ -11,6 +11,13 @@
 
 ---
 
+## v120 (2026-11-25)
+- [fix][严重] 紫微选不同宫位后原先的对话「消失」：根因不是归档，也不是个人中心——`zwRender()` 每次点宫位/切视图都整块重写 `#zw-result` 的 `innerHTML`，把 `#zw-d-ai-out` 里的解读卡与追问链连 DOM 一起冲掉；Reading 对象仍在（I2 实测 PASS），但画面与对象脱节。新增 `zwKeepOutputs()`：重绘前把两个输出容器节点摘出缓存、重绘后原样挂回，事件监听与流式 DOM 引用随节点走；真正换盘时才清缓存，避免旧盘解读挂回新盘。
+- [fix] 紫微宫位追问挂错会话：`.ai-follow-slot` 无 id，`sessOf` 此前只查容器自身 id，导致追问写进 `ziwei|""` 而不是解读所在的 `ziwei|"zw-d"`。改为沿 DOM 祖先找 `#zw-d-ai-out`，并从 stage 的 `data-feature` 反推功能。
+- [fix] 运限接口失败时无限重排：`zwHoro()` 失败 → 重排生成新 chart id → 再失败 → 再重排……结果区一直停在「正在起盘」（本地缺 `horoscope.js` 必现）。改为只重排一次并 `warn` 留痕；实测 chart 请求由 15+ 次降到 2 次，盘面正常显示。
+- [test] `test_reading_e2e.js` 新增 I 组 4 项：宫位解读写入 zw-d slot、切宫位后对象保留、DOM 对话/追问框仍在、追问挂回同一 Reading（27→31 项）。API 40 + 对象单测 30 + 浏览器 mock 31 全过。
+- [docs][发布] `SOFTWARE_ENGINEERING.md` 增两条铁律；portal.js bump v120。
+
 ## v119 (2026-11-25)
 - [style] 追问结果缺少段落感：卡头此前被降级为 12px/500/灰点，读起来像脚注而非新一轮对话。改为 13px/600/墨色 + 深绿金点（与主解读卡头同语义），顶部分隔由浅虚线改实线并留出 16px 呼吸，追问说明文字 11px→12px。全部走既有 token，未引入新字号或散值；唯一来源仍是 `.ai-follow-slot > .p-ai`，`FRONTEND_DESIGN.md` 同步说明。
 - [test] 新增 `test_followup_result_reads_as_paragraph` 护栏，锁定追问标题不得回退成 sm 灰字、分隔线必须为实线；API 回归 + 单元 + 对象单测 + mock E2E 全过。`portal.css` bump 至 v119。

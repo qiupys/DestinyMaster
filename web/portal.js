@@ -22,7 +22,20 @@
   var SLOT_CONTAINERS = { "zw-d-ai-out": "zw-d", "zw-d-result": "zw-d" };
   function sessOf(container, feature) {
     var f = feature || S.feature;
-    var slot = (container && SLOT_CONTAINERS[container.id]) || "";
+    var slot = "";
+    if (container) {
+      // 追问容器是 .ai-follow-slot（无 id），必须沿 DOM 祖先找到 #zw-d-ai-out，
+      // 否则紫微宫位追问会记到 slot="" 的另一条会话上，与解读脱节。
+      var node = container;
+      while (node && node !== document.body) {
+        if (node.id && SLOT_CONTAINERS[node.id]) { slot = SLOT_CONTAINERS[node.id]; break; }
+        node = node.parentElement;
+      }
+      if (!feature && container.closest) {
+        var stage = container.closest(".p-wrap[data-feature]");
+        if (stage && stage.dataset.feature) f = stage.dataset.feature;
+      }
+    }
     return Core.session(f, slot);
   }
   // 老黄历的两个子功能共用同一舞台；旧链接 #/huangli_pair 通过它切到双人择日 tab。
@@ -3566,6 +3579,26 @@
       zwDetailHTML() +
     '</div>';
   }
+  /* 紫微每次点宫位/切视图都会重绘整个 #zw-result。解读卡与追问链挂在两个输出容器里，
+     若随 innerHTML 一起被重建，对象层 Reading 还在、画面却空了——正是「对话凭空消失」。
+     容器节点原样保留（事件监听、流式 DOM 引用都随节点走），只替换盘面/表单部分。 */
+  var ZW_OUT_IDS = ["zw-ai-out", "zw-d-ai-out"];
+  function zwKeepOutputs(wrap, paint) {
+    var st = zwS();
+    if (!st._outCache) st._outCache = {};
+    ZW_OUT_IDS.forEach(function (id) {
+      var old = wrap.querySelector("#" + id);
+      if (old) st._outCache[id] = old;
+    });
+    paint();
+    ZW_OUT_IDS.forEach(function (id) {
+      var fresh = wrap.querySelector("#" + id);
+      if (!fresh) return;                     // 当前视图没有该容器：留在缓存，切回来再挂
+      var cached = st._outCache[id];
+      if (cached && cached !== fresh) fresh.parentNode.replaceChild(cached, fresh);
+      else st._outCache[id] = fresh;
+    });
+  }
   /* 渲染当前视图 */
   function zwRender() {
     var st = zwS(), wrap = $("#zw-result");
@@ -3575,16 +3608,18 @@
     if (st.view === "pattern") body = zwPatternHTML();
     else if (st.view === "fortune") body = zwFortuneHTML();
     else body = zwPlate() + zwDetailHTML();
-    wrap.innerHTML =
-      '<div class="zw-bar">' +
-        '<div class="zw-tabs" id="zw-tabs">' +
-          '<button type="button" data-v="pattern"' + (st.view === "pattern" ? ' class="on"' : "") + '>命格</button>' +
-          '<button type="button" data-v="plate"' + (st.view === "plate" ? ' class="on"' : "") + '>本命</button>' +
-          '<button type="button" data-v="fortune"' + (st.view === "fortune" ? ' class="on"' : "") + '>运势</button>' +
+    zwKeepOutputs(wrap, function () {
+      wrap.innerHTML =
+        '<div class="zw-bar">' +
+          '<div class="zw-tabs" id="zw-tabs">' +
+            '<button type="button" data-v="pattern"' + (st.view === "pattern" ? ' class="on"' : "") + '>命格</button>' +
+            '<button type="button" data-v="plate"' + (st.view === "plate" ? ' class="on"' : "") + '>本命</button>' +
+            '<button type="button" data-v="fortune"' + (st.view === "fortune" ? ' class="on"' : "") + '>运势</button>' +
+          '</div>' +
+          zwProfileAside() +
         '</div>' +
-        zwProfileAside() +
-      '</div>' +
-      '<div class="zw-body">' + body + '</div>';
+        '<div class="zw-body">' + body + '</div>';
+    });
     zwBind();
   }
   /* 紫微结果标题行右侧的档案来源提示（与八字同一套措辞与样式） */
@@ -3703,14 +3738,18 @@
       .then(function (d) {
         if (d.ok) { st.horo = d.horoscope; return; }
         st.horo = null;
-        // 缓存的盘 id 失效（服务重启 / 记录过期）：清缓存后按档案重排一次，保留当前视图
-        if (!retried && st.birth) {
+        // 缓存的盘 id 失效（服务重启 / 记录过期）：清缓存后按档案重排一次，保留当前视图。
+        // 必须限一次：重排会生成新 id，若运算接口持续失败，旧逻辑会无限重排、
+        // 结果区一直停在「正在起盘」，任何解读/追问都无从谈起。
+        if (!retried && st.birth && !st._horoRebuilt) {
+          st._horoRebuilt = true;
           try { sessionStorage.removeItem(ZW_STORE); } catch (e) { warn("清理紫微会话缓存失败", e); }
           st.key = null;
-          zwStart(st.birth, true, true);
+          return zwStart(st.birth, true, true);
         }
+        warn("紫微运限暂不可用，本轮不叠加运限", new Error(d.error || "接口返回失败"));
       })
-      .catch(function () { st.horo = null; });
+      .catch(function (e) { st.horo = null; warn("紫微运限请求失败", e); });
   }
   function zwStart(birth, force, keepView) {
     var wrap = $("#zw-result");
@@ -3727,6 +3766,8 @@
       if (st.view === "fortune") zwHoro().then(zwRender);
       return;
     }
+    // 真正换盘（不是命中缓存）：旧盘的解读卡不能挂回新盘，连同容器缓存一起清掉。
+    st._outCache = {};
     wrap.innerHTML = '<p class="p-note" style="text-align:center;margin:16px 0">正在起盘…</p>';
     st.chart = null; st.id = null; st.sel = null;
     if (!(keepView && st.view)) st.view = "plate";
