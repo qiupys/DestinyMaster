@@ -238,7 +238,16 @@ SYSTEM_RULES = (
     "1. 严格基于给出的命盘数据推演，引用宫位、星曜、亮度、四化必须与数据一致，禁止编造盘面不存在的星曜或宫位。\n"
     "2. 分析框架：先看命宫及三方四正（命宫、官禄、财帛、迁移）定格局与性格底色；"
     "再围绕用户问题锁定相关宫位（问事业看官禄宫+命宫+大限，问感情看夫妻宫+福德宫，"
-    "问财运看财帛宫+田宅宫+父母宫），结合生年四化落宫与运限叠加判断吉凶与时机。\n\n"
+    "问财运看财帛宫+田宅宫+父母宫），结合生年四化落宫与运限叠加判断吉凶与时机。\n"
+    "3. 主体宫位法则（点名某宫≠只看该宫，最高优先级）：当用户点名或以某宫为主体提问"
+    "（如「以财帛宫为主体」「就官禄宫提问」「某宫的特点/优势/如何改善」），该宫是论述的太极点与重心，"
+    "绝不是唯一取数来源。必须围绕它做三方四正与四化的完整推演："
+    "三方四正＝本宫＋对宫（地支序号+6）＋三合二宫（+4、+8，即地支三合局），四宫的星曜、亮度与会照须逐一引用；"
+    "再叠加生年四化、大限四化、流年四化的落宫与飞化（禄权科忌飞入/飞出该宫及其三方四正）串联论断。"
+    "禁止只罗列该宫本宫一两颗星就下结论，禁止出现「只看X宫」「仅看某宫」式的孤立解读。\n"
+    "4. 主体宫须回到全局校验：任何主体宫的结论都要与命宫及整体格局互参——"
+    "该宫三方四正所会星曜的庙旺落陷、煞吉、四化，须与命宫三方四正的底色比对；"
+    "命宫/身宫/来因宫若牵动该宫须点明联动，不得把某宫从整张盘中割裂出来单解。\n\n"
     "【大限推断法则】（参考《紫微斗数全书》、王亭之《中州派紫微斗数》）\n"
     "1. 大限主十年祸福之骨架：以大限命宫及其三方四正所会本命星曜定此十年之基调（格局高低、重心所在）。\n"
     "2. 大限四化（由大限宫干起）引动本命盘：化禄落宫为十年进益之机，化权为变动掌权，化科为名声考成，"
@@ -298,8 +307,14 @@ def prepare_ziwei(chart: dict, question: str,
     if target_horo:
         title = target_label or "用户选定的推演目标运限"
         target = f"【{title}】\n" + horoscope_digest(target_horo, full=True) + "\n\n"
-    # 轻量 RAG：问题/聚焦词 + 盘面上下文词（命宫主星、生年四化星）一并检索
-    kws = rag.keywords_from(question, extra=(focus_terms or []) + chart_rag_terms(chart))
+    # 轻量 RAG：问题/聚焦词 + 盘面上下文词（命宫主星、生年四化星）一并检索。
+    # 点名某宫为主体的提问必须补入方法论词，避免检索只命中该宫单宫词条而取不到三方四正/四化文献。
+    extra = list(focus_terms or []) + chart_rag_terms(chart)
+    if "为主体" in question or "主体" in question or "就" in question and "宫提问" in question:
+        for method_term in ("三方四正", "四化", "对宫", "飞化"):
+            if method_term not in extra:
+                extra.append(method_term)
+    kws = rag.keywords_from(question, extra=extra)
     kb = rag.retrieve(kws)
     kb_block = ""
     if kb:
@@ -307,7 +322,7 @@ def prepare_ziwei(chart: dict, question: str,
                     "若与盘面数据冲突，以盘面数据为准）】\n" + "\n\n".join(kb) + "\n\n")
     return {
         "digest": digest, "target": target, "kb_block": kb_block,
-        "rag_query": " ".join(kws), "rag_extra": (focus_terms or []) + chart_rag_terms(chart),
+        "rag_query": " ".join(kws), "rag_extra": extra,
     }
 
 

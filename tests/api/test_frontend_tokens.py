@@ -73,8 +73,13 @@ class TestFrontendTokens(unittest.TestCase):
         self.assertNotIn("font-size:", JS, "模板里仍有内联 font-size，样式应留在 portal.css 的 token 层")
 
     def test_asset_version_bumped_with_css_change(self):
-        self.assertIn("portal.css?v=114", HTML)
-        self.assertIn("portal.js?v=114", HTML)
+        # 只锁版本下限（v114 为该护栏引入基线），避免每次正经 bump 都要改测试。
+        # 版本回退到基线以下（缓存破坏失效）仍会被这里拦住。
+        for asset, baseline in (("portal.css", 114), ("portal.js", 114)):
+            m = re.search(re.escape(asset) + r"\?v=(\d+)", HTML)
+            self.assertIsNotNone(m, f"{asset} 缺少版本号")
+            self.assertGreaterEqual(int(m.group(1)), baseline,
+                                    f"{asset} 版本号低于基线 {baseline}，缓存破坏可能失效")
 
 
 if __name__ == "__main__":

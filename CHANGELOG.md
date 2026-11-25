@@ -11,6 +11,12 @@
 
 ---
 
+## v116 (2026-11-25)
+- [fix][解读口径] 紫微点名某宫 = 以它为主体、据三方四正与四化展开，不是「只看」单宫。根因：宫位提问区把「（只看「XX宫」）」硬拼进问题文本，随 q 直接进 AI【用户问题】，压过后端三方四正框架；UI「三方四正」快捷跳转偏移 `[1,5,7]` 亦与命格解析口径 `[4,8,6]` 不一致。
+- [fix] 前端：提问前缀改「（以「XX宫」为主体，结合三方四正与四化）」（含主体措辞的 chips 不重复加）；三个 chips 与输入框占位改为为主体口径；zwAsk 新增 focusPalace 参数，把主体宫+方法论词结构化传后端；三方四正跳转偏移修正为 `[4,8,6]`。
+- [fix] 后端：`prompt.py` SYSTEM_RULES 新增「主体宫位法则」（点名某宫≠只看该宫，须会本宫+对宫+三合二宫四方星曜并叠加生年/大限/流年四化飞化，禁止孤立单宫解）；prepare_ziwei 对「为主体」类提问补入三方四正/四化/对宫/飞化检索词，避免 RAG 只命中单宫词条，并随 payload 带入追问。
+- [test] 新增 `tests/api/test_ziwei_palace_focus.py`：锁定 prompt 法则、RAG 补词、前端无「只看」措辞与三方四正偏移；前端 portal.js bump 至 v116。
+
 ## v115.1 (2026-11-25)
 - [refactor] 消灭全仓静默吞异常：新增 `server/applog.py` 统一日志，后端 10 处 `except: pass` 全部改为留痕（warning + exc_info），前端 16 处空 `.catch(function(){})` / `catch(e){}` 改为 `console.warn`，其中六爻起卦、奇门起局失败改为用户可见错误提示。
 - [test] 新增 `tests/api/test_no_silent_except.py` 静态护栏：禁止 `except:pass` 与空 catch 回潮，并要求留痕基础设施在位。API 回归 24 项 + 单元 14 项全过。

@@ -3250,13 +3250,14 @@
           (s.mutagen ? '<b class="zw-mut m' + ZW_MUT.indexOf(s.mutagen) + '">' + esc(s.mutagen) + '</b>' : '') + '</span>';
       }).join("");
     }
-    var trine = [1, 5, 7].map(function (d) { return zwPalaces()[(p.index + d) % 12]; }).filter(Boolean)
+    // 三方四正 = 本宫 + 三合二宫(+4/+8) + 对宫(+6)，与命格解析口径一致；旧值 [1,5,7] 是错的
+    var trine = [4, 8, 6].map(function (d) { return zwPalaces()[(p.index + d) % 12]; }).filter(Boolean)
       .map(function (x) { return '<button class="zw-jump" data-bi="' + x.index + '">' + esc(zwPN(x.name)) + '</button>'; }).join("");
     var dom = ZW_DOMAIN[p.name] || "人生", pn = zwPN(p.name);
     var chips = [
-      { t: "这一宫的特点", q: "「" + pn + "」的星曜说明我在" + dom + "上有什么特点？" },
-      { t: "优势与警惕", q: "「" + pn + "」的优势与需要警惕的地方分别是什么？" },
-      { t: "如何改善", q: "想改善" + dom + "，从「" + pn + "」看该怎么做？" }
+      { t: "这一宫的特点", q: "以「" + pn + "」为主体，结合三方四正与四化，说明我在" + dom + "上有什么特点？" },
+      { t: "优势与警惕", q: "以「" + pn + "」为主体，结合三方四正与四化，我的优势与需要警惕之处分别是什么？" },
+      { t: "如何改善", q: "想改善" + dom + "，以「" + pn + "」为主体，结合三方四正与四化看该怎么做？" }
     ].map(function (c) { return '<button data-q="' + esc(c.q) + '">' + esc(c.t) + '</button>'; }).join("");
     return '<div class="zw-detail">' +
       '<div class="zw-d-h"><b>' + esc(zwPN(p.name)) + '</b><span>' + esc(p.heavenlyStem + p.earthlyBranch) + '</span>' +
@@ -3275,7 +3276,7 @@
     '<div class="zw-ask zw-d-ask">' +
       '<div class="zw-d-ask-h">就「' + esc(pn) + '」提问<span>' + esc(dom) + '</span></div>' +
       '<div class="p-suggest zw-chips zw-dchips">' + chips + '</div>' +
-      '<div class="zw-ask-row"><input class="ti" id="zw-dq" placeholder="例如：这一宫的星曜对' + esc(dom) + '意味着什么？" />' +
+      '<div class="zw-ask-row"><input class="ti" id="zw-dq" placeholder="例如：以这一宫为主体，结合三方四正与四化，我在' + esc(dom) + '上会怎样？" />' +
         '<button class="tool-ai zw-ask-btn" id="zw-dask" type="button">AI 解读</button></div>' +
     '</div>' +
     '<div id="zw-d-ai-out"></div>';
@@ -3560,7 +3561,10 @@
       var runPalAsk = function () {
         var v = dq.value.trim();
         if (!v) { toast("请先写下你想问的问题"); dq.focus(); return; }
-        zwAsk(v.indexOf(zwPN(psel.name)) >= 0 ? v : "（只看「" + zwPN(psel.name) + "」）" + v, "#zw-d-ai-out", "#zw-dq");
+        // 点名某宫 = 以它为主体、据其三方四正与四化展开解读，不是孤立只看这一宫。
+        // chips 里已含完整主体措辞（以「X宫」为主体…）时不重复添加。
+        var q = v.indexOf("为主体") >= 0 ? v : "（以「" + zwPN(psel.name) + "」为主体，结合三方四正与四化）" + v;
+        zwAsk(q, "#zw-d-ai-out", "#zw-dq", zwPN(psel.name));
       };
       dask.onclick = runPalAsk;
       dq.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); runPalAsk(); } };
@@ -3579,7 +3583,7 @@
   }
   /* AI 推演：紫微与其他功能走完全相同的统一链路（/api/deduce → SSE → hid → 追问）。
      推演参数用命盘 id 保证与本盘一致；渲染/免责/追问条全部复用通用 streamToUrl。 */
-  function zwAsk(q, outSel, inputSel) {
+  function zwAsk(q, outSel, inputSel, focusPalace) {
     var st = zwS();
     if (!q) { toast("请先写下你想问的问题"); var i0 = $(inputSel || "#zw-q"); if (i0) i0.focus(); return; }
     if (!st.id) { toast("命盘未就绪，请稍候"); return; }
@@ -3591,8 +3595,11 @@
     // 轮次身份纳入年份：同一问题切到另一个流年是新的一轮，不能命中旧解读或塞进旧轮。
     var rk = "chart|" + st.id + (year ? "|" + year : "");
     if (!prepareNewQuestion(out, q, rk)) return;
+    // 宫位提问：把主体宫 + 三方四正/四化作为检索聚焦词传给后端，保证文献覆盖面，
+    // 而非只命中单宫词条（解读口径由后端 prompt 的「主体宫位法则」约束）。
+    var focus = focusPalace ? focusPalace + ",三方四正,四化" : "";
     var url = "/api/deduce?id=" + encodeURIComponent(st.id) + "&q=" + encodeURIComponent(q) +
-      (year ? "&year=" + year : "") + authParam();
+      (year ? "&year=" + year : "") + (focus ? "&focus=" + encodeURIComponent(focus) : "") + authParam();
     streamToUrl(url, "AI 解读", q, out, false, rk);
   }
   function zwHoro(retried) {
