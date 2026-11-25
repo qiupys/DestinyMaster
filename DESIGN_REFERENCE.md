@@ -92,18 +92,18 @@
 ### 7.6 个人记忆（Personal Memory）
 
 - 数据：`server/memory.py` 建 `personal_memory` 表（profile_id 隔离），一条记忆 = 正文 + 分类 + 来源 + 时间戳。分类 `CATEGORIES` 常量统一。
-- 后端端点（feature_api.py）：`GET /api/memory/list`、`POST /api/memory/save`（带 id=编辑，不带=新增）、`POST /api/memory/delete`、`POST /api/memory/compress`（从历史 ids 抽取答案 → `ai.stream_answer` 收集全文压缩成一条，非流式返回）。
+- 后端端点（`features/support_routes.py`，由 `feature_api.py` 门面转出）：`GET /api/memory/list`、`POST /api/memory/save`（带 id=编辑，不带=新增）、`POST /api/memory/delete`、`POST /api/memory/compress`（从历史 ids 抽取答案 → `ai.stream_answer` 收集全文压缩成一条，非流式返回）。
 - 前端：个人中心 `.pf-memory` 卡片区，`pfMemoryHTML()` 渲染 + `bindMemory()` 绑定；状态存 `pfState.memories/editMem/memDraft/memCat/memImportOpen/memSelected/memBusy`。
 - 交互：新建/编辑进编辑态（分类分段 + textarea）→ 保存；删除两步确认；「从历史导入」勾选历史 → AI 压缩后进编辑态让用户确认再保存。
 
 ### 7.4 新增一个功能的标准步骤（Checklist）
 
 1. **后端引擎**：`server/<feat>.py` 写确定性 `derive/query/draw`，返回 `fact` + `rag_query` + `rag_extra`。
-2. **注册工厂**：`feature_api.FEATURES` 增项、`_calc_<feat>`、`_make_calc_and_deduce`；`history.FEATURE_NAMES`、`ai.FEATURE_GUIDES`、`rag_kb.DOMAIN_VOCAB` + `docs/kb/<feat>/` 语料。
+2. **注册工厂**：`features/common.FEATURES` 增项、`features/calculations.py` 写 `calc_<feat>`、在 `features/feature_routes.py` 末尾注册 `_make_calc_and_deduce`；`history.FEATURE_NAMES`、`ai.FEATURE_GUIDES`、`rag_kb.DOMAIN_VOCAB` + `docs/kb/<feat>/` 语料。
 3. **前端入口**：`render<Feat>` + 首页入口 + `names`/`fn`/`QBOX_SEL`/`ROOT_SEL`/`PF_FEATS` 五处映射；提问卡用 7.1 统一类。
 4. **轮次身份**：定义一个确定性 `rk`（牌阵|牌面 / 卦象 / 日期 / 命盘），传给 `streamAI`；问题或 rk 任一变化即平级归档旧轮。
 5. **个人约束**：若需结合档案信息，走 `_augment_profile` 注入并写 `payload._injected`；需要选时刻时用 7.1 的统一时间组件。
-6. **测试**：`tests/e2e_new_features.js` 覆盖新功能关键断言；本地与线上各跑一遍。
+6. **测试**：先在 `tests/api/` 补 mock 回归（calc/deduce/追问/去重）；`tests/e2e_new_features.js` 覆盖新功能前端关键断言；本地与线上各跑一遍。
 7. **发布**：改前端必须 bump `web/index.html` 的 `?v=` 并填写 `CHANGELOG.md`；部署与验证流程见 `SOFTWARE_ENGINEERING.md`。
 
 ### 7.5 命盘类 vs 占卜类（个人信息处理）

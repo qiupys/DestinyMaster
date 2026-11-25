@@ -21,7 +21,8 @@ Web 层  web/index.html + portal.js + portal.css
   ▼
 FastAPI  server/
   ├─ main.py          档案、紫微排盘/运限数据层、紫微 AI 推演入口
-  ├─ feature_api.py   十功能 calc/deduce 工厂、统一 history/followup
+  ├─ feature_api.py   兼容门面（对外 router / _with_disclaimer）
+  ├─ features/        十一功能分层 API：公共能力 / 上下文 / 计算 / 路由 / 历史记忆
   ├─ 各功能引擎       bazi / marriage / ziwei / meihua / liuyao / qimen / tarot / astrology / huangli
   ├─ ai.py            prompt 装配 + 统一流式输出 + 免责
   └─ rag_kb.py / rag  知识库检索
@@ -29,13 +30,13 @@ FastAPI  server/
 SQLite  用户档案 + 全功能历史（含追问链）
 ```
 
-### 统一 AI 链路（十功能同构）
+### 统一 AI 链路（十一功能同构）
 
-十类功能共用同一条 AI 推演与追问链路，差异只在「确定性计算」与「专属 prompt 规则」：
+十一类功能共用同一条 AI 推演与追问链路，差异只在「确定性计算」与「专属 prompt 规则」：
 
-- **计算层（各功能特有）**：八字/梅花/塔罗/占星/黄历走 `feature_api` 的 `calc` 工厂（占星由 `astrology.py` 用 pyswisseph 计算完整本命盘，需出生地经纬度）；紫微保留 `/api/chart` 排盘数据层（命盘是有状态的大对象）。
+- **计算层（各功能特有）**：八字/梅花/塔罗/占星/黄历等走 `features/feature_routes.py` 的 `calc` 工厂（占星由 `astrology.py` 用 pyswisseph 计算完整本命盘，需出生地经纬度）；紫微保留 `/api/chart` 排盘数据层（命盘是有状态的大对象）。
 - **prompt 层**：`ai.build_prompt`（五功能通用铁律 + `FEATURE_GUIDES` 专属规则）；紫微走 `ai.prepare_ziwei` + `ai.build_ziwei_prompt`（`prompt.py` 维护大限/流年/历法对齐法则）——两者都由 `ai.py` 统一导出。
-- **流与落盘**：全部经 `ai.stream_answer` 流式输出，`feature_api._with_disclaimer` 统一附加免责，落盘到 `feature_history`（带 `hid`）。
+- **流与落盘**：全部经 `ai.stream_answer` 流式输出，`features.common.with_disclaimer` 统一附加免责，落盘到 `feature_history`（带 `hid`）。
 - **追问层**：全部经 `/api/history/followup`，用落盘 payload 重建盘面事实，无需内存会话。
 - **RAG**：八字/梅花/塔罗/占星/黄历用 `rag_kb`（FateMaster + zhouyi.cc + 占星通识语料）；紫微用 `rag`（iztro-learn 语料）。
 - **个人约束注入**：梅花解卦**强制**引入档案八字（未补全出生信息则拦截并引导补全）；塔罗可勾选「结合我的太阳星座」（由档案生日换算）。注入文本存进 payload，追问时原样复用，保证前后口径一致；开关状态纳入去重 key。
@@ -87,7 +88,8 @@ SQLite  用户档案 + 全功能历史（含追问链）
 ziwei-upgrade/
 ├─ server/                 # FastAPI 后端
 │  ├─ main.py              # 应用入口：档案、紫微排盘/运限数据层、紫微推演入口
-│  ├─ feature_api.py       # 各功能 calc/deduce 工厂 + 统一 history/followup 路由
+│  ├─ feature_api.py       # 兼容门面：router / _with_disclaimer
+│  ├─ features/            # common / context / calculations / feature_routes / support_routes
 │  ├─ astrology.py         # 占星本命盘（Swiss Ephemeris）
 │  ├─ bazi.py              # 八字：四柱、大运、四柱反查
 │  ├─ meihua.py            # 梅花：本卦 / 互卦 / 变卦
@@ -150,4 +152,4 @@ ziwei-upgrade/
 
 **召回要点（占星）**：占星走 `rag_kb.retrieve(top8/2800)`，由 `astrology.derive` 给出的 `rag_query`（日月上升星座 + 行星落座 + 主要相位）+ `rag_extra` 检索，召回太阳/月亮/上升三要素与各星座事业关系篇文献。
 
-**Prompt 结构**：紫微独立（`prompt.py` 的 `SYSTEM_RULES`，自带免责声明）；八字/梅花/塔罗/占星/黄历共用 `ai.build_prompt` 的 5 条铁律 + `FEATURE_GUIDES` 各功能专属规则块。免责声明由系统统一附加（`feature_api._with_disclaimer`，幂等），模型不再自行撰写；deduce/followup/缓存回放三条路径都带。
+**Prompt 结构**：紫微独立（`prompt.py` 的 `SYSTEM_RULES`，自带免责声明）；八字/梅花/塔罗/占星/黄历共用 `ai.build_prompt` 的 5 条铁律 + `FEATURE_GUIDES` 各功能专属规则块。免责声明由系统统一附加（`features.common.with_disclaimer`，幂等），模型不再自行撰写；deduce/followup/缓存回放三条路径都带。

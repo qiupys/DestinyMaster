@@ -11,6 +11,12 @@
 
 ---
 
+## v112 (2026-11-25)
+- [test] 新增可入库的 API 回归框架（`tests/api/`）：临时 SQLite + 测试账号 + 计算引擎 mock + AI 流式 mock + SSE 解析；不调真实模型、不碰线上库。覆盖十一功能 calc→deduce→追问→历史详情，去重回放/force、盘面身份变化、八字约束跨追问复用、未登录与跨账号鉴权、紫微显式流年与问题内年份解析。
+- [refactor] 拆分 1000+ 行 `feature_api.py` 为 `server/features/` 包：`common`（鉴权/去重/RAG/免责/SSE）、`context`（档案八字/星座约束）、`calculations`（确定性计算）、`feature_routes`（动态 calc/deduce）、`support_routes`（历史/记忆/KB）。`feature_api.py` 保留兼容门面，外部调用契约不变。
+- [refactor] calc/deduce 共用的长查询参数收敛到单一 FastAPI 依赖；首轮解读与追问共用 `common.answer_events`，消除重复 SSE/落盘代码并支持追问中途断开时保存已生成内容。
+- [docs] 更新软件工程约定与变更记录。
+
 ## v111 (2026-11-25)
 - [fix] 八字排盘「流年」默认高亮当年但提问区显示「未选择大运或流年」：pick 初始化为空导致状态不同步。现默认选中当年流年并同步提示与 scope，用户点击后跟随具体流年。
 - [fix] AI 解读卡位置统一到提问框下方：六爻/奇门的结果容器内含提问框，原逻辑把解读卡插到盘面卡之后（提问框上方）。改为优先插到提问框之后；塔罗/梅花插盘面后，八字/紫微/占星/合婚的独立输出容器不受影响。

@@ -8,7 +8,8 @@
 ```
 server/
   main.py           FastAPI 入口；档案、紫微排盘/运限数据层、紫微 deduce（SSE）
-  feature_api.py    十功能 calc/deduce 工厂路由 + 全功能 history/followup
+  feature_api.py    兼容门面：对外暴露 router / _with_disclaimer，内部转发到 features/
+  features/         全功能 API 分层（见下方模块边界）
   ai.py             prompt 装配（build_prompt / build_ziwei_prompt）+ stream_answer + 免责
   prompt.py         紫微专属规则（大限/流年/历法对齐）
   history.py        feature_history 落盘/查询/追问/去重 key
@@ -26,22 +27,35 @@ web/
 docs/kb/<domain>/    RAG 语料（九领域）
 docs/iztro-learn/    紫微语料
 tools/               语料抓取/预处理脚本
-tests/               单元测试 + E2E
+tests/
+  api/              可入库的 API 回归框架（mock AI/引擎，覆盖十一功能链路）
+  unit_*.py         引擎单元测试（本地）
+  e2e_*.js          浏览器 E2E（本地，不入库）
 ```
 
+`server/features/` 内部分工：
+
+| 文件 | 职责 |
+| --- | --- |
+| `common.py` | 鉴权、去重键、RAG 分域检索、免责声明、SSE 事件与统一流式落盘 |
+| `context.py` | 档案出生信息 → 八字/星座约束文本，首轮与追问复用同一份注入 |
+| `calculations.py` | 十一功能确定性计算入口，只消费公共参数字典 |
+| `feature_routes.py` | `common_params` 单一参数依赖 + calc/deduce 动态工厂 |
+| `support_routes.py` | 历史/追问、知识库统计、个人记忆端点 |
+
 **模块边界铁律**：
-- 一个功能只在一个引擎文件实现确定性计算，在 `ai.py` 只有一个 prompt 入口，在 `feature_api` 只有一个工厂路由。新增功能不得在前端自写 fetch 渲染或后端另起一套落盘逻辑。
-- 数据落盘只走 `history.save`（deduce 时），calc 从不落库。追问只走 `/api/history/followup`。
+- 一个功能只在一个引擎文件实现确定性计算，在 `ai.py` 只有一个 prompt 入口，在 `features/feature_routes.py` 只有一个工厂路由。新增功能不得在前端自写 fetch 渲染或后端另起一套落盘逻辑。
+- 数据落盘只走 `history.save`（deduce 时）/`history.append_followup`（追问时），calc 从不落库。追问只走 `/api/history/followup`。
 - 个人化文本只来自 `personal_memory`（`memory.personalization_text()` → `history.personalization()`），不得恢复已删除的自动画像链路。
 
-## 2. AI 链路（十功能同构）
+## 2. AI 链路（十一功能同构）
 
 ```
 calc（确定性计算，出盘面/牌面/卦面）
   → fact / rag_query / rag_extra（引擎产出，可 JSON 落盘）
   → prompt（ai.py 装配 + 个人记忆注入 + RAG 检索）
   → ai.stream_answer（SSE 流式）
-  → feature_api._with_disclaimer（系统统一附加免责，模型不自写）
+  → features.common.with_disclaimer（系统统一附加免责，模型不自写）
   → history.save（落 feature_history，回传 hid）
   → /api/history/followup（追问，用 payload 重建盘面）
 ```
@@ -61,11 +75,12 @@ calc（确定性计算，出盘面/牌面/卦面）
 ## 4. 开发与验证流程
 
 1. 本地改代码 → 语法检查（`node --check`、`python -m py_compile`）。
-2. 本地起 uvicorn（空闲端口），跑单元测试：`tests/unit_*.py`（六爻/奇门/合婚/历史等）。
-3. 跑 E2E：`tests/e2e_v101.js`（设计系统/流程）、`e2e_v97.js`（主流程）、`e2e_v94.js`（基础），符号说明见测试文件。断言版本号 `>=` 当前版本。
+2. 跑 API 回归（必做，mock AI/引擎，秒级）：`PYTHONPATH=server:. .venv-dev/bin/python -m unittest discover -s tests/api -p 'test_*.py'`。改 prompt/路由/历史/去重时优先补这里的断言。
+3. 跑单元测试：`tests/unit_*.py`（六爻/奇门/合婚/历史等）。本地起 uvicorn（空闲端口）。
+4. 跑 E2E：`tests/e2e_v101.js`（设计系统/流程）、`e2e_v97.js`（主流程）、`e2e_v94.js`（基础），符号说明见测试文件。断言版本号 `>=` 当前版本。
    - Playwright 在 `/Users/pengyu/.workbuddy/binaries/node/workspace/node_modules`，launch 加 `--no-sandbox --disable-dev-shm-usage`。
    - 排查 DOM 交互务必限定可见 stage `#p-stage-<feat>`，否则全局选择器命中隐藏 stage 缓存节点（height=0）误判。
-4. 用浏览器注入本地 js/css（route 拦截线上页面）验证纯前端改动，无需重启服务。
+5. 用浏览器注入本地 js/css（route 拦截线上页面）验证纯前端改动，无需重启服务。
 
 ## 5. 发布流程（每次必做）
 

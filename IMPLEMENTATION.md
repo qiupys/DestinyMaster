@@ -56,6 +56,6 @@
 
 ## 6. AI 链路与重启恢复
 
-- 全部经 `ai.stream_answer` 流式 + `feature_api._with_disclaimer` 系统免责 + 落 `feature_history` + followup。
+- 全部经 `ai.stream_answer` 流式 + `features.common.with_disclaimer` 系统免责 + 落 `feature_history` + followup；首轮与追问共用 `features.common.answer_events`。
 - 紫微 deduce 无缓存命中时，若内存 `CHARTS` 因重启清空，用登录档案 birth 经 `_rebuild_session_from_profile` 确定性重建盘（无随机，必得同盘），再走 `ai.prepare_ziwei` → `build_ziwei_prompt` → 流式；失败时前端显示明确错误，不留空白卡。
 - 前端 `streamToUrl` 检测响应 content-type：非 `text/event-stream` 的 JSON 错误直接显示 `error` 文字。
