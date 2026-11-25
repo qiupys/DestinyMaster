@@ -73,8 +73,10 @@ calc（确定性计算，出盘面/牌面/卦面）
 4. **共用确定性结果的功能页必须单一 stage**（如老黄历 personal/pair 两 tab 共用一张日历），禁止拆两个 stage 造成重复 DOM id。
 5. **出生资料唯一源 = 档案 `profile.birth`**；后端 `_birth_to_solar` 统一农历转公历；写回只在 `save=1`，普通排盘不覆盖。
 6. **nginx 配置备份绝不留在 `sites-enabled/`**（被 include 全部加载致多 server 块冲突），放 `sites-available/` 或 `/root/nginx-backups/`；改完 `nginx -t` 必须无 `conflicting server name` 警告。入口页 no-store，静态资源 no-cache。
-7. **重绘型页面必须保留解读输出容器**：紫微点宫位/切视图会整块重绘 `#zw-result`，`#zw-ai-out` / `#zw-d-ai-out` 必须原样挂回（`zwKeepOutputs`），否则对象层 Reading 还在、画面却空了。追问容器 `.ai-follow-slot` 无 id，`sessOf` 要沿 DOM 祖先找 `#zw-d-ai-out` 才能落到 `zw-d` slot；换盘时才清 `_outCache`。
-8. **运限失败只重排一次**：`zwHoro()` 失败重试必须一次性（新 chart id 会让它看起来像新请求），否则运算接口持续失败时会无限重排、结果区永远停在「正在起盘」；失败一律 `warn` 留痕。
+7. **重绘型页面必须保留解读输出容器（全功能统一）**：同盘重绘走 `preserveOutputs()`，盘面身份变化走 `archiveBeforeRepaint()`；容器清单与 slot 映射只在 `FEATURES.outs/slots` 声明，禁止给单个功能写 `xxxKeepOutputs`。此前八字重排、黄历切 tab、紫微换盘都直接 `innerHTML=` 冲掉解读卡而对象还在（画面空/对象在）。追问容器 `.ai-follow-slot` 无 id，`sessOf` 沿 DOM 祖先找 slot。
+8. **轮次 key 严格 = 盘面/卦面/牌面身份 rk + 问题**：跨 slot 用 `Core.sessionsOf` 查；个人中心历史追问按 hid 用 `Core.findReadingById` 写回**原功能** Reading（不能落进 `profile` 会话），并同时保存原功能快照。紫微等异步命盘页必须在 `navigate()` 里调用 `restoreStageSnap`，等待排盘的判据不能只认 `.p-result`（紫微没有）。
+9. **登录态清理彻底**：未登录启动清残留快照；登录主动 `Core.clearAll()`；退出清全部命盘缓存与重绘缓存。别依赖「未登录不能解读」的前提。
+10. **运限失败只重排一次**：`zwHoro()` 失败重试必须一次性（新 chart id 会让它看起来像新请求），否则运算接口持续失败时会无限重排、结果区永远停在「正在起盘」；失败一律 `warn` 留痕。
 
 ## 4. 开发与验证流程
 

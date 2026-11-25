@@ -19,7 +19,7 @@
 
   /* 容器 → 解读会话：feature 显式传入优先；紫微运势盘用独立 slot 与命格盘隔离。
      黄历 personal/pair 共用 #hl-result，靠调用方传入的 feature 区分（不靠 DOM）。 */
-  var SLOT_CONTAINERS = { "zw-d-ai-out": "zw-d", "zw-d-result": "zw-d" };
+  var SLOT_CONTAINERS = Core.slotMap();
   function sessOf(container, feature) {
     var f = feature || S.feature;
     var slot = "";
@@ -37,6 +37,43 @@
       }
     }
     return Core.session(f, slot);
+  }
+  /* ===== 重绘保护（全功能共用，禁止再给单个功能写 xxxKeepOutputs） =====
+     盘面/卦面/牌面身份不变的重绘（紫微点宫位、切视图等）必须把 AI 输出容器原样挂回：
+     节点不动 → 追问事件、流式 DOM 引用、归档链全部随节点保留。
+     容器清单来自 Core.outsOf(feature) 注册表，新增功能自动纳入。 */
+  var OUT_CACHE = {};
+  function preserveOutputs(container, paint, feature) {
+    var f = feature || S.feature;
+    if (!OUT_CACHE[f]) OUT_CACHE[f] = {};
+    var sels = Core.outsOf(f);
+    sels.forEach(function (sel) {
+      var el = $(sel);
+      if (el) OUT_CACHE[f][sel] = el;      // 当前视图有就刷新缓存；没有就留着上次节点
+    });
+    paint();
+    sels.forEach(function (sel) {
+      var fresh = $(sel), old = OUT_CACHE[f][sel];
+      if (!fresh) return;
+      if (old && old !== fresh) {
+        if (fresh.parentNode) fresh.parentNode.replaceChild(old, fresh);
+      } else OUT_CACHE[f][sel] = fresh;
+    });
+  }
+  function clearOutCache(feature) { delete OUT_CACHE[feature || S.feature]; }
+  /* 盘面身份变化（换盘/换卦/换牌/切子功能）时统一归档旧轮，对象与 DOM 同步后重建。
+     rk+question 严格相等才算同轮：dataset 缺失时从 ReadingSession 兜底。 */
+  function archiveBeforeRepaint(container, feature) {
+    if (!container) return;
+    var sess = sessOf(container, feature);
+    var q = container.dataset.lastQ || sess.lastQ || "上一轮提问";
+    var rk = container.dataset.rk || sess.boardRk || "";
+    archiveRound(container, q, rk);
+    // 多 slot 功能（紫微宫位槽）：归档区只有一份，但另一槽的对象也要从 current 移走
+    Core.sessionsOf(sess.feature).forEach(function (s) {
+      if (s !== sess && s.current) s.archive();
+    });
+    clearOutCache(sess.feature);
   }
   // 老黄历的两个子功能共用同一舞台；旧链接 #/huangli_pair 通过它切到双人择日 tab。
   var hlApplyMode = null;
@@ -58,6 +95,13 @@
   try {
     var raw = localStorage.getItem("zw-profile");
     if (raw) S.profile = JSON.parse(raw);
+    else {
+      // 未登录启动（含直接删 localStorage 后刷新）：清掉上一账号残留的会话快照。
+      // 初始化不经过 setProfile，这里必须自己清，否则旧对话会在下次登录时冒出来。
+      Object.keys(sessionStorage).forEach(function (k) {
+        if (k && k.indexOf("zs-snap-") === 0) sessionStorage.removeItem(k);
+      });
+    }
   } catch (e) { warn("读取本地登录态失败", e); }
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
@@ -88,6 +132,7 @@
     astrology: { title: "AI 占星解读", desc: "基于本次本命盘的行星落座、宫位与相位，可就性格与运势继续提问，答复仅供参考。" },
     bazi_marriage: { title: "AI 八字合婚", desc: "基于双方已排定的四柱与跨盘关系，可就相处模式继续提问，答复仅供参考。" },
     ziwei_marriage: { title: "AI 紫微合婚", desc: "基于双方已排定的命盘与四化交叉，可就关系结构继续提问，答复仅供参考。" },
+    astrology_marriage: { title: "AI 占星合盘", desc: "基于双方已排定的本命盘、落宫与相位，可就关系动力学继续提问，答复仅供参考。" },
     liuyao: { title: "AI 六爻解卦", desc: "基于本次卦盘的纳甲、六亲、世应与动变，可就所问之事继续提问，答复仅供参考。" },
     qimen:  { title: "AI 奇门解盘", desc: "基于本次九宫盘的干星门神与格局，可就所问之事继续提问，答复仅供参考。" }
   };
@@ -174,9 +219,14 @@
     clearAllSnaps();
     dropStages();
     Core.clearAll();                    // v116：解读对象仓库随用户数据一起清空
+    OUT_CACHE = {};                     // v121：重绘保护缓存按用户隔离，退出即清
     S.profileBirth = null;
     S.zw = null; S.zwFromProfile = false;
-    try { sessionStorage.removeItem("zw-chart-v1"); } catch (e) { warn("清理紫微盘缓存失败", e); }
+    // 三个命盘缓存全清（此前只清紫微，八字/占星残留靠 uid 兜底，不算彻底）
+    Object.keys(CHART_CACHE).forEach(function (f) {
+      try { sessionStorage.removeItem(CHART_CACHE[f]); }
+      catch (e) { warn("清理" + f + "命盘缓存失败", e); }
+    });
     pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false,
       birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false };
   }
@@ -201,9 +251,14 @@
     S.profile = p;
     try { p ? localStorage.setItem("zw-profile", JSON.stringify(p)) : localStorage.removeItem("zw-profile"); }
     catch (e) { warn("保存登录态失败", e); }
+    if (!p) clearAllSnaps();   // 未登录（含直接删 localStorage 后刷新）一律清残留快照，防串账号
     if (changed) {
       if (!p) clearUserData();
-      else { dropStages(); loadProfileBirth(); }   // 登录：清舞台 + 加载档案出生资料供 Person 快照
+      else {
+        dropStages();
+        Core.clearAll(); OUT_CACHE = {};           // 登录也主动清旧会话，不依赖「未登录不能解读」的前提
+        loadProfileBirth();                        // 加载档案出生资料供 Person 快照
+      }
     }
     renderUser();
     // 登录/退出后立刻刷新当前视图：个人中心刷新统计，其它页强制重建（门禁 ↔ 档案带入）
@@ -302,8 +357,11 @@
       if (!st.isConnected) return;                 // 已被销毁，放弃
       if (st.dataset.snapRestored === "1") return;  // 已被别处恢复
       var root = rootSel ? $(rootSel, st) : null;
-      // 结果区还没排盘（空）且是命盘类 → 再等
-      if (root && !root.querySelector(".p-result") && tries < 20 && ["bazi","astrology","ziwei"].indexOf(feat) >= 0) {
+      // 结果区还没排盘且是命盘类 → 再等。紫微盘面没有 .p-result，
+      // 此前只认它导致紫微快照每次都要空等 2s、甚至被随后重绘覆盖（刷新丢对话）。
+      var ready = root && (root.querySelector(".p-result") ||
+        root.querySelector("#zw-plate") || root.querySelector(".zw-pattern"));
+      if (root && !ready && tries < 20 && ["bazi","astrology","ziwei"].indexOf(feat) >= 0) {
         tries++; setTimeout(attempt, 100); return;
       }
       var restored = false;
@@ -361,7 +419,8 @@
     }
     st.dataset.ready = "1";
     if (feat === "home") { renderHome(); return; }
-    if (feat === "ziwei") { renderZiweiEntry(); return; }
+    // 紫微同样是命盘类：此前直接 return 漏掉快照恢复，刷新后对话与对象全丢。
+    if (feat === "ziwei") { renderZiweiEntry(); restoreStageSnap(feat); return; }
     var fn = { bazi: renderBazi, meihua: renderMeihua, tarot: renderTarot, huangli: renderHuangli,
       astrology: renderAstrology, liuyao: renderLiuyao, qimen: renderQimen,
       bazi_marriage: renderBaziMarriage, ziwei_marriage: renderZiweiMarriage,
@@ -1271,7 +1330,14 @@
         ];
 
         // 结构统一：盘面结果卡、独立提问卡、AI 解读输出三段平级（提问卡不再嵌在盘面卡内）
-        $("#bz-result").innerHTML = '<div class="p-result">' +
+        // 同盘重绘（切回缓存/切大运流年）保留解读容器；换出生参数=新盘，先按旧 rk 归档整轮。
+        var bzRoot = $("#bz-result");
+        if (bzRoot.dataset.chartKey && bzRoot.dataset.chartKey !== cacheKey) {
+          archiveBeforeRepaint(bzRoot, "bazi");
+        }
+        bzRoot.dataset.chartKey = cacheKey;
+        preserveOutputs(bzRoot, function () {
+        bzRoot.innerHTML = '<div class="p-result">' +
           '<div class="result-head"><div class="result-title">四柱盘面</div>' + profileAside() + '</div>' +
           '<div class="p-card">' + note + kv + wxHtml +
             '<div class="bz-sec"><div class="bz-sec-h">神煞</div>' + ssHtml + '</div>' +
@@ -1288,6 +1354,7 @@
             '<button class="tool-ai zw-ask-btn" id="bz-ai" type="button">AI 解读</button></div>' +
         '</div>' +
         '<div id="bz-ai-out"></div>';
+        }, "bazi");
 
         // 大运 / 流年点选：默认选中当年流年（与按钮高亮一致），再按用户点击切换
         var defLn = null;
@@ -2023,7 +2090,10 @@
       isPair = next;
       feat = isPair ? "huangli_pair" : "huangli";
       segSet($("#hl-tabs"), isPair ? "pair" : "personal");
-      $("#hl-result").innerHTML = "";   // 切换子功能清空上一子功能的解读，避免混在同一结果区
+      // 切子功能 = 新盘面身份：旧对话按「旧 rk + 问题」归档（对象与 DOM 同步），
+      // 不再直接 innerHTML 清空——此前对象仍留在 session 里，刷新后又冒出来。
+      archiveBeforeRepaint($("#hl-result"), "huangli");
+      $("#hl-result").innerHTML = "";
       drawForm();
     }
     // 旧链接 #/huangli_pair 直达双人择日子功能：切回来时也能定位
@@ -2316,8 +2386,14 @@
     if (!st || !q) return null;
     // v116：真相源是 ReadingSession 对象——严格按 question + rk 判断，不再扫 DOM 文本。
     // rk 为空时对象只按 question 跨轮匹配（模板定位）。
-    var sess = Core.session(S.feature);
-    var hit = sess.find(q, rk);
+    // 多 slot 功能（紫微宫位）必须跨槽查，否则已解读问题在另一个槽里找不到。
+    var hit = null;
+    var sessions = Core.sessionsOf(S.feature);
+    for (var si = 0; si < sessions.length; si++) {
+      var sess = sessions[si];
+      hit = sess.find(q, rk);
+      if (hit) break;
+    }
     if (!hit) return null;
     // 对象命中后再到 DOM 找到对应视觉节点（供滚动/展开）；DOM 找不到只说明尚未渲染，
     // 不影响「已解读」判断——这正是对象模型带来的健壮性。
@@ -2354,8 +2430,12 @@
      否则「同一问题 + 新卦」会被误认成旧轮、只定位回旧解读。 */
   function currentRoundRk() {
     // v116：从对象读当前盘面身份；DOM dataset 作为兜底（例如对象尚未 begin 的模板定位场景）。
-    var rk = Core.session(S.feature).boardRk || "";
-    if (rk) return rk;
+    var sessions = Core.sessionsOf(S.feature);
+    for (var si = 0; si < sessions.length; si++) {
+      var liveRk = sessions[si].boardRk || "";
+      if (liveRk) return liveRk;
+    }
+    var rk = "";
     var st = stageEl();
     var sel = rootSel();
     var c = sel && st.querySelector(sel);
@@ -2475,13 +2555,22 @@
     // v116：对象联动。新解读=创建 Reading（带参与人快照）；追问=定位所属 Reading。
     // 参与人快照从当前登录档案构造，解读一旦开始即冻结，追问沿用同一份。
     var sess = sessOf(container);
-    var reading = null, isFollow = tag === "追问";
+    var reading = null, isFollow = tag === "追问", sourceFeature = "";
     if (isNewQuestion) {
       reading = sess.begin(question, rk, currentPersons(featureOfUrl(url)));
     } else {
       var m = /[?&]id=([^&]+)/.exec(url);
       var rootId = m ? Number(decodeURIComponent(m[1])) : 0;
-      reading = sess.findById(rootId) || sess.current;
+      // 个人中心历史详情卡的追问：会话属于原功能（不是 profile），必须全局按 hid 找，
+      // 否则回答只写进 DOM、Reading 对象丢追问链——「画面在、对象丢」。
+      var located = Core.findReadingById(rootId);
+      if (located) {
+        reading = located.reading;
+        sourceFeature = located.feature;
+      } else {
+        reading = sess.findById(rootId) || sess.current;
+        sourceFeature = sess.feature;
+      }
     }
 
     fetch(url)
@@ -2543,8 +2632,10 @@
       // 避免每追问一次就多堆叠一个追问框（用户反馈「追问后仍有追问框」）。
       if (hid && tag !== "追问") attachFollow(card, hid, followNote(S.feature));
       if (!noRefresh && S.feature === "profile") renderProfile();
-      // 解读/追问稳定后存会话快照：reload 后仍能恢复本会话提问
+      // 解读/追问稳定后存会话快照：reload 后仍能恢复本会话提问。
+      // 历史追问写回的是原功能会话，快照也要存到原功能键，否则刷新后追问丢失。
       saveStageSnap(S.feature);
+      if (isFollow && sourceFeature && sourceFeature !== S.feature) saveStageSnap(sourceFeature);
       if (onDone) onDone(true);
     }
   }
@@ -3579,26 +3670,7 @@
       zwDetailHTML() +
     '</div>';
   }
-  /* 紫微每次点宫位/切视图都会重绘整个 #zw-result。解读卡与追问链挂在两个输出容器里，
-     若随 innerHTML 一起被重建，对象层 Reading 还在、画面却空了——正是「对话凭空消失」。
-     容器节点原样保留（事件监听、流式 DOM 引用都随节点走），只替换盘面/表单部分。 */
-  var ZW_OUT_IDS = ["zw-ai-out", "zw-d-ai-out"];
-  function zwKeepOutputs(wrap, paint) {
-    var st = zwS();
-    if (!st._outCache) st._outCache = {};
-    ZW_OUT_IDS.forEach(function (id) {
-      var old = wrap.querySelector("#" + id);
-      if (old) st._outCache[id] = old;
-    });
-    paint();
-    ZW_OUT_IDS.forEach(function (id) {
-      var fresh = wrap.querySelector("#" + id);
-      if (!fresh) return;                     // 当前视图没有该容器：留在缓存，切回来再挂
-      var cached = st._outCache[id];
-      if (cached && cached !== fresh) fresh.parentNode.replaceChild(cached, fresh);
-      else st._outCache[id] = fresh;
-    });
-  }
+  /* 紫微点宫位/切视图的重绘走全功能共用的 preserveOutputs（容器清单来自注册表）。 */
   /* 渲染当前视图 */
   function zwRender() {
     var st = zwS(), wrap = $("#zw-result");
@@ -3608,7 +3680,7 @@
     if (st.view === "pattern") body = zwPatternHTML();
     else if (st.view === "fortune") body = zwFortuneHTML();
     else body = zwPlate() + zwDetailHTML();
-    zwKeepOutputs(wrap, function () {
+    preserveOutputs(wrap, function () {
       wrap.innerHTML =
         '<div class="zw-bar">' +
           '<div class="zw-tabs" id="zw-tabs">' +
@@ -3766,8 +3838,9 @@
       if (st.view === "fortune") zwHoro().then(zwRender);
       return;
     }
-    // 真正换盘（不是命中缓存）：旧盘的解读卡不能挂回新盘，连同容器缓存一起清掉。
-    st._outCache = {};
+    // 真正换盘（不是命中缓存）：先按「旧盘 rk + 问题」归档旧轮（对象与 DOM 一起），
+    // 再清输出容器缓存，避免旧盘解读卡被挂回新盘造成「对象与画面脱节」。
+    archiveBeforeRepaint(wrap, "ziwei");
     wrap.innerHTML = '<p class="p-note" style="text-align:center;margin:16px 0">正在起盘…</p>';
     st.chart = null; st.id = null; st.sel = null;
     if (!(keepView && st.view)) st.view = "plate";

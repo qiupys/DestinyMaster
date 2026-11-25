@@ -348,6 +348,149 @@ function sessionState(page, feature, slot) {
       check(zFu.current && zFu.current.followups.length === 1, "I4 切宫位后追问仍挂到同一 Reading");
     } else no("I4 切宫位后追问仍挂到同一 Reading", "追问框已丢失");
 
+    // ---- J. 多对话：换卦换问题归档、同问题同卦去重 ----
+    console.log("\n[J] 多对话轮次与 rk+question 严格身份");
+    // G 组把六爻 deduce 改成了错误响应，这里恢复成功 mock（hid 与历史详情用例一致）
+    await page.unroute("**/api/liuyao/deduce*");
+    await page.route("**/api/liuyao/deduce*", function (route) {
+      route.fulfill({ status: 200, contentType: "text/event-stream",
+        body: sse("多轮 mock 解读正文。", 100001) });
+    });
+    await page.evaluate(function () { window.ReadingCore.clearAll(); });
+    await page.goto(BASE + "/#/liuyao", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(300);
+    await page.fill("#ly-q", "多轮问题一");
+    await page.click("#ly-cast");
+    await page.waitForTimeout(300);
+    await page.click("#ly-ask");
+    await page.waitForSelector("#ly-result .p-ai.done", { timeout: 10000 });
+    await page.fill("#ly-q", "多轮问题二");
+    await page.click("#ly-cast");
+    await page.waitForTimeout(300);
+    await page.click("#ly-ask");
+    await page.waitForFunction(function () {
+      var s = window.ReadingCore.session("liuyao");
+      return s.current && s.current.question === "多轮问题二" && s.current.id === 100001 && s.archived.length === 1;
+    }, { timeout: 10000 });
+    var j2 = await sessionState(page, "liuyao");
+    check(j2.archived.length === 1 && j2.archived[0].question === "多轮问题一" &&
+      j2.current.rk !== j2.archived[0].rk, "J1 换卦换问题：旧轮按 rk+question 归档", j2.archived[0].rk);
+    var jArc = await page.evaluate(function () {
+      return document.querySelectorAll("#p-stage-liuyao .round-archive .p-ai-archived").length;
+    });
+    check(jArc >= 1, "J2 归档卡在结果区外可见", String(jArc));
+    await page.click("#ly-ask");
+    await page.waitForTimeout(300);
+    var j3 = await sessionState(page, "liuyao");
+    check(j3.archived.length === 1 && j3.current.id === j2.current.id, "J3 同问题同卦被去重，不新增轮",
+      JSON.stringify({ arc: j3.archived.length, curQ: j3.current && j3.current.question,
+        curId: j3.current && j3.current.id, expId: j2.current && j2.current.id }));
+
+    // ---- K. 个人中心历史详情追问：对象写回原功能，不落进 profile 会话 ----
+    console.log("\n[K] 历史详情追问的对象归属");
+    await page.route("**/api/history/list*", function (route) {
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true,
+        items: [{ id: 100001, feature: "liuyao", feature_name: "六爻", question: "宁德时代能够长持吗？",
+          answer: "巽为风，三爻动。", ts: "2026-11-25 17:00" }] }) });
+    });
+    await page.route("**/api/history/stats*", function (route) {
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true,
+        total: 1, by_feature: { liuyao: 1 }, dates: [] }) });
+    });
+    await page.route("**/api/history/detail*", function (route) {
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true,
+        item: { id: 100001, feature: "liuyao", question: "宁德时代能够长持吗？",
+          answer: "巽为风，三爻动。", followups: [], ts: "2026-11-25 17:00" } }) });
+    });
+    await page.goto(BASE + "/#/profile", { waitUntil: "domcontentloaded" });
+    await page.waitForSelector('.pf-hcard[data-hid="100001"]', { timeout: 8000 });
+    await page.click('.pf-hcard[data-hid="100001"]');
+    await page.waitForSelector('[data-hbox="100001"] .ai-follow input', { timeout: 8000 });
+    await page.fill('[data-hbox="100001"] .ai-follow input', "历史里追问");
+    await page.press('[data-hbox="100001"] .ai-follow input', "Enter");
+    await page.waitForFunction(function () {
+      var c = window.ReadingCore.session("liuyao").current;
+      return c && c.followups.some(function (f) { return f.question === "历史里追问"; });
+    }, { timeout: 10000 });
+    var kProf = await page.evaluate(function () {
+      var s = window.ReadingCore.session("profile");
+      return !!(s.current && s.current.followups.length);
+    });
+    check(!kProf, "K1 历史追问未落进 profile 会话（全局 hid 定位）");
+
+    // ---- L. 功能间切换：舞台只隐藏显示，对话与追问链保留 ----
+    console.log("\n[L] 前端功能切换");
+    await page.goto(BASE + "/#/tarot", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(200);
+    await page.goto(BASE + "/#/liuyao", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(200);
+    var l = await page.evaluate(function () {
+      var c = window.ReadingCore.session("liuyao").current;
+      return { cur: !!c, card: !!document.querySelector("#ly-result .p-ai.done"),
+        follow: !!(c && c.followups.length) };
+    });
+    check(l.cur && l.card && l.follow, "L1 切走再切回，对象与 DOM 对话完整", JSON.stringify(l));
+
+    // ---- M. 页面刷新：紫微宫位对话从快照恢复，且对象/DOM 一致 ----
+    console.log("\n[M] 页面刷新快照恢复");
+    await page.goto(BASE + "/#/ziwei", { waitUntil: "domcontentloaded" });
+    await page.waitForSelector("#zw-plate .zw-pal", { timeout: 12000 });
+    await page.click("#zw-plate .zw-pal");
+    await page.waitForSelector("#zw-dq", { timeout: 5000 });
+    await page.fill("#zw-dq", "刷新保留测试");
+    await page.click("#zw-dask");
+    await page.waitForSelector("#zw-d-ai-out .p-ai.done", { timeout: 10000 });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1800);
+    var m = await page.evaluate(function () {
+      var key = Object.keys(sessionStorage).filter(function (k) { return k.indexOf("zs-snap-ziwei-") === 0; })[0];
+      var snap = key ? JSON.parse(sessionStorage.getItem(key)) : null;
+      var s = window.ReadingCore.session("ziwei", "zw-d");
+      return { card: !!document.querySelector("#zw-d-ai-out .p-ai.done"),
+        obj: !!s.current, arc: s.archived.length,
+        snapCur: snap && snap.core ? Object.keys(snap.core).map(function (k) {
+          return k + ":" + !!snap.core[k].current;
+        }).join(",") : "NO_SNAP" };
+    });
+    check(m.card && m.obj, "M1 刷新后宫位对话与对象一致", JSON.stringify(m));
+
+    // ---- N. 登录 / 退出登录：对象与缓存彻底隔离 ----
+    console.log("\n[N] 登录退出缓存隔离");
+    await page.evaluate(function () { localStorage.removeItem("zw-profile"); });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(400);
+    var n1 = await page.evaluate(function () {
+      var snaps = Object.keys(sessionStorage).filter(function (k) { return k.indexOf("zs-snap-") === 0; });
+      return { cur: window.ReadingCore.session("liuyao").current,
+        arcs: window.ReadingCore.session("liuyao").archived.length, snaps: snaps, keys: snaps.slice() };
+    });
+    check(n1.cur === null && n1.arcs === 0 && n1.snaps.length === 0, "N1 退出清空对象与快照", JSON.stringify(n1));
+    await page.evaluate(function (r) {
+      localStorage.setItem("zw-profile", JSON.stringify({ id: r.profile_id, token: r.token, name: r.name }));
+    }, reg);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(400);
+    var n2 = await page.evaluate(function () {
+      return { cur: window.ReadingCore.session("liuyao").current,
+        arcs: window.ReadingCore.session("liuyao").archived.length };
+    });
+    check(n2.cur === null && n2.arcs === 0, "N2 重新登录不串上一账号对话", JSON.stringify(n2));
+
+    // ---- O. 同盘重绘保留对话（八字重排） ----
+    console.log("\n[O] 同盘重绘保留");
+    await page.goto(BASE + "/#/bazi", { waitUntil: "domcontentloaded" });
+    await page.waitForSelector("#bz-q", { timeout: 8000 });
+    await page.fill("#bz-q", "重绘保留测试");
+    await page.click("#bz-ai");
+    await page.waitForSelector("#bz-ai-out .p-ai.done", { timeout: 10000 });
+    await page.evaluate(function () { var b = document.querySelector("#bz-calc"); if (b) b.click(); });
+    await page.waitForTimeout(700);
+    var o = await page.evaluate(function () {
+      return { card: !!document.querySelector("#bz-ai-out .p-ai.done"),
+        cur: !!(window.ReadingCore.session("bazi").current) };
+    });
+    check(o.card && o.cur, "O1 同参数重排不丢解读（preserveOutputs）", JSON.stringify(o));
+
     check(jsErrors.length === 0, "Z. 全程无前端 JS 报错", jsErrors.slice(0, 2).join(" | "));
     await browser.close();
   } catch (e) {

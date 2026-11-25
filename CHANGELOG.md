@@ -11,6 +11,13 @@
 
 ---
 
+## v121 (2026-11-25)
+- [fix][架构] 把 v120 的紫微专用重绘保护收编为全功能通用机制：`preserveOutputs()` + `archiveBeforeRepaint()`。输出容器清单与 slot 映射从 `FEATURES` 注册表派生（`Core.outsOf/slotMap`），新增功能自动纳入，杜绝「一功能写一套」。同盘重绘（八字重排、紫微点宫/切视图）原样保留解读容器；换盘/换卦/换牌/切子功能（八字改出生资料、紫微换盘、黄历 personal↔pair）先按「旧 rk + 问题」归档，对象与 DOM 同步。
+- [fix] 对象与 DOM 脱节的三处：① `findAnswered/currentRoundRk` 只读主会话，紫微宫位槽的已解读问题定位不到 → 改为 `Core.sessionsOf` 跨槽查；② 个人中心历史详情追问写进 `profile` 会话、原 Reading 丢追问链 → 新增 `Core.findReadingById(hid)` 全局定位，写回原功能 Reading，并把快照存到原功能键；③ 紫微 `navigate()` 分支直接 `return` 漏掉 `restoreStageSnap`，刷新后对话与对象全丢 → 补上，并修正快照等待条件（紫微盘面无 `.p-result`）。
+- [fix] 登录态清理：未登录启动（含直接删 localStorage 后刷新）清残留快照防串号；登录主动 `Core.clearAll()` + 清重绘缓存；退出清全部三个命盘缓存（此前只清紫微）。补 `astrology_marriage` 门禁文案。
+- [test] 对象单测 30→33（跨 slot 会话/全局 hid 定位/注册表派生清单）；浏览器 mock E2E 27→31（v120）→**40**，新增 J 多对话与严格 rk+question、K 历史详情追问对象归属、L 功能间切换、M 页面刷新（紫微宫位）、N 登录退出隔离、O 同盘重绘保留；API 静态护栏 41 项（新增重绘保护单一来源断言）。全量通过。
+- [docs] `SOFTWARE_ENGINEERING.md`、`FRONTEND_DESIGN.md`、`tests/README.md` 同步；reading-core.js/portal.js bump v121。
+
 ## v120 (2026-11-25)
 - [fix][严重] 紫微选不同宫位后原先的对话「消失」：根因不是归档，也不是个人中心——`zwRender()` 每次点宫位/切视图都整块重写 `#zw-result` 的 `innerHTML`，把 `#zw-d-ai-out` 里的解读卡与追问链连 DOM 一起冲掉；Reading 对象仍在（I2 实测 PASS），但画面与对象脱节。新增 `zwKeepOutputs()`：重绘前把两个输出容器节点摘出缓存、重绘后原样挂回，事件监听与流式 DOM 引用随节点走；真正换盘时才清缓存，避免旧盘解读挂回新盘。
 - [fix] 紫微宫位追问挂错会话：`.ai-follow-slot` 无 id，`sessOf` 此前只查容器自身 id，导致追问写进 `ziwei|""` 而不是解读所在的 `ziwei|"zw-d"`。改为沿 DOM 祖先找 `#zw-d-ai-out`，并从 stage 的 `data-feature` 反推功能。

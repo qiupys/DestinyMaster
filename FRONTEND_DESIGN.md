@@ -59,6 +59,7 @@
 | 提问卡 | `.bz-ask` / `.zw-ask` / `.zw-d-ask` / `.bz-ask.as-ask` | 统一 `max-width:var(--content-w)`，禁止写死宽度 |
 | 门禁提示框 | `.p-bazi-gate`（`.ok`/`.warn`） | 统一放表单第一个子元素 |
 | AI 流式解读 | `streamToUrl` / `streamAI` | 统一 SSE 渲染、免责、追问条；新功能不得自写 fetch |
+| 重绘与解读共存 | `preserveOutputs` / `archiveBeforeRepaint` | 同盘重绘原样保留输出容器，换盘先按旧 rk 归档；容器清单只在 `FEATURES.outs/slots` 声明，禁止功能专属保留逻辑 |
 | 双人表单间距 | `birthFieldsHTML(opts.roomy)` 的 `.bf-field`/`.bf-sec`/`.bf-fields` | 标签与控件绑 `.bf-field`；段间 16 / 段内 10 / 标签 13；`.mrg-zz` 块级 flex 避免行盒空白；`applyTime()` 隐藏 `#pfx-timewrap` |
 | AI 正文字号 | `.p-ai-body` | 13px / 行高 1.9；h1=16 / h2=14 / h3·h4=13；表格/code=12；段距走 gap 变量 |
 | 合婚盘面字段 | `renderPairResult` 的 `.mrg-line` | 三段 `<span>`（nowrap / flex gap 6 / 11px），禁用全角空格，防孤字换行 |

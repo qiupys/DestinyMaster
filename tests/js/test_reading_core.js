@@ -353,4 +353,35 @@ t("clearAll：多 slot 会话一并清空，重建是全新对象", function () 
   assert.notStrictEqual(Core.session("ziwei", ""), d, "清空后应重建全新会话对象");
 });
 
+t("sessionsOf：跨 slot 返回同一功能的全部会话", function () {
+  Core.clearAll();
+  Core.session("ziwei", "").begin("命格问题", "chart|1");
+  Core.session("ziwei", "zw-d").begin("宫位问题", "chart|1|2027");
+  Core.session("liuyao").begin("卦问题", "liuyao|deck");
+  var ss = Core.sessionsOf("ziwei");
+  assert.strictEqual(ss.length, 2, "紫微应有命格与宫位两个槽");
+  assert(ss.some(function (s) { return s.slot === "zw-d"; }));
+  assert(!ss.some(function (s) { return s.feature === "liuyao"; }));
+  Core.clearAll();
+});
+
+t("findReadingById：历史追问跨 slot 全局定位 Reading", function () {
+  Core.clearAll();
+  var r = Core.session("ziwei", "zw-d").begin("宫位问题", "chart|1|2027");
+  Core.session("ziwei", "zw-d").finish(777, "答案");
+  var hit = Core.findReadingById(777);
+  assert(hit && hit.feature === "ziwei" && hit.slot === "zw-d", "应定位到原功能与槽");
+  assert.strictEqual(hit.reading, r);
+  assert.strictEqual(Core.findReadingById(0), null);
+  Core.clearAll();
+});
+
+t("outsOf/slotMap：重绘保护清单从注册表派生", function () {
+  assert.deepStrictEqual(Core.outsOf("ziwei"), ["#zw-ai-out", "#zw-d-ai-out"]);
+  assert.deepStrictEqual(Core.outsOf("bazi"), ["#bz-ai-out"]);
+  assert.deepStrictEqual(Core.outsOf("liuyao"), ["#ly-result"], "无独立 out 时回退 root");
+  assert.strictEqual(Core.slotMap()["zw-d-ai-out"], "zw-d");
+  assert.strictEqual(Core.slotMap()["bz-result"], undefined, "普通功能不应产生 slot 映射");
+});
+
 console.log("=== " + pass + " 项通过 ===");

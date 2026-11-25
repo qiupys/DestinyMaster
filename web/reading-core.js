@@ -53,6 +53,9 @@
     },
     ziwei: {
       name: "紫微", root: "#zw-result", qbox: "#zw-q", out: "#zw-ai-out", arity: 1, needsBirth: true,
+      // 重绘时必须原样保留的输出容器 + 容器→slot 映射（宫位解读独立一槽）。
+      // 单一来源：preserveOutputs / sessOf / findAnswered 全部从这里派生，不再散写。
+      outs: ["#zw-ai-out", "#zw-d-ai-out"], slots: { "zw-d-ai-out": "zw-d" },
       note: "追问会沿用这一次的命盘，不会重新排盘"
     },
     astrology: {
@@ -309,6 +312,45 @@
 
   function clearAll() { _sessions = Object.create(null); }
 
+  /* 一个功能可能有多个 slot（紫微命格/宫位）：去重与当前 rk 必须跨 slot 查。 */
+  function sessionsOf(feature) {
+    var out = [];
+    Object.keys(_sessions).forEach(function (k) {
+      if (_sessions[k].feature === feature) out.push(_sessions[k]);
+    });
+    if (!out.length) out.push(session(feature, ""));
+    return out;
+  }
+
+  /* 按历史 id 全局定位 Reading：个人中心详情卡追问时，会话属于原功能而非 profile。 */
+  function findReadingById(id) {
+    if (!id) return null;
+    var keys = Object.keys(_sessions);
+    for (var i = 0; i < keys.length; i++) {
+      var s = _sessions[keys[i]], r = s.findById(id);
+      if (r) return { reading: r, feature: s.feature, slot: s.slot };
+    }
+    return null;
+  }
+
+  /* 输出容器清单：注册表 outs 优先，其次 out，最后回退 root（盘面与解读同容器）。 */
+  function outsOf(feature) {
+    var d = def(feature);
+    if (!d) return [];
+    if (d.outs && d.outs.length) return d.outs.slice();
+    return [d.out || d.root];
+  }
+
+  /* 容器 id → slot：从所有注册表的 slots 声明汇总，避免 portal.js 另写一张表。 */
+  function slotMap() {
+    var map = {};
+    Object.keys(FEATURES).forEach(function (f) {
+      var sl = FEATURES[f].slots || {};
+      Object.keys(sl).forEach(function (id) { map[id] = sl[id]; });
+    });
+    return map;
+  }
+
   /* 快照按功能序列化（含该功能所有 slot），与 portal.js 的 per-feature snapKey 对齐 */
   function serializeFeature(feature) {
     var out = {};
@@ -338,6 +380,10 @@
     Reading: Reading,
     ReadingSession: ReadingSession,
     session: session,
+    sessionsOf: sessionsOf,
+    findReadingById: findReadingById,
+    outsOf: outsOf,
+    slotMap: slotMap,
     drop: drop,
     clearAll: clearAll,
     serializeFeature: serializeFeature,

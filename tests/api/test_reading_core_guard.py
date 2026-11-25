@@ -29,7 +29,8 @@ class TestReadingCoreGuard(unittest.TestCase):
         for key in ("bazi", "ziwei", "meihua", "liuyao", "qimen", "tarot", "astrology",
                     "huangli", "huangli_pair", "bazi_marriage", "ziwei_marriage", "astrology_marriage"):
             # 在注册表块里该 key 的定义行附近能找到 arity 与 needsBirth
-            m = re.search(r"\b" + key + r"\s*:\s*\{([^}]*)\}", CORE)
+            # 支持注册表项内嵌对象（ziwei 的 slots 声明），匹配到该项结束的 4 空格大括号
+            m = re.search(r"\b" + key + r"\s*:\s*\{(.*?)\n    \}", CORE, re.S)
             self.assertIsNotNone(m, f"注册表缺少 {key}")
             body = m.group(1)
             self.assertIn("arity:", body, f"{key} 缺少 arity")
@@ -48,6 +49,15 @@ class TestReadingCoreGuard(unittest.TestCase):
         """选择器表不得重新手写全量字面量（应从注册表生成）。"""
         self.assertIn("Core.FEATURES", JS, "portal.js 未从注册表生成选择器")
         self.assertIn("function sessOf(", JS, "缺少容器→会话桥接")
+
+    def test_repaint_protection_is_single_source(self):
+        """v121：重绘保护与 slot 映射必须从注册表派生，禁止再给单个功能写一套。"""
+        self.assertIn("Core.outsOf(", JS, "输出容器清单未从注册表派生")
+        self.assertIn("Core.slotMap()", JS, "slot 映射未从注册表派生")
+        self.assertIn("preserveOutputs(", JS, "缺少全功能共用的重绘保护")
+        self.assertIn("archiveBeforeRepaint(", JS, "缺少换盘统一归档入口")
+        self.assertNotIn("zwKeepOutputs", JS, "紫微专用重绘保护未收编")
+        self.assertIn("findReadingById", JS, "历史详情追问未按 hid 全局定位 Reading")
 
     def test_decisions_read_from_core_not_dom_text(self):
         """去重判断必须走对象的 find()，不再用 DOM 文本 indexOf(q) 判定。"""
