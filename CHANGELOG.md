@@ -11,6 +11,12 @@
 
 ---
 
+## v114 (2026-11-25)
+- [style] 盘面字号收编：新增 `--fs-dense:10px` / `--fs-fine:9px` / `--fs-glyph:40px` 三个专用 token，紫微九宫与详情、奇门九宫、八字步骤、占星宫位、合婚柱位的 9/9.5/10px 全部归位，全站不再有任何裸 px 字号。
+- [fix] 普通辅助文字统一提升到 11px：侧栏副标题、即将上线、历史功能标签/日期、黄历农历与节气、奇门问号、必填星号由 10px → `--fs-xs`，不再占用盘面小字。
+- [test] 护栏升级：`test_no_bare_px_font_sizes` 拦截所有裸 px（含原 9/9.5/10/40 例外）、`test_panel_and_glyph_tokens_defined` 锁定三 token、`test_aux_text_promoted_to_xs` 防止辅助文字回退。
+- [docs] `FRONTEND_DESIGN.md` 例外登记表改为盘面 token 规范；前端版本 bump 至 v114。
+
 ## v113 (2026-11-25)
 - [fix] 前端字号继承根因：旧 `style.css` 的 `body=13.5px` 渗进所有未显式设字号的容器，出现 13 / 13.5 / 13.3333 混用。门户正文改为显式 `font-size: var(--fs-base)`，原生控件用零特异性 `:where()` 继承字体，避免覆盖 `.ti` 等样式。
 - [refactor] 全站字号收敛到 token：新增 `--fs-3xl`(32) / `--gap-xl`(32)，页面主标题、分组标题、卡片标题、辅助文字、黄历标题统一走阶梯；盘面小字仅保留 9/9.5/10px 与符号 40px 例外。

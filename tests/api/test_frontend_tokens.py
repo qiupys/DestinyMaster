@@ -31,17 +31,29 @@ class TestFrontendTokens(unittest.TestCase):
         self.assertIn("font-family: inherit", inheritance.group(1))
         self.assertIn("font-size: inherit", inheritance.group(1))
 
-    def test_no_legacy_font_sizes(self):
+    def test_no_bare_px_font_sizes(self):
+        """v114：全站字号 100% 走 token，裸 px（含盘面 9/9.5/10/40）一律拦截。"""
         bad = []
         for m in re.finditer(r"font-size\s*:\s*([^;]+);", CSS):
             value = m.group(1).strip()
             if value.startswith("var(--fs-") or value == "inherit":
                 continue
-            # 盘面专用小字与符号保留例外（紫微星曜/六爻爻标/黄历日历数字/梅花卦符）
-            if re.fullmatch(r"(?:9|9\.5|10|40)px", value):
-                continue
             bad.append(value)
         self.assertEqual(bad, [], f"发现未 token 化的字号：{sorted(set(bad))}")
+
+    def test_panel_and_glyph_tokens_defined(self):
+        """盘面小字集中到两个 token + 卦符一个 token，禁止再散写裸 px。"""
+        block = _block(".portal-body")
+        for token in ("--fs-dense: 10px", "--fs-fine: 9px", "--fs-glyph: 40px"):
+            self.assertIn(token, block, f"缺少盘面字号 token：{token}")
+
+    def test_aux_text_promoted_to_xs(self):
+        """普通辅助文字（非盘面）统一到 --fs-xs，不得回退到 dense/fine。"""
+        for selector in (".p-brand-sub", ".p-soon", ".p-hist-feat",
+                         ".pf-hcard-date", ".hl-cell span", ".hl-cell em",
+                         ".qm-help", ".tf-req"):
+            self.assertIn("var(--fs-xs)", _block(selector),
+                          f"{selector} 未提升到辅助字号 token")
 
     def test_shared_controls_use_height_token(self):
         for selector in (".p-seg button", ".hl-ctl .ti", ".hl-nav", ".dp-cell"):
@@ -61,8 +73,8 @@ class TestFrontendTokens(unittest.TestCase):
         self.assertNotIn("font-size:", JS, "模板里仍有内联 font-size，样式应留在 portal.css 的 token 层")
 
     def test_asset_version_bumped_with_css_change(self):
-        self.assertIn("portal.css?v=113", HTML)
-        self.assertIn("portal.js?v=113", HTML)
+        self.assertIn("portal.css?v=114", HTML)
+        self.assertIn("portal.js?v=114", HTML)
 
 
 if __name__ == "__main__":
