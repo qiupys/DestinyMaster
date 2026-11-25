@@ -287,7 +287,7 @@
     if (ab) ab.classList.toggle("current", feat === "profile");
     var names = { home:"首页",bazi:"八字排盘",ziwei:"紫微斗数",meihua:"梅花易数",liuyao:"六爻",qimen:"奇门遁甲",
       tarot:"塔罗牌",astrology:"占星命盘",huangli:"老黄历",profile:"个人中心",
-      bazi_marriage:"八字合婚",ziwei_marriage:"紫微合婚" };
+      bazi_marriage:"八字合婚",ziwei_marriage:"紫微合婚",astrology_marriage:"占星合盘" };
     $("#p-crumb").textContent = names[feat] || feat;
     // 隐藏所有已建舞台，只显示当前功能的；DOM 不销毁 → 提问框/解读/追问/进行中的 SSE 全部保留
     Object.keys(S.stageCache).forEach(function (k) { S.stageCache[k].style.display = "none"; });
@@ -304,7 +304,8 @@
     if (feat === "ziwei") { renderZiweiEntry(); return; }
     var fn = { bazi: renderBazi, meihua: renderMeihua, tarot: renderTarot, huangli: renderHuangli,
       astrology: renderAstrology, liuyao: renderLiuyao, qimen: renderQimen,
-      bazi_marriage: renderBaziMarriage, ziwei_marriage: renderZiweiMarriage }[feat];
+      bazi_marriage: renderBaziMarriage, ziwei_marriage: renderZiweiMarriage,
+      astrology_marriage: renderAstrologyMarriage }[feat];
     if (fn) {
       fn();
       if (pairAlias && hlApplyMode) hlApplyMode("pair");
@@ -766,7 +767,7 @@
     ["country", "province", "city", "place", "lat", "lon", "tz"].forEach(function (k) { b[k] = pl[k]; });
     return b;
   }
-  function pairFormParams(pfxA, pfxB, errSel) {
+  function pairFormParams(pfxA, pfxB, errSel, opts) {
     var err = $(errSel);
     if (err) err.textContent = "";
     var a = pairCollect(pfxA, "男方", errSel);
@@ -774,15 +775,17 @@
     var b = pairCollect(pfxB, "女方", errSel);
     if (!b) return null;
     var out = [];
+    // bothPlaces：占星合盘双方都要出生地（宫位按各自出生地算）；八字/紫微合婚只需男方的一组。
+    var bothPlaces = !!(opts && opts.bothPlaces);
     function put(p, prefix, pfx) {
       var gender = $("#" + pfx + "-gender").value;
       var name = ($("#" + pfx + "-name").value || "").trim();
       out.push(prefix + "year=" + p.year, prefix + "month=" + p.month, prefix + "day=" + p.day,
         prefix + "hour=" + p.hour, prefix + "minute=" + p.minute, prefix + "calendar=" + p.calendar,
         prefix + "gender=" + encodeURIComponent(gender), prefix + "name=" + encodeURIComponent(name));
-      if (!prefix) {
+      if (!prefix || bothPlaces) {
         ["country", "province", "city", "place", "lat", "lon", "tz"].forEach(function (k) {
-          if (p[k] !== null && p[k] !== undefined && p[k] !== "") out.push(k + "=" + encodeURIComponent(p[k]));
+          if (p[k] !== null && p[k] !== undefined && p[k] !== "") out.push(prefix + k + "=" + encodeURIComponent(p[k]));
         });
       }
     }
@@ -1040,6 +1043,8 @@
         icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>' },
       { feat: "astrology", tag: "西方占卜", name: "占星命盘", desc: "按生日与出生地排出完整本命盘：日月上升、行星落座、宫位与相位。",
         icon: '<circle cx="12" cy="12" r="9"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="2.5"/>' },
+      { feat: "astrology_marriage", tag: "西方占卜", name: "占星合盘", desc: "两张本命盘的跨盘相位、金星火星落宫与日月要素对照，看清相处结构，不打分数。",
+        icon: '<circle cx="8" cy="12" r="4"/><circle cx="16" cy="12" r="4"/><path d="M12 8v8"/>' },
       { feat: "tarot",  tag: "西方占卜", name: "塔罗牌", desc: "三张或凯尔特十字牌阵，先写问题再抽牌，按牌位成文。",
         icon: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M5 20h14"/>' },
       { feat: "huangli",tag: "其他功能", name: "老黄历", desc: "宜忌、值神、冲煞与物候；内含「个人今日运势」与「双人择日」两个子功能。",
@@ -1214,9 +1219,14 @@
         '</div>' +
         '<div id="bz-ai-out"></div>';
 
-        // 大运 / 流年点选：高亮并可一键带入提问
-        var pick = { kind: "", gz: "", from: "", to: "", year: "", age: "" };
+        // 大运 / 流年点选：默认选中当年流年（与按钮高亮一致），再按用户点击切换
+        var defLn = null;
+        (d.liunian || []).forEach(function (x) { if (x.year === cur.year) defLn = x; });
+        var pick = defLn
+          ? { kind: "ln", gz: defLn.ganzhi, from: "", to: "", year: defLn.year, age: defLn.age }
+          : { kind: "", gz: "", from: "", to: "", year: "", age: "" };
         var pickTip = $("#bz-pick");
+        if (defLn) pickTip.textContent = "已选流年 " + defLn.year + " " + defLn.ganzhi + "（" + defLn.age + "岁）";
         $$("#bz-result .bz-step").forEach(function (b) {
           b.onclick = function () {
             var same = pick.kind === b.dataset.kind && (pick.gz === b.dataset.gz);
@@ -2133,9 +2143,9 @@
        塔罗/梅花还会真正重新抽牌/起卦；八字/紫微/黄历的盘固定，只换问题重解。
      归档区挂在结果容器【之外】（stage 层），因为塔罗/梅花重新抽牌会 innerHTML 重建结果容器。 */
   var ROOT_SEL = { bazi:"#bz-result", meihua:"#mh-result", tarot:"#tr-result", huangli:"#hl-result", huangli_pair:"#hl-result", ziwei:"#zw-result", astrology:"#as-result",
-    liuyao:"#ly-result", qimen:"#qm-result", bazi_marriage:"#bzm-result", ziwei_marriage:"#zm-result" };
+    liuyao:"#ly-result", qimen:"#qm-result", bazi_marriage:"#bzm-result", ziwei_marriage:"#zm-result", astrology_marriage:"#asm-result" };
   var QBOX_SEL = { bazi:"#bz-q", meihua:"#mh-q", tarot:"#tr-q", huangli:"#hl-q", huangli_pair:"#hl-q", ziwei:"#zw-q", astrology:"#as-q",
-    liuyao:"#ly-q", qimen:"#qm-q", bazi_marriage:"#bzm-q2", ziwei_marriage:"#zm-q2" };
+    liuyao:"#ly-q", qimen:"#qm-q", bazi_marriage:"#bzm-q2", ziwei_marriage:"#zm-q2", astrology_marriage:"#asm-q2" };
 
   function archiveHost(container) {
     var st = container.closest(".p-wrap") || stageEl();
@@ -2200,10 +2210,15 @@
     item.className = "p-ai p-ai-archived";       // 与新提问解读卡同构的单卡
     if (rk) item.dataset.rk = rk;
     item.dataset.archQ = question || "上一轮提问";
+    // 归档轮保留追问能力：沿用本轮 hid，追问仍写回同一条历史链（沿用旧盘面）。
+    // 用户反馈「历史卡里追问框不见了」——此前只把追问结果文本并入正文，却丢了可交互的追问条。
+    var archHid = main.dataset.hid;
+    if (archHid) item.dataset.hid = archHid;
     item.innerHTML = '<div class="p-ai-head"><span class="dot"></span>' +
       '<span class="p-ai-title">历史 · ' + esc(question || "上一轮提问") + '</span></div>' +
       '<div class="p-ai-body">' + factHtml + bodyHtml + '</div>';
     host.insertBefore(item, host.firstChild);   // 最新一轮置顶
+    if (archHid) attachFollow(item, archHid, followNote(S.feature));
     // 清空本轮结果容器（盘面 + 解读 + 追问槽一次性移除）
     Array.prototype.slice.call(container.children).forEach(function (n) { n.parentNode.removeChild(n); });
     container.dataset.lastQ = "";
@@ -2325,11 +2340,18 @@
       '<span class="p-ai-title">' + headLabel + ' · ' + esc(question) + '</span></div>' +
       '<div class="p-ai-body"><span class="p-cursor"></span></div></div>';
     if (isNewQuestion) {
-      // 解读卡必须排在确定性结果卡（牌面/卦象）之后，而不是容器最前——
-      // 部分功能（塔罗/梅花）把结果卡与 AI 输出放在同一容器，用 afterbegin 会把解读顶到牌面上方。
-      var resultCard = container.querySelector(":scope > .p-result");
-      if (resultCard) resultCard.insertAdjacentHTML("afterend", html);
-      else container.insertAdjacentHTML("afterbegin", html);
+      // 解读卡一律排在【提问框下方】：先提问、再解读，符合阅读顺序。
+      // 六爻/奇门的提问框(.bz-ask)与盘面(.p-result)同在结果容器内，若插到盘面之后会
+      // 落在提问框上方（截图反馈的问题）；故优先插到提问框之后。
+      // 塔罗/梅花提问框在表单区、容器内只有盘面卡 → 插到盘面之后；
+      // 八字/紫微/占星/合婚的 AI 输出是独立空容器 → 插到容器内即可。
+      var askCard = container.querySelector(":scope > .bz-ask, :scope > .zw-ask");
+      if (askCard) askCard.insertAdjacentHTML("afterend", html);
+      else {
+        var resultCard = container.querySelector(":scope > .p-result");
+        if (resultCard) resultCard.insertAdjacentHTML("afterend", html);
+        else container.insertAdjacentHTML("afterbegin", html);
+      }
     } else container.insertAdjacentHTML("beforeend", html);
     var body = $(".p-ai-body", $("#" + holderId));
     // 点击 AI 解读后立即滚到解读框，避免停留在结果上方
@@ -2408,7 +2430,10 @@
       huangli: "追问会沿用这一次的黄历信息，不会重新查询",
       huangli_pair: "追问会沿用这一天与双方八字，不会重新查询",
       ziwei: "追问会沿用这一次的命盘，不会重新排盘",
-      astrology: "追问会沿用这一次的本命盘，不会重新排盘"
+      astrology: "追问会沿用这一次的本命盘，不会重新排盘",
+      astrology_marriage: "追问会沿用这一次的双人合盘，不会重新排盘",
+      ziwei_marriage: "追问会沿用这一次的双人命盘，不会重新排盘",
+      bazi_marriage: "追问会沿用这一次的双人四柱，不会重新排盘"
     };
     return MAP[feature] || "追问会沿用这一次的解读内容，不会重新推演";
   }
@@ -2476,7 +2501,7 @@
     { tag: "八字命理", feats: [["bazi", "八字"], ["bazi_marriage", "八字合婚"]] },
     { tag: "紫微斗数", feats: [["ziwei", "紫微"], ["ziwei_marriage", "紫微合婚"]] },
     { tag: "周易占卜", feats: [["meihua", "梅花"], ["liuyao", "六爻"], ["qimen", "奇门"]] },
-    { tag: "西方占卜", feats: [["astrology", "占星"], ["tarot", "塔罗"]] },
+    { tag: "西方占卜", feats: [["astrology", "占星"], ["astrology_marriage", "占星合盘"], ["tarot", "塔罗"]] },
     { tag: "其他功能", feats: [["huangli", "黄历"]] }
   ];
   var PF_FEATS = [].concat.apply([], PF_GROUPS.map(function (g) { return g.feats; }));
@@ -3717,18 +3742,24 @@
   /* ================= 合婚（八字 / 紫微）=================
      双人盘由确定性引擎先算完，再交给 AI 解读；不给匹配分数，只给可回到柱位/宫位核对的论据。 */
   function renderMarriage(kind) {
-    var isBazi = kind === "bazi";
-    var feat = isBazi ? "bazi_marriage" : "ziwei_marriage";
-    var title = isBazi ? "八字合婚" : "紫微合婚";
-    var pfxA = isBazi ? "bza" : "zwa", pfxB = isBazi ? "bzb" : "zwb";
-    var pre = isBazi ? "bzm" : "zm";
+    var isBazi = kind === "bazi", isAstro = kind === "astro";
+    var feat = isBazi ? "bazi_marriage" : (isAstro ? "astrology_marriage" : "ziwei_marriage");
+    var title = isBazi ? "八字合婚" : (isAstro ? "占星合盘" : "紫微合婚");
+    var pfxA = isBazi ? "bza" : (isAstro ? "asa" : "zwa");
+    var pfxB = isBazi ? "bzb" : (isAstro ? "asb" : "zwb");
+    var pre = isBazi ? "bzm" : (isAstro ? "asm" : "zm");
+    var plateWord = isAstro ? "本命盘" : (isBazi ? "四柱" : "命盘");
     stageEl().innerHTML =
       toolHero(title, isBazi
         ? "分别排定两人四柱，再从日柱夫妻宫、十神交叉与大运流年读出相处中的省力与费力之处。本功能不给匹配分数。"
-        : "对照两张完整紫微命盘，从夫妻宫、命宫、福德宫与双向四化交叉看清关系结构。本功能不给匹配分数。") +
+        : (isAstro
+          ? "对照两张本命盘，从跨盘相位、金星火星落宫与日月要素读出相处的吸引与摩擦。本功能不给匹配分数。"
+          : "对照两张完整紫微命盘，从夫妻宫、命宫、福德宫与双向四化交叉看清关系结构。本功能不给匹配分数。")) +
       '<div class="tool-card" id="' + pre + '-form-card"><div class="tool-form" id="' + pre + '-form">' +
-        pairFormHTML(pfxA, pfxB, "男女双方分别填写（或点「导入本人信息」带入档案），性别可按需调整；出生地用于真太阳时校正。盘面生成后，在下方提问卡里另起问题。") +
-        '<button class="tool-submit" id="' + pre + '-calc" style="margin-top:14px">生成双人' + (isBazi ? '四柱' : '命盘') + '</button>' +
+        pairFormHTML(pfxA, pfxB, isAstro
+          ? "双方分别填写出生日期、精确时分与出生城市（占星按出生地经纬度算宫位）；点「导入本人信息」可带入档案。盘面生成后，在下方提问卡里另起问题。"
+          : "男女双方分别填写（或点「导入本人信息」带入档案），性别可按需调整；出生地用于真太阳时校正。盘面生成后，在下方提问卡里另起问题。") +
+        '<button class="tool-submit" id="' + pre + '-calc" style="margin-top:14px">生成双人' + plateWord + '</button>' +
         '<div class="p-err" id="' + pre + '-err"></div>' +
       '</div></div>' +
       '<div id="' + pre + '-result"></div>' +
@@ -3736,20 +3767,24 @@
         '<b>三层结构</b>：各自命局 → 两盘交互 → 大运流年同步；每层都给出具体柱位与十神作为论据。',
         '<b>16 组柱位对照</b>：双方四柱逐一配对，判定天干五合/相冲、地支六合/半合/暗合/相冲/相刑/相害/相破；日柱夫妻宫权重最高。',
         '<b>神煞</b>：红鸾、天喜等只作辅助证据，须与喜忌、十神、柱位交叉验证，不作单星断言。'
+      ] : (isAstro ? [
+        '<b>先定盘再合盘</b>：按双方生日与出生地用 Swiss Ephemeris 排出两张本命盘，再建立跨盘关系，问题不改变盘面。',
+        '<b>跨盘相位</b>：一方每颗个人星与对方的太阳/月亮/金星/火星等逐一比对合冲刑拱六合，标明容许度与基调。',
+        '<b>落宫与要素</b>：金星/火星落入对方第几宫、双方日月星座要素配对，均可回到星曜-星座-宫位核对。'
       ] : [
         '<b>先定盘再合盘</b>：两张命盘的十二宫、星曜亮度、四化先由程序确定，再建立跨盘关系，问题不改变盘面。',
         '<b>六个维度</b>：夫妻宫、命宫、福德宫、四化交叉、桃花星、大限流年时间线，均可回到具体宫位核对。',
         '<b>四化交叉</b>：一方禄权科忌落在哪一地支宫位，映射到对方同地支的生活领域，双向各做一次。'
-      ], "合婚是关系观察框架，不证明谁是「正缘」，也不能替代真实相处、共同选择与专业建议。");
+      ]), "合盘是关系观察框架，不证明谁是「正缘」，也不能替代真实相处、共同选择与专业建议。");
 
     pairFormBind(pfxA, pfxB);
-    function pairQS(errSel) { return pairFormParams(pfxA, pfxB, errSel || null); }
+    function pairQS(errSel) { return pairFormParams(pfxA, pfxB, errSel || null, { bothPlaces: isAstro }); }
     var lastPair = "";                       // 已生成双人盘的参数串；出生信息不变则盘面一次生成
     var calcBtn = $("#" + pre + "-calc");
     function calcLabel() {
       var now = pairQS();
-      calcBtn.textContent = !lastPair ? "生成双人" + (isBazi ? "四柱" : "命盘")
-        : (now === lastPair ? "沿用本次双人盘（在下方提问）" : "重新生成双人" + (isBazi ? "四柱" : "命盘"));
+      calcBtn.textContent = !lastPair ? "生成双人" + plateWord
+        : (now === lastPair ? "沿用本次双人盘（在下方提问）" : "重新生成双人" + plateWord);
     }
     $("#" + pre + "-form").addEventListener("input", calcLabel);
     $("#" + pre + "-form").addEventListener("change", calcLabel);
@@ -3757,7 +3792,7 @@
 
     function ask(q, qs) {
       var root = $("#" + pre + "-result"), out = $("#" + pre + "-ai-out");
-      if (!root || !root.dataset.rk || !out) { toast("请先生成双人" + (isBazi ? "四柱" : "命盘")); return; }
+      if (!root || !root.dataset.rk || !out) { toast("请先生成双人" + plateWord); return; }
       streamAI(feat, qs + "&q=" + encodeURIComponent(q) + authParam(), q, out, root.dataset.rk);
     }
     function bindAsk() {
@@ -3786,9 +3821,9 @@
         // 换双人信息 = 新盘：旧轮（解读 + 追问）先平级归档，再重建盘面与提问卡。
         if (out && root.dataset.rk) archiveRound(out, out.dataset.lastQ || title, root.dataset.rk);
         lastPair = qs;
-        root.dataset.rk = (isBazi ? "bazi-mar|" : "ziwei-mar|") + qs;
+        root.dataset.rk = (isBazi ? "bazi-mar|" : (isAstro ? "astro-mar|" : "ziwei-mar|")) + qs;
         root.dataset.lastQ = "";
-        root.innerHTML = renderPairResult(d, isBazi, pre);
+        root.innerHTML = renderPairResult(d, isBazi, pre, isAstro);
         bindAsk();
         calcLabel();
         root.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -3809,7 +3844,7 @@
     };
     applyGate(feat);
   }
-  function renderPairResult(d, isBazi, pre) {
+  function renderPairResult(d, isBazi, pre, isAstro) {
     var a = d.a_data || {}, b = d.b_data || {}, cross = d.cross || {};
     function stars(list) {
       return (list || []).map(function (s) {
@@ -3817,7 +3852,26 @@
           (s.mutagen ? '<b>' + esc(s.mutagen) + '</b>' : '') + '</span>';
       }).join("");
     }
+    function astroCard(p, who) {
+      var head = '<div class="mrg-p-hd"><b>' + esc(p.name || who) + '</b><span>' + esc(p.gender || "") + '</span></div>';
+      var core = [["☉太阳", p.sun], ["☽月亮", p.moon], ["↑上升", p.asc]].map(function (x) {
+        var o = x[1] || {};
+        return '<div class="mrg-pal"><span>' + x[0] + '</span><div>' + esc(o.symbol || "") + ' ' +
+          esc(o.sign || "—") + ' <i>' + esc(o.degree || "") + '</i></div></div>';
+      }).join("");
+      var venus = (p.planets || []).filter(function (x) { return x.key === "venus" || x.key === "mars"; })
+        .map(function (x) {
+          return '<div class="mrg-pal"><span>' + esc(x.name) + '</span><div>' + esc(x.symbol || "") + ' ' +
+            esc(x.sign || "—") + ' · 第' + esc(x.house || "—") + '宫' + (x.retro ? '（逆行）' : '') + '</div></div>';
+        }).join("");
+      var el = p.element || {};
+      var elLine = '<div class="mrg-line">' + ["火","土","风","水"].map(function (k) {
+        return '<span>' + k + ' <b>' + esc(el[k] || 0) + '</b></span>';
+      }).join("") + '</div>';
+      return '<div class="mrg-p-card">' + head + core + venus + elLine + '</div>';
+    }
     function personCard(p, who) {
+      if (isAstro) return astroCard(p, who);
       var head = '<div class="mrg-p-hd"><b>' + esc(p.name || who) + '</b><span>' + esc(p.gender || "") +
         ' · ' + esc(p.chineseDate || ((p.pillars ? [p.pillars.year, p.pillars.month, p.pillars.day, p.pillars.hour].join(" ") : ""))) + '</span></div>';
       if (isBazi) {
@@ -3841,18 +3895,28 @@
     var groups = (cross.pillar_groups || []).filter(function (g) {
       return (g.relations || []).some(function (r) { return !/无合冲刑害破/.test(r.relation || ""); });
     }).slice(0, 8);
-    var crossHtml = isBazi
-      ? '<div class="mrg-cross-h">命中柱位关系（节选）</div>' +
+    var crossHtml;
+    if (isAstro) {
+      var rows = (cross.aspects || []).slice(0, 10);
+      crossHtml = '<div class="mrg-cross-h">跨盘相位（synastry · 节选）</div>' +
+        (rows.length ? '<div class="mrg-rels">' + rows.map(function (r) {
+          return '<div class="mrg-rel"><b>' + esc(r.name) + '</b><span>' + esc(r.a) + ' — ' + esc(r.b) +
+            '（容许 ' + esc(r.orb) + '°）</span></div>';
+        }).join("") + '</div>' : '<p class="p-note">两盘个人星之间未见主要相位。</p>');
+    } else if (isBazi) {
+      crossHtml = '<div class="mrg-cross-h">命中柱位关系（节选）</div>' +
         (groups.length ? '<div class="mrg-rels">' + groups.map(function (g) {
           return '<div class="mrg-rel"><b>' + esc(g.who) + '</b><span>' +
             (g.relations || []).filter(function (r) { return !/无合冲刑害破/.test(r.relation || ""); })
               .map(function (r) { return esc(r.relation); }).join("；") + '</span></div>';
-        }).join("") + '</div>' : '<p class="p-note">两盘四柱之间未见显著合冲刑害。</p>')
-      : '<div class="mrg-cross-h">四化交叉与关系宫位</div><div class="mrg-rels">' +
+        }).join("") + '</div>' : '<p class="p-note">两盘四柱之间未见显著合冲刑害。</p>');
+    } else {
+      crossHtml = '<div class="mrg-cross-h">四化交叉与关系宫位</div><div class="mrg-rels">' +
         Object.keys(cross).filter(function (k) { return cross[k] && typeof cross[k] === "object"; }).slice(0, 6).map(function (k) {
           return '<div class="mrg-rel"><b>' + esc(k) + '</b><span>已由引擎按双方落宫建立对照</span></div>';
         }).join("") + '</div>';
-    return '<div class="p-result">' + resultTitle(titleForPair(isBazi)) +
+    }
+    return '<div class="p-result">' + resultTitle(titleForPair(isBazi, isAstro)) +
       '<div class="p-card"><div class="mrg-pair">' + personCard(a, "甲方") + personCard(b, "乙方") + '</div>' +
         crossHtml +
       '</div></div>' +
@@ -3869,9 +3933,10 @@
       '</div>' +
       '<div id="' + pre + '-ai-out"></div>';
   }
-  function titleForPair(isBazi) { return isBazi ? "八字合婚 · 双人四柱对照" : "紫微合婚 · 双人命盘对照"; }
+  function titleForPair(isBazi, isAstro) { return isBazi ? "八字合婚 · 双人四柱对照" : (isAstro ? "占星合盘 · 双人本命盘对照" : "紫微合婚 · 双人命盘对照"); }
   function renderBaziMarriage() { renderMarriage("bazi"); }
   function renderZiweiMarriage() { renderMarriage("ziwei"); }
+  function renderAstrologyMarriage() { renderMarriage("astro"); }
 
   /* ================= 六爻 ================= */
   function renderLiuyao() {

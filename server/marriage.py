@@ -1,4 +1,4 @@
-"""双盘合婚引擎：八字合婚 + 紫微合婚。
+"""双盘合婚引擎：八字合婚 + 紫微合婚 + 占星合盘（synastry）。
 
 设计原则（与参考站一致）：
 - 不给"合不合"的匹配分数、不做单星吉凶断言；只输出可逐条核对的盘面事实。
@@ -8,14 +8,18 @@
 - 紫微：先固定两张完整命盘，再建跨盘关系，给六个可核对维度：
   夫妻宫对照、命宫性格主轴、福德宫内在需求、双向生年四化同地支投射、
   桃花星落宫、双方运限时间线对齐。不给单一合不合结论。
+- 占星合盘：先固定两张本命盘，再建跨盘关系（synastry）：太阳/月亮/金星/火星等
+  个人星的跨盘相位、彼此金星/火星落入对方宫位、日月星座要素配对；只列可回到
+  星曜-星座-宫位核对的事实，不给匹配分数。
 - 全部为确定性计算：`fact` 是给 AI 的唯一依据，AI 不得引用盘面之外的信息。
 
 对外接口：
     bazi_marriage(a: dict, b: dict) -> dict
     ziwei_marriage(a: dict, b: dict) -> dict
+    astrology_marriage(a: dict, b: dict) -> dict
 
 a / b 为出生参数 dict；可选字段 `as_of_year` 用于固定时间线基准年（缺省为今年）。
-运行时以 PYTHONPATH=server 加载：`import bazi`, `import chart`。
+运行时以 PYTHONPATH=server 加载：`import bazi`, `import chart`, `import astrology`。
 """
 from __future__ import annotations
 
@@ -24,9 +28,11 @@ from datetime import datetime
 try:  # 兼容 PYTHONPATH=server 与包内 import 两种加载方式
     import bazi as _bazi
     import chart as _chart
+    import astrology as _astro
 except ImportError:  # pragma: no cover - 仅作为包导入时的兜底
     from . import bazi as _bazi
     from . import chart as _chart
+    from . import astrology as _astro
 
 
 # ───────────────────────────── 通用常量 ─────────────────────────────
@@ -702,4 +708,139 @@ def ziwei_marriage(a: dict, b: dict) -> dict:
         },
         "steps": steps,
         "as_of_year": as_of_year,
+    }
+
+
+# ═════════════════════════════ 占星合盘（synastry）═════════════════════════════
+def _astro_person(p: dict, fallback: str) -> dict:
+    """把一方出生参数交给 astrology.derive 固定一张本命盘。"""
+    who = p.get("name") or fallback
+    y = int(p["year"]); m = int(p["month"]); d = int(p["day"])
+    h = int(p.get("hour") if p.get("hour") is not None else 12)
+    mi = int(p.get("minute") or 0)
+    lat = float(p.get("lat")) if p.get("lat") not in (None, "") else 39.9042
+    lon = float(p.get("lon")) if p.get("lon") not in (None, "") else 116.4074
+    tz = float(p.get("tz") if p.get("tz") not in (None, "") else 8.0)
+    place = p.get("place") or p.get("city") or p.get("province") or ""
+    chart = _astro.derive(y, m, d, h, mi, lat, lon, tz, place)
+    return {"name": who, "gender": p.get("gender") or "", "chart": chart}
+
+
+# 合盘重点星：个人星（关系解读里最有意义），排除北交点
+_SYNASTRY_KEYS = ("sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn")
+
+
+def _aspect_between(a_lon: float, b_lon: float, orb: int) -> tuple[int, float] | None:
+    """两黄经之间的主要相位（复用占星引擎口径）。"""
+    diff = abs((a_lon - b_lon) % 360)
+    if diff > 180:
+        diff = 360 - diff
+    for angle, _name, _tone in _astro.ASPECTS:
+        delta = abs(diff - angle)
+        if delta <= orb:
+            return angle, round(delta, 2)
+    return None
+
+
+def _cross_synastry(pa: dict, pb: dict) -> dict:
+    """双向跨盘相位：A 每颗个人星 vs B 每颗个人星，记录角度/名称/基调/容许。"""
+    ap = {x["key"]: x for x in pa["chart"]["planets"] if x["key"] in _SYNASTRY_KEYS}
+    bp = {x["key"]: x for x in pb["chart"]["planets"] if x["key"] in _SYNASTRY_KEYS}
+    rows = []
+    for ka, a in ap.items():
+        for kb, b in bp.items():
+            hit = _aspect_between(a["lon"], b["lon"], min(a["orb"], b["orb"]))
+            if not hit:
+                continue
+            angle, delta = hit
+            tone = next(ac[2] for ac in _astro.ASPECTS if ac[0] == angle)
+            rows.append({
+                "a": f"{pa['name']}·{a['name']}", "b": f"{pb['name']}·{b['name']}",
+                "angle": angle,
+                "name": next(ac[1] for ac in _astro.ASPECTS if ac[0] == angle),
+                "tone": tone, "orb": delta,
+            })
+    # 刑冲在前（关系里更需留意的张力），其次合/拱/六合；同级按容许度升序
+    rank = {"刑相": 0, "对冲": 1, "合相": 2, "拱相": 3, "六合": 4}
+    rows.sort(key=lambda x: (rank.get(x["name"], 9), x["orb"]))
+    return {"aspects": rows}
+
+
+def _astro_fact(pa: dict, pb: dict, syn: dict) -> str:
+    ca, cb = pa["chart"], pb["chart"]
+    def sign_of(chart, key):
+        return next(p["sign"] for p in chart["planets"] if p["key"] == key)
+    lines = [
+        "【占星合盘 · 两张本命盘（确定性计算，AI 不得改动）】",
+        f"{pa['name']}：太阳 {ca['sun']['sign']} {ca['sun']['degree']}（第{ca['sun']['house']}宫）、"
+        f"月亮 {ca['moon']['sign']} {ca['moon']['degree']}（第{ca['moon']['house']}宫）、"
+        f"上升 {ca['asc']['sign']} {ca['asc']['degree']}、金星 {sign_of(ca, 'venus')}、火星 {sign_of(ca, 'mars')}",
+        f"{pb['name']}：太阳 {cb['sun']['sign']} {cb['sun']['degree']}（第{cb['sun']['house']}宫）、"
+        f"月亮 {cb['moon']['sign']} {cb['moon']['degree']}（第{cb['moon']['house']}宫）、"
+        f"上升 {cb['asc']['sign']} {cb['asc']['degree']}、金星 {sign_of(cb, 'venus')}、火星 {sign_of(cb, 'mars')}",
+        "",
+        "【跨盘相位（synastry，一方的星对另一方的星）】",
+    ]
+    rows = syn["aspects"]
+    if rows:
+        for r in rows[:16]:
+            lines.append(f"  {r['a']} {r['name']} {r['b']}（容许 {r['orb']}°）——{r['tone']}")
+    else:
+        lines.append("  （两盘个人星之间未见主要相位）")
+    # 金星/火星落对方宫位：关系吸引与相处领域的经典观察点
+    def house_of(chart, key):
+        return next(p["house"] for p in chart["planets"] if p["key"] == key)
+    lines += ["", "【彼此行星落入对方宫位】"]
+    lines.append(f"  {pa['name']}的金星落{pb['name']}第{house_of(cb, 'venus')}宫、"
+                 f"{pa['name']}的火星落{pb['name']}第{house_of(cb, 'mars')}宫")
+    lines.append(f"  {pb['name']}的金星落{pa['name']}第{house_of(ca, 'venus')}宫、"
+                 f"{pb['name']}的火星落{pa['name']}第{house_of(ca, 'mars')}宫")
+    # 日月要素配对
+    def elem(sign_name):
+        return next(s["element"] for s in _astro.SIGNS if s["name"] == sign_name)
+    lines += ["", "【太阳/月亮星座要素配对】"]
+    lines.append(f"  太阳：{pa['name']}{elem(ca['sun']['sign'])}象 / {pb['name']}{elem(cb['sun']['sign'])}象；"
+                 f"月亮：{pa['name']}{elem(ca['moon']['sign'])}象 / {pb['name']}{elem(cb['moon']['sign'])}象")
+    lines += ["", "说明：以上为可回到星曜-星座-宫位核对的盘面事实；合盘不给匹配分数，也不做「合不合」定论。"]
+    return "\n".join(lines)
+
+
+def astrology_marriage(a: dict, b: dict) -> dict:
+    """占星合盘：两张本命盘 + synastry 跨盘关系，返回事实清单 + 结构化盘面。"""
+    steps = []
+    steps.append("① 按双方出生年月日时分与出生地经纬度/时区，调 astrology.derive() 固定两张本命盘（回归黄道+Placidus，高纬回落整宫制）")
+    pa = _astro_person(a, "甲方")
+    pb = _astro_person(b, "乙方")
+    steps.append("② 各取太阳/月亮/上升/金星/火星的落座、度数与宫位作为人格与关系基调")
+    syn = _cross_synastry(pa, pb)
+    steps.append("③ 双向跨盘相位：A 每颗个人星与 B 每颗个人星逐一比对合/冲/刑/拱/六合，记录容许度与基调；刑冲在前")
+    steps.append("④ 金星/火星落对方宫位，观察吸引方式与相处领域；日月星座要素配对")
+    steps.append("⑤ 按可核对事实输出，不给匹配分数、不做「合不合」结论")
+    fact = _astro_fact(pa, pb, syn)
+    rag_query = ("占星合盘 synastry 相位 合相 对冲 刑相 拱相 六合 金星 火星 太阳 月亮 上升 "
+                 "宫位 星座 元素 关系 相处 " + pa["chart"]["sun"]["sign"] + " " + pb["chart"]["sun"]["sign"])
+    rag_extra = ["合盘", "synastry", "相位", "金星", "火星", "太阳", "月亮", "上升",
+                 pa["chart"]["sun"]["sign"], pb["chart"]["sun"]["sign"]]
+    return {
+        "fact": fact,
+        "rag_query": rag_query,
+        "rag_extra": rag_extra,
+        "a_data": {
+            "name": pa["name"], "gender": pa["gender"],
+            "sun": pa["chart"]["sun"], "moon": pa["chart"]["moon"],
+            "asc": pa["chart"]["asc"], "element": pa["chart"]["element"],
+            "planets": [{k: p[k] for k in ("key", "name", "sign", "symbol", "degree", "house", "retro")}
+                        for p in pa["chart"]["planets"]],
+            "houses": pa["chart"]["houses"],
+        },
+        "b_data": {
+            "name": pb["name"], "gender": pb["gender"],
+            "sun": pb["chart"]["sun"], "moon": pb["chart"]["moon"],
+            "asc": pb["chart"]["asc"], "element": pb["chart"]["element"],
+            "planets": [{k: p[k] for k in ("key", "name", "sign", "symbol", "degree", "house", "retro")}
+                        for p in pb["chart"]["planets"]],
+            "houses": pb["chart"]["houses"],
+        },
+        "cross": syn,
+        "steps": steps,
     }

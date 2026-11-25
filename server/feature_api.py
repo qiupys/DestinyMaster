@@ -33,9 +33,11 @@ import tarot
 router = APIRouter()
 
 FEATURES = ("bazi", "meihua", "tarot", "huangli", "astrology",
-            "bazi_marriage", "ziwei_marriage", "liuyao", "qimen", "huangli_pair")
-# 组合功能共用单人领域的确定性语料：八字合婚→bazi，紫微合婚→ziwei，双人择日→huangli。
-_MARRIAGE_KB = {"bazi_marriage": "bazi", "ziwei_marriage": "ziwei", "huangli_pair": "huangli"}
+            "bazi_marriage", "ziwei_marriage", "astrology_marriage",
+            "liuyao", "qimen", "huangli_pair")
+# 组合功能共用单人领域的确定性语料：八字合婚→bazi，紫微合婚→ziwei，占星合盘→astrology，双人择日→huangli。
+_MARRIAGE_KB = {"bazi_marriage": "bazi", "ziwei_marriage": "ziwei",
+                "astrology_marriage": "astrology", "huangli_pair": "huangli"}
 
 
 def _auth(pid: int | None, token: str | None) -> int | None:
@@ -285,6 +287,11 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             p2_day: int | None = Query(None), p2_hour: int | None = Query(None),
             p2_minute: int | None = Query(None), p2_gender: str = Query("女"),
             p2_calendar: str = Query("solar"),
+            p2_lat: float | None = Query(None, description="占星合盘：对方出生地纬度"),
+            p2_lon: float | None = Query(None, description="占星合盘：对方出生地经度"),
+            p2_tz: float | None = Query(None, description="占星合盘：对方出生地时区"),
+            p2_place: str = Query("", description="占星合盘：对方出生地名称"),
+            p2_city: str = Query(""), p2_province: str = Query(""),
             coins: str | None = Query(None, description="六爻：六次铜钱结果 6/7/8/9，逗号分隔"),
             yaos: str | None = Query(None, description="六爻：已确定的六爻(自下而上)，逗号分隔，锁定同一卦"),
             deck: str | None = Query(None, description="通用：calc 已确定的盘面标识，deduce 原样复用"),
@@ -303,6 +310,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           p2_name=p2_name, p2_year=p2_year, p2_month=p2_month,
                           p2_day=p2_day, p2_hour=p2_hour, p2_minute=p2_minute,
                           p2_gender=p2_gender, p2_calendar=p2_calendar,
+                          p2_lat=p2_lat, p2_lon=p2_lon, p2_tz=p2_tz, p2_place=p2_place,
+                          p2_city=p2_city, p2_province=p2_province,
                           coins=coins, yaos=yaos, deck=deck,
                           year_na=year_na, yongshen=yongshen)
             try:
@@ -359,6 +368,11 @@ def _make_calc_and_deduce(feature: str, compute_fn):
             p2_minute: int | None = Query(None, description="黄历/合婚：第二人-出生分"),
             p2_gender: str = Query("男", description="黄历/合婚：第二人性别"),
             p2_calendar: str = Query("solar", description="合婚：第二人历法"),
+            p2_lat: float | None = Query(None, description="占星合盘：对方出生地纬度"),
+            p2_lon: float | None = Query(None, description="占星合盘：对方出生地经度"),
+            p2_tz: float | None = Query(None, description="占星合盘：对方出生地时区"),
+            p2_place: str = Query("", description="占星合盘：对方出生地名称"),
+            p2_city: str = Query(""), p2_province: str = Query(""),
             name: str = Query("", description="合婚：本人姓名"),
             coins: str | None = Query(None, description="六爻：六次铜钱结果，逗号分隔"),
             yaos: str | None = Query(None, description="六爻：已确定的六爻，逗号分隔"),
@@ -380,6 +394,8 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                           p2_name=p2_name, p2_year=p2_year, p2_month=p2_month,
                           p2_day=p2_day, p2_hour=p2_hour, p2_minute=p2_minute,
                           p2_gender=p2_gender, p2_calendar=p2_calendar,
+                          p2_lat=p2_lat, p2_lon=p2_lon, p2_tz=p2_tz, p2_place=p2_place,
+                          p2_city=p2_city, p2_province=p2_province,
                           coins=coins, yaos=yaos,
                           year_na=year_na, yongshen=yongshen)
             try:
@@ -409,10 +425,12 @@ def _make_calc_and_deduce(feature: str, compute_fn):
                     pass
             # 合婚：双方出生参数是盘面身份的一部分，纳入 payload（=纳入去重 key），
             # 换任一方出生信息即为新一轮，不覆盖旧解读。
-            if feature in ("bazi_marriage", "ziwei_marriage"):
+            if feature in ("bazi_marriage", "ziwei_marriage", "astrology_marriage"):
                 payload["_pair"] = [name, p2_name, year, month, day, hour, minute, gender,
                                     calendar, p2_year, p2_month, p2_day, p2_hour,
                                     p2_minute, p2_gender, p2_calendar]
+                if feature == "astrology_marriage":
+                    payload["_pair"] += [lat, lon, tz, place, p2_lat, p2_lon, p2_tz, p2_place]
 
             pid = _auth(profile_id, token)
             # AI 解读/问答要求登录（与前端门禁一致；未登录直接拒绝，不消耗模型额度）
@@ -587,12 +605,17 @@ def _calc_tarot(p: dict) -> dict:
 def _person_params(p: dict, prefix: str = "") -> dict:
     """从公共参数里抽出一方出生信息（prefix='p2_' 取对方）。"""
     g = lambda k: p.get(prefix + k)
-    return {
+    out = {
         "year": g("year"), "month": g("month"), "day": g("day"),
         "hour": g("hour"), "minute": g("minute"),
         "gender": g("gender") or "男", "name": g("name") or "",
         "calendar": g("calendar") or "solar",
     }
+    # 占星合盘需要双方的出生地经纬度/时区（占星按出生地算宫位）
+    for k in ("lat", "lon", "tz", "place", "city", "province"):
+        if g(k) not in (None, ""):
+            out[k] = g(k)
+    return out
 
 
 def _calc_bazi_marriage(p: dict) -> dict:
@@ -601,6 +624,10 @@ def _calc_bazi_marriage(p: dict) -> dict:
 
 def _calc_ziwei_marriage(p: dict) -> dict:
     return marriage.ziwei_marriage(_person_params(p), _person_params(p, "p2_"))
+
+
+def _calc_astrology_marriage(p: dict) -> dict:
+    return marriage.astrology_marriage(_person_params(p), _person_params(p, "p2_"))
 
 
 def _calc_liuyao(p: dict) -> dict:
@@ -752,6 +779,7 @@ _make_calc_and_deduce("tarot", _calc_tarot)
 _make_calc_and_deduce("astrology", _calc_astrology)
 _make_calc_and_deduce("bazi_marriage", _calc_bazi_marriage)
 _make_calc_and_deduce("ziwei_marriage", _calc_ziwei_marriage)
+_make_calc_and_deduce("astrology_marriage", _calc_astrology_marriage)
 _make_calc_and_deduce("liuyao", _calc_liuyao)
 _make_calc_and_deduce("qimen", _calc_qimen)
 
