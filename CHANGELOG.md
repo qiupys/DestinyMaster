@@ -11,6 +11,10 @@
 
 ---
 
+## v119 (2026-11-25)
+- [style] 追问结果缺少段落感：卡头此前被降级为 12px/500/灰点，读起来像脚注而非新一轮对话。改为 13px/600/墨色 + 深绿金点（与主解读卡头同语义），顶部分隔由浅虚线改实线并留出 16px 呼吸，追问说明文字 11px→12px。全部走既有 token，未引入新字号或散值；唯一来源仍是 `.ai-follow-slot > .p-ai`，`FRONTEND_DESIGN.md` 同步说明。
+- [test] 新增 `test_followup_result_reads_as_paragraph` 护栏，锁定追问标题不得回退成 sm 灰字、分隔线必须为实线；API 回归 + 单元 + 对象单测 + mock E2E 全过。`portal.css` bump 至 v119。
+
 ## v118 (2026-11-25)
 - [test][护栏] 补齐解读链路的自动化测试。此前追问/去重/归档/快照只在真实 AI 下靠用完即删的临时探针验证，测试项少、不可重复。新增 `tests/js/test_reading_e2e.js`：Playwright 拦截全部 `/api/*/deduce` 与 `/api/history/followup` 返回 mock SSE，自起本地 uvicorn（也可 BASE_URL 复用），27 项覆盖对象写回/DOM 投影、追问挂接与连续追问、追问框不堆叠、同问题去重与换问题归档、reload 快照无损恢复、退出登录清理、命盘类导入 Person、双人 Person 快照、非 SSE 错误路径、无 JS 报错。断言只读对象真相源。对象层单测 `test_reading_core.js` 从 13 项扩到 30 项（find 边界/begin/finish/archive 语义/JSON 往返/hour=0/跨 slot 快照/注册表冻结）。`tests/README.md` 记录运行方式。
 - [fix] 注册表 `Object.freeze` 原为浅冻结，嵌套功能项运行期仍可篡改；改为逐项深冻结（单测锁定）。

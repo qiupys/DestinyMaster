@@ -580,7 +580,7 @@ details.p-disclose .inner { padding-bottom: 12px; }
 /* 追问已并入同一条历史：详情卡内按轮次铺开，追问之间用分隔线区分 */
 .pf-hist-fu { margin-top:var(--gap-md); padding-top:var(--gap-md); border-top:var(--line-w) dashed var(--line); }
 .pf-hist-fu > p:first-child { margin-top:0; }
-.pf-follow-note { margin:0 2px var(--gap-sm); font-size:var(--fs-xs); color:var(--ink-3); }
+.pf-follow-note { margin:0 2px var(--gap-sm); font-size:var(--fs-sm); color:var(--ink-3); }
 /* 每处 AI 解读卡内的通用追问条（复用 followup，沿用本次盘面，可多轮） */
 .ai-follow { margin-top:var(--gap-md); padding:var(--gap-md) 20px calc(var(--gap-md) + 2px); border-top:var(--line-w) solid var(--line); }
 .ai-follow-row { display:flex; gap:var(--gap-sm); align-items:center; }
@@ -593,16 +593,18 @@ details.p-disclose .inner { padding-bottom: 12px; }
 }
 .ai-follow-btn:hover { border-color:var(--wx-jin); color:var(--wx-jin); }
 .ai-follow-btn:disabled { opacity:.55; cursor:wait; }
-/* 追问结果槽在输入栏上方：结果之间用细分隔线连续铺开，输入栏紧随其后。
+/* 追问结果槽在输入栏上方：结果之间用分隔线连续铺开，输入栏紧随其后。
    追问结果不再套圆角卡壳——保留 .p-ai 节点以兼容渲染/测试/快照恢复链路，
-   仅用 CSS 去掉边框和圆角，避免「圆弧矩形叠圆弧矩形」的嵌套感（与历史详情追问链同风格）。 */
+   仅用 CSS 去掉边框和圆角，避免「圆弧矩形叠圆弧矩形」的嵌套感（与历史详情追问链同风格）。
+   v119：标题此前被降级为 sm/灰点，读起来像脚注、没有段落起点；改为 base/600/墨色+金点，
+   顶部分隔改实线并留 gap-md 呼吸，每轮追问成为清晰可读的独立段落。 */
 .ai-follow-slot { padding:0 20px; }
 .ai-follow-slot > .p-ai {
-  margin-top:0; padding-top:13px; border:0; border-top:1px dashed var(--line);
+  margin-top:var(--gap-md); padding-top:var(--gap-md); border:0; border-top:var(--line-w) solid var(--line-strong);
   border-radius:0; overflow:visible; background:none;
 }
-.ai-follow-slot > .p-ai .p-ai-head { padding:0 0 7px; background:none; font-size:var(--fs-sm); font-weight:500; color:var(--ink-3); }
-.ai-follow-slot > .p-ai .p-ai-head .dot { width:5px; height:5px; background:var(--ink-3); }
+.ai-follow-slot > .p-ai .p-ai-head { padding:0 0 var(--gap-sm); background:none; font-size:var(--fs-base); font-weight:600; color:var(--ink-2); }
+.ai-follow-slot > .p-ai .p-ai-head .dot { width:7px; height:7px; background:var(--wx-jin); }
 .ai-follow-slot > .p-ai .p-ai-body { padding:0; }
 .ai-follow-slot + .ai-follow { margin-top:var(--gap-sm); }
 @media (max-width: 560px) {

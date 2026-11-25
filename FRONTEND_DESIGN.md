@@ -62,7 +62,7 @@
 | 双人表单间距 | `birthFieldsHTML(opts.roomy)` 的 `.bf-field`/`.bf-sec`/`.bf-fields` | 标签与控件绑 `.bf-field`；段间 16 / 段内 10 / 标签 13；`.mrg-zz` 块级 flex 避免行盒空白；`applyTime()` 隐藏 `#pfx-timewrap` |
 | AI 正文字号 | `.p-ai-body` | 13px / 行高 1.9；h1=16 / h2=14 / h3·h4=13；表格/code=12；段距走 gap 变量 |
 | 合婚盘面字段 | `renderPairResult` 的 `.mrg-line` | 三段 `<span>`（nowrap / flex gap 6 / 11px），禁用全角空格，防孤字换行 |
-| 追问结果样式 | `.ai-follow-slot > .p-ai` | 保留 DOM，仅 CSS 去卡壳（border0 / radius0 / dashed 顶线 / body padding0，slot padding 0 20px）；不要再套圆角卡 |
+| 追问结果样式 | `.ai-follow-slot > .p-ai` | 保留 DOM、CSS 去卡壳（border0 / radius0 / body padding0，slot padding 0 20px），但必须保留段落感：卡头 `fs-base`/600/`--ink-2` + 金点（`--wx-jin`），顶部实线 `--line-strong` + `margin/padding-top: --gap-md`；禁止退回 sm 灰字脚注；不要再套圆角卡 |
 | 首卡间距 | 各结果容器 `> .p-ai:first-child` | 16px；新增功能必须把容器 id 加进名单：`#as-ai-out/#bz-ai-out/#bzm-ai-out/#zm-ai-out/#zw-ai-out/#zw-d-ai-out`、`#tr-result/#mh-result/#ly-result/#qm-result/#hl-result` |
 
 ## 4. 历史区与统计
