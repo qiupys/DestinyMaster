@@ -11,6 +11,14 @@
 
 ---
 
+## v113 (2026-11-25)
+- [fix] 前端字号继承根因：旧 `style.css` 的 `body=13.5px` 渗进所有未显式设字号的容器，出现 13 / 13.5 / 13.3333 混用。门户正文改为显式 `font-size: var(--fs-base)`，原生控件用零特异性 `:where()` 继承字体，避免覆盖 `.ti` 等样式。
+- [refactor] 全站字号收敛到 token：新增 `--fs-3xl`(32) / `--gap-xl`(32)，页面主标题、分组标题、卡片标题、辅助文字、黄历标题统一走阶梯；盘面小字仅保留 9/9.5/10px 与符号 40px 例外。
+- [fix] 控件与卡片一致性：分段按钮、黄历下拉/翻页按钮、日期格统一 42px 控件高；卡片圆角统一 12px，按钮/图标统一 8px；黄历日历格高按设计 42px。
+- [refactor] 个人中心与梅花卦名的内联 `font-size` 迁入 CSS 类；小号文字按钮尺寸统一，模板不再散写样式。
+- [test] 新增 `tests/api/test_frontend_tokens.py` 静态护栏（无散写字号、控件高度/卡片圆角 token、无内联字号、版本号一致）；逐页计算样式审计 13 页 + 移动端 4 页，非例外异常归零；`e2e_v101.js` 19/19 PASS，JS 报错 0。
+- [docs] 更新前端设计系统唯一来源说明。
+
 ## v112 (2026-11-25)
 - [test] 新增可入库的 API 回归框架（`tests/api/`）：临时 SQLite + 测试账号 + 计算引擎 mock + AI 流式 mock + SSE 解析；不调真实模型、不碰线上库。覆盖十一功能 calc→deduce→追问→历史详情，去重回放/force、盘面身份变化、八字约束跨追问复用、未登录与跨账号鉴权、紫微显式流年与问题内年份解析。
 - [refactor] 拆分 1000+ 行 `feature_api.py` 为 `server/features/` 包：`common`（鉴权/去重/RAG/免责/SSE）、`context`（档案八字/星座约束）、`calculations`（确定性计算）、`feature_routes`（动态 calc/deduce）、`support_routes`（历史/记忆/KB）。`feature_api.py` 保留兼容门面，外部调用契约不变。

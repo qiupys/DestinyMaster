@@ -77,10 +77,11 @@ calc（确定性计算，出盘面/牌面/卦面）
 1. 本地改代码 → 语法检查（`node --check`、`python -m py_compile`）。
 2. 跑 API 回归（必做，mock AI/引擎，秒级）：`PYTHONPATH=server:. .venv-dev/bin/python -m unittest discover -s tests/api -p 'test_*.py'`。改 prompt/路由/历史/去重时优先补这里的断言。
 3. 跑单元测试：`tests/unit_*.py`（六爻/奇门/合婚/历史等）。本地起 uvicorn（空闲端口）。
-4. 跑 E2E：`tests/e2e_v101.js`（设计系统/流程）、`e2e_v97.js`（主流程）、`e2e_v94.js`（基础），符号说明见测试文件。断言版本号 `>=` 当前版本。
+4. 前端样式改动额外跑 `tests/api/test_frontend_tokens.py`（token 护栏）与 `tests/e2e_v101.js` 的设计断言；必要时用 Playwright 采集各功能页 computed style 与截图逐页比对（字号/间距/控件高）。
+5. 跑 E2E：`tests/e2e_v101.js`（设计系统/流程）、`e2e_v97.js`（主流程）、`e2e_v94.js`（基础），符号说明见测试文件。断言版本号 `>=` 当前版本。
    - Playwright 在 `/Users/pengyu/.workbuddy/binaries/node/workspace/node_modules`，launch 加 `--no-sandbox --disable-dev-shm-usage`。
    - 排查 DOM 交互务必限定可见 stage `#p-stage-<feat>`，否则全局选择器命中隐藏 stage 缓存节点（height=0）误判。
-5. 用浏览器注入本地 js/css（route 拦截线上页面）验证纯前端改动，无需重启服务。
+6. 用浏览器注入本地 js/css（route 拦截线上页面）验证纯前端改动，无需重启服务。
 
 ## 5. 发布流程（每次必做）
 

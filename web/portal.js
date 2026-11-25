@@ -1515,8 +1515,8 @@
         archiveRound($("#mh-result"), $("#mh-result").dataset.roundQ || $("#mh-result").dataset.lastQ || "上一轮起卦", $("#mh-result").dataset.rk);
         $("#mh-result").innerHTML = '<div class="p-result">' + resultTitle("卦象") +
           '<div class="p-card"><div style="text-align:center;margin-bottom:14px"><div class="p-hero-tag">第' + d.ben_gua.index + '卦</div>' +
-          '<div style="font-family:var(--serif);font-size:26px;margin:8px 0">' + esc(d.ben_gua.name) + '</div>' +
-          '<div style="color:var(--cinnabar);font-size:13px">第 ' + d.moving + ' 爻动 · 变卦 ' + esc(d.bian_gua.name) + '</div></div>' +
+          '<div class="mh-pv-name">' + esc(d.ben_gua.name) + '</div>' +
+          '<div class="mh-pv-move">第 ' + d.moving + ' 爻动 · 变卦 ' + esc(d.bian_gua.name) + '</div></div>' +
           '<div class="mh-gua-row">' +
             guaCard("本卦", d.ben_gua, d.upper, d.lower, false, "第 " + d.moving + " 爻动") +
             guaCard("互卦", d.hu_gua || d.ben_gua, (d.hu_gua || d).upper, (d.hu_gua || d).lower, false) +
@@ -2587,11 +2587,11 @@
     }).join("") || ('<p class="p-note">' + (pfState.date ? "这一天没有提问记录。" : (cur ? "「" + cur[1] + "」还没有提问记录。" : "还没有提问记录，去各功能里问一句吧。")) + '</p>');
     $("#pf-body").innerHTML =
       '<div class="p-profile-head"><div class="p-profile-avatar">' + esc(S.profile.name.charAt(0).toUpperCase()) + '</div>' +
-      '<div><h3 style="margin:0;font-family:var(--serif);font-size:19px">' + esc(S.profile.name) + '</h3>' +
-      '<p style="margin:5px 0 0;color:var(--ink-2);font-size:12px">累计 ' + (stats.total || 0) + ' 次提问</p></div></div>' +
+      '<div><h3>' + esc(S.profile.name) + '</h3>' +
+      '<p class="p-profile-sub">累计 ' + (stats.total || 0) + ' 次提问</p></div></div>' +
       '<div class="pf-birth">' +
-        '<div class="pf-birth-h"><h3 style="font-family:var(--serif);font-size:15px;margin:0">基本信息</h3>' +
-          '<button type="button" class="p-navitem pf-birth-edit" style="width:auto;padding:4px 11px">' +
+        '<div class="pf-birth-h"><h3>基本信息</h3>' +
+          '<button type="button" class="p-navitem pf-birth-edit">' +
             (pfState.editBirth ? "收起" : "编辑") + '</button></div>' +
         (pfState.editBirth ? pfBirthForm(birth) :
           '<div class="pf-birth-list">' + bSeg.map(function (x) {
@@ -2600,22 +2600,22 @@
           '<p class="p-note pf-hint pf-birth-tip">此处出生信息是八字、紫微、黄历共用的唯一来源；修改后各功能会同步更新。</p>') +
       '</div>' +
       '<div class="pf-account">' +
-        '<div class="pf-birth-h"><h3 style="font-family:var(--serif);font-size:15px;margin:0">账号设置</h3>' +
-          '<button type="button" class="p-navitem pf-account-toggle" style="width:auto;padding:4px 11px">' +
+        '<div class="pf-birth-h"><h3>账号设置</h3>' +
+          '<button type="button" class="p-navitem pf-account-toggle">' +
             (pfState.editAccount ? "收起" : "修改") + '</button></div>' +
         (pfState.editAccount ? pfAccountForm() : '<p class="p-note pf-hint">可修改用户名与登录密码，不影响你的历史对话。</p>') +
       '</div>' +
       pfMemoryHTML() +
-      '<div class="pf-stat-h"><h3 style="font-family:var(--serif);font-size:15px;margin:0">历史统计</h3>' +
+      '<div class="pf-stat-h"><h3>历史统计</h3>' +
         '<span class="pf-hint">点击卡片查看该功能的历史对话</span></div>' +
       '<div class="pf-stat-groups">' + cards + '</div>' +
-      '<div class="pf-hist-zone"><div class="pf-hist-head"><h3 style="font-family:var(--serif);font-size:16px;margin:0">' +
+      '<div class="pf-hist-zone"><div class="pf-hist-head"><h3>' +
         (cur ? esc(cur[1]) + ' · 历史对话' : '历史提问') + '</h3>' +
         '<div class="pf-hist-tools">' +
           (batch
             ? '<label class="pf-selall"><input type="checkbox" id="pf-selall"' + (allChecked ? ' checked' : '') + ' /> 全选</label>' +
               '<span class="pf-selcount">已选 ' + selCount + '</span>' +
-              '<button type="button" class="p-navitem pf-batch-del" style="width:auto;padding:4px 10px"' + (selCount ? '' : ' disabled') + '>删除选中</button>' +
+              '<button type="button" class="p-navitem pf-batch-del"' + (selCount ? '' : ' disabled') + '>删除选中</button>' +
               '<button type="button" class="p-navitem pf-batch-exit" style="width:auto;padding:4px 10px">退出批量</button>'
             : (pfState.date ? '<button type="button" class="pf-dateclear" title="清除日期">' + esc(pfState.date) + ' ✕</button>' : '') +
               '<button type="button" class="pf-date-btn" id="pf-date-btn">' + CAL_ICON + '<span>' + (pfState.date ? '更改日期' : '按日期查找') + '</span></button>' +
@@ -2892,10 +2892,10 @@
     }
 
     return '<div class="pf-memory">' +
-      '<div class="pf-birth-h"><h3 style="font-family:var(--serif);font-size:15px;margin:0">个人记忆</h3>' +
+      '<div class="pf-birth-h"><h3>个人记忆</h3>' +
       '<span class="pf-mem-actions">' +
-        '<button type="button" class="p-navitem pf-mem-new" style="width:auto;padding:4px 11px">新建</button>' +
-        '<button type="button" class="p-navitem pf-mem-importbtn" style="width:auto;padding:4px 11px">从历史导入</button>' +
+        '<button type="button" class="p-navitem pf-mem-new">新建</button>' +
+        '<button type="button" class="p-navitem pf-mem-importbtn">从历史导入</button>' +
       '</span></div>' +
       '<p class="p-note pf-hint">把解读中对你稳定成立的认知沉淀成卡片，随时编辑；也可从历史对话导入并让 AI 压缩生成。</p>' +
       (draft || cards || (!importPanel ? '<p class="p-note pf-mem-empty">还没有记忆卡片，点「新建」或「从历史导入」开始沉淀。</p>' : "")) +
