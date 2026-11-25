@@ -1,0 +1,393 @@
+{
+  "version": 1,
+  "note": "测试契约单一事实源：Python 链路矩阵与 JS 对象/浏览器矩阵共同读取。新增功能必须在此登记，护栏会比对 reading-core.js 的 FEATURES。",
+  "invariants": {
+    "module": [
+      "registry-complete",
+      "selector-derived",
+      "identity-strict",
+      "lifecycle",
+      "snapshot-json",
+      "persons-arity",
+      "slot-isolation",
+      "global-hid",
+      "clear-all"
+    ],
+    "chain": [
+      "calc-deduce-fact",
+      "question-in-prompt",
+      "replay-dedupe",
+      "followup-keeps-fact",
+      "identity-change-new-round",
+      "invalid-lock-explicit"
+    ],
+    "browser": [
+      "roundtrip",
+      "followup",
+      "repaint",
+      "archive",
+      "reload",
+      "switch",
+      "logout"
+    ]
+  },
+  "features": {
+    "bazi": {
+      "api": {
+        "calc_params": {
+          "year": 1990,
+          "month": 6,
+          "day": 15,
+          "hour": 10,
+          "minute": 30,
+          "gender": "男"
+        },
+        "identity_param": {
+          "key": "hour",
+          "alt": 11
+        }
+      },
+      "ui": {
+        "route": "#/bazi",
+        "cast": "#bz-calc",
+        "ask": "#bz-ai",
+        "repaint": "#bz-calc",
+        "boardChange": {
+          "set": {
+            "#bz-hour": "11"
+          },
+          "cast": "#bz-calc"
+        }
+      }
+    },
+    "ziwei": {
+      "api": {
+        "chart_params": {
+          "date": "1990-6-15",
+          "timeIndex": 11,
+          "gender": "男",
+          "calendar": "solar",
+          "fixLeap": true
+        },
+        "identity_kind": "ziwei",
+        "skip_in_process": "py-iztro/PythonMonkey 非线程安全：紫微链路改由浏览器矩阵走真实 HTTP + mock AI 覆盖"
+      },
+      "ui": {
+        "route": "#/ziwei",
+        "cast": null,
+        "ask": "#zw-ask",
+        "repaint": "#zw-calc",
+        "preAskClick": "#zw-tabs button[data-v='pattern']",
+        "boardChange": {
+          "set": {
+            "#zw-hour": "10"
+          },
+          "cast": "#zw-calc"
+        }
+      }
+    },
+    "bazi_marriage": {
+      "api": {
+        "calc_params": {
+          "year": 1990,
+          "month": 6,
+          "day": 15,
+          "hour": 10,
+          "gender": "男",
+          "p2_year": 1992,
+          "p2_month": 8,
+          "p2_day": 20,
+          "p2_hour": 14,
+          "p2_gender": "女"
+        },
+        "identity_param": {
+          "key": "p2_day",
+          "alt": 21
+        }
+      },
+      "ui": {
+        "route": "#/bazi_marriage",
+        "cast": "#bzm-calc",
+        "ask": "#bzm-ask",
+        "repaint": null,
+        "pair": [
+          "bza",
+          "bzb"
+        ],
+        "boardChange": {
+          "set": {
+            "#bzb-date": "1992-08-21"
+          },
+          "cast": "#bzm-calc"
+        }
+      }
+    },
+    "ziwei_marriage": {
+      "api": {
+        "calc_params": {
+          "year": 1990,
+          "month": 6,
+          "day": 15,
+          "hour": 10,
+          "gender": "男",
+          "p2_year": 1992,
+          "p2_month": 8,
+          "p2_day": 20,
+          "p2_hour": 14,
+          "p2_gender": "女"
+        },
+        "identity_param": {
+          "key": "p2_day",
+          "alt": 21
+        },
+        "skip_in_process": "紫微合婚同样调用 py-iztro：进程内 TestClient 有段错误风险，浏览器矩阵真实 HTTP 覆盖"
+      },
+      "ui": {
+        "route": "#/ziwei_marriage",
+        "cast": "#zm-calc",
+        "ask": "#zm-ask",
+        "repaint": null,
+        "pair": [
+          "zwa",
+          "zwb"
+        ],
+        "boardChange": {
+          "set": {
+            "#zwb-date": "1992-08-21"
+          },
+          "cast": "#zm-calc"
+        }
+      }
+    },
+    "astrology_marriage": {
+      "api": {
+        "calc_params": {
+          "year": 1990,
+          "month": 6,
+          "day": 15,
+          "hour": 10,
+          "lat": 31.23,
+          "lon": 121.47,
+          "tz": 8,
+          "place": "上海",
+          "p2_year": 1992,
+          "p2_month": 8,
+          "p2_day": 20,
+          "p2_hour": 14,
+          "p2_lat": 39.9,
+          "p2_lon": 116.4,
+          "p2_tz": 8,
+          "p2_place": "北京"
+        },
+        "identity_param": {
+          "key": "p2_day",
+          "alt": 21
+        }
+      },
+      "ui": {
+        "route": "#/astrology_marriage",
+        "cast": "#asm-calc",
+        "ask": "#asm-ask",
+        "repaint": null,
+        "pair": [
+          "asa",
+          "asb"
+        ],
+        "boardChange": {
+          "set": {
+            "#asb-date": "1992-08-21"
+          },
+          "cast": "#asm-calc"
+        }
+      }
+    },
+    "meihua": {
+      "api": {
+        "calc_params": {
+          "method": "number",
+          "num1": 3,
+          "num2": 5,
+          "when": "2027-03-04T10:00:00"
+        },
+        "identity_param": {
+          "key": "num1",
+          "alt": 4
+        }
+      },
+      "ui": {
+        "route": "#/meihua",
+        "cast": "#mh-calc",
+        "ask": "#mh-ai",
+        "repaint": null,
+        "boardChange": {
+          "newQuestion": true,
+          "cast": "#mh-calc"
+        },
+        "fillBeforeCast": true
+      }
+    },
+    "liuyao": {
+      "api": {
+        "calc_params": {
+          "method": "coin",
+          "coins": "8,7,9,8,7,7",
+          "when": "2027-03-04T10:00:00"
+        },
+        "identity_param": {
+          "key": "coins",
+          "alt": "8,7,9,8,7,8"
+        },
+        "lock": "deck",
+        "ignore_fact_lines": [
+          "起卦："
+        ],
+        "invalid_lock": {
+          "deck": "9999999",
+          "when": "2027-03-04T10:00:00"
+        }
+      },
+      "ui": {
+        "route": "#/liuyao",
+        "cast": "#ly-cast",
+        "ask": "#ly-ask",
+        "repaint": null,
+        "boardChange": {
+          "newQuestion": true,
+          "cast": "#ly-cast"
+        },
+        "fillBeforeCast": true
+      }
+    },
+    "qimen": {
+      "api": {
+        "calc_params": {
+          "method": "chaibu",
+          "when": "2027-03-04T10:00:00"
+        },
+        "identity_param": {
+          "key": "when",
+          "alt": "2027-03-05T10:00:00"
+        }
+      },
+      "ui": {
+        "route": "#/qimen",
+        "cast": "#qm-start",
+        "ask": "#qm-ask",
+        "repaint": null,
+        "boardChange": {
+          "newQuestion": true,
+          "cast": "#qm-start"
+        },
+        "fillBeforeCast": true
+      }
+    },
+    "tarot": {
+      "api": {
+        "calc_params": {
+          "spread": "three"
+        },
+        "identity_param": {
+          "key": "spread",
+          "alt": "celtic_cross"
+        },
+        "lock": "tarot_deck",
+        "invalid_lock": {
+          "deck": "not-a-card",
+          "spread": "three"
+        }
+      },
+      "ui": {
+        "route": "#/tarot",
+        "cast": "#tr-draw",
+        "ask": "#tr-ai",
+        "repaint": null,
+        "boardChange": {
+          "newQuestion": true,
+          "cast": "#tr-draw"
+        },
+        "fillBeforeCast": true
+      }
+    },
+    "astrology": {
+      "api": {
+        "calc_params": {
+          "year": 1990,
+          "month": 6,
+          "day": 15,
+          "hour": 10,
+          "minute": 30,
+          "lat": 31.23,
+          "lon": 121.47,
+          "tz": 8,
+          "place": "上海"
+        },
+        "identity_param": {
+          "key": "day",
+          "alt": 16
+        }
+      },
+      "ui": {
+        "route": "#/astrology",
+        "cast": "#as-calc",
+        "ask": "#as-ai",
+        "repaint": "#as-calc",
+        "boardPreClick": "#as-edit",
+        "boardChange": {
+          "set": {
+            "#as-date": "1990-06-16"
+          },
+          "cast": "#as-calc"
+        }
+      }
+    },
+    "huangli": {
+      "api": {
+        "calc_params": {
+          "year": 2027,
+          "month": 3,
+          "day": 8
+        },
+        "identity_param": {
+          "key": "day",
+          "alt": 9
+        }
+      },
+      "ui": {
+        "route": "#/huangli",
+        "cast": null,
+        "ask": "#hl-ai",
+        "repaint": null,
+        "boardChange": {
+          "click": "#hl-cal .hl-cell:not(.off):nth-child(10)"
+        }
+      }
+    },
+    "huangli_pair": {
+      "api": {
+        "calc_params": {
+          "year": 2027,
+          "month": 3,
+          "day": 8,
+          "name": "甲方",
+          "p2_year": 1992,
+          "p2_month": 8,
+          "p2_day": 20,
+          "p2_name": "乙方"
+        },
+        "identity_param": {
+          "key": "day",
+          "alt": 9
+        }
+      },
+      "ui": {
+        "route": "#/huangli_pair",
+        "cast": null,
+        "ask": "#hl-ai",
+        "repaint": null,
+        "boardChange": {
+          "click": "#hl-cal .hl-cell:not(.off):nth-child(10)"
+        }
+      }
+    }
+  }
+}

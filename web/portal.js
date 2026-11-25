@@ -36,6 +36,11 @@
         if (stage && stage.dataset.feature) f = stage.dataset.feature;
       }
     }
+    // 双人择日是老黄历舞台的别名：S.feature/stage.dataset 都是 huangli，
+    // 但对象模型与历史都按 huangli_pair（两个 Person）归属，不能退化成单人会话。
+    if (!feature && f === "huangli" && document.querySelector('#hl-tabs button.on[data-v="pair"]')) {
+      f = "huangli_pair";
+    }
     return Core.session(f, slot);
   }
   /* ===== 重绘保护（全功能共用，禁止再给单个功能写 xxxKeepOutputs） =====
@@ -320,7 +325,8 @@
   function snapKey(feat) { return SNAP_PREFIX + feat + "-" + (S.profile ? S.profile.id : "anon"); }
   function saveStageSnap(feat) {
     if (!S.profile) return;
-    var st = S.stageCache[feat];
+    // 双人择日的对象属于 huangli_pair，但舞台仍是共用的 huangli。
+    var st = S.stageCache[feat] || (feat === "huangli_pair" ? S.stageCache["huangli"] : null);
     if (!st) return;
     var rootSel = ROOT_SEL[feat];
     var root = rootSel ? $(rootSel, st) : null;
@@ -340,14 +346,14 @@
       }));
     } catch (e) { warn("保存舞台快照失败（不影响使用）", e); }
   }
-  function restoreStageSnap(feat) {
+  function restoreStageSnap(feat, stageFeat) {
     if (!S.profile) return;
     var raw;
     try { raw = sessionStorage.getItem(snapKey(feat)); } catch (e) { warn("读取舞台快照失败", e); }
     if (!raw) return;
     var snap;
     try { snap = JSON.parse(raw); } catch (e) { return; }
-    var st = S.stageCache[feat];
+    var st = S.stageCache[stageFeat || feat];
     if (!st || st.dataset.snapRestored === "1") return;
     // 命盘类排盘是异步的（拉档案/算盘后 innerHTML 重建结果区）。等结果卡出现再恢复快照，
     // 否则会被随后落地的排盘覆盖。最多等 ~2s；纯占卜类结果区同步生成，立即可恢复。
@@ -428,8 +434,9 @@
     if (fn) {
       fn();
       if (pairAlias && hlApplyMode) hlApplyMode("pair");
-      // renderXxx 重建了结果区骨架；若本会话此前有解读快照（reload 后），此刻恢复之
-      restoreStageSnap(feat);
+      // renderXxx 重建了结果区骨架；若本会话此前有解读快照（reload 后），此刻恢复之。
+      // 双人择日是老黄历舞台的别名：快照按 huangli_pair 存、舞台按 huangli 建。
+      restoreStageSnap(pairAlias ? "huangli_pair" : feat, feat);
     }
   }
 
@@ -1920,7 +1927,13 @@
     }
     // 纯渲染：把排盘数据与提问卡画进结果区（三段平级，对齐八字）
     function paintAstro(d, pa, qs, rk, q) {
-      archiveRound($("#as-result"), $("#as-result").dataset.roundQ || "上一轮命盘", $("#as-result").dataset.rk);
+      // 与八字同构：只有出生参数变化（新盘）才归档整轮；同盘重绘必须保留解读容器。
+      var asRoot = $("#as-result");
+      if (asRoot.dataset.chartKey && asRoot.dataset.chartKey !== rk) {
+        archiveBeforeRepaint(asRoot, "astrology");
+      }
+      asRoot.dataset.chartKey = rk;
+      preserveOutputs(asRoot, function () {
       var big = '<div class="as-big3">' +
         posLine("太阳 ☉", "☉", d.sun.sign, d.sun.degree, d.sun.house) +
         posLine("月亮 ☽", "☽", d.moon.sign, d.moon.degree, d.moon.house) +
@@ -1968,6 +1981,7 @@
             '<button class="tool-ai zw-ask-btn" id="as-ai" type="button">AI 解读</button></div>' +
         '</div>' +
         '<div id="as-ai-out"></div>';
+      }, "astrology");
       $("#as-result").dataset.rk = rk;
       $("#as-result").dataset.roundQ = q || "";
       $$("#as-result .zw-chips button").forEach(function (b) { b.onclick = function () { pickQuestion(b.dataset.q, "#as-q"); }; });
@@ -2092,7 +2106,7 @@
       segSet($("#hl-tabs"), isPair ? "pair" : "personal");
       // 切子功能 = 新盘面身份：旧对话按「旧 rk + 问题」归档（对象与 DOM 同步），
       // 不再直接 innerHTML 清空——此前对象仍留在 session 里，刷新后又冒出来。
-      archiveBeforeRepaint($("#hl-result"), "huangli");
+      archiveBeforeRepaint($("#hl-result"), feat);
       $("#hl-result").innerHTML = "";
       drawForm();
     }
@@ -2634,7 +2648,9 @@
       if (!noRefresh && S.feature === "profile") renderProfile();
       // 解读/追问稳定后存会话快照：reload 后仍能恢复本会话提问。
       // 历史追问写回的是原功能会话，快照也要存到原功能键，否则刷新后追问丢失。
-      saveStageSnap(S.feature);
+      // 快照必须按 Reading 所属功能存：双人择日舞台的 S.feature 是 huangli，
+      // 但对象/历史属于 huangli_pair，否则刷新后对象恢复不到正确会话。
+      saveStageSnap(isNewQuestion ? featureOfUrl(url) : (sourceFeature || S.feature));
       if (isFollow && sourceFeature && sourceFeature !== S.feature) saveStageSnap(sourceFeature);
       if (onDone) onDone(true);
     }

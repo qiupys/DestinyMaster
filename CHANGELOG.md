@@ -11,6 +11,13 @@
 
 ---
 
+## v122 (2026-11-25)
+- [refactor][test] 建立声明式测试矩阵：`tests/contracts.json` 作为「功能 × 场景 × 不变量」单一事实源，必须与 `FEATURES` 注册表严格对齐；新增 `test_chain_matrix.py`（真实引擎链路：calc 展示事实逐字进 prompt / 问题回填 / 同盘回放 / 追问保盘 / 身份变化新轮 / 非法锁盘显式报错）、`test_contract_matrix.js`（对象层 9 类不变量对全部功能生成断言）、`test_browser_matrix.js`（全部功能 × 7 高频场景，真实 HTTP + mock AI）、`test_mutation_probes.js`（注入历史 bug 验证矩阵会报警）、`test_contract_matrix_guard.py`（防漏登记），并收口为一条命令 `node tests/js/run_matrix.js`。
+- [fix] 矩阵新发现并修复两处真 bug：① 占星 `paintAstro()` 无条件 `archiveRound()`，同参数重绘就把当前解读归档、画面空 —— 改为与八字同构的 `chartKey` 判定 + `preserveOutputs()`；② 双人择日复用老黄历舞台时对象写进 `huangli` 单人会话（两个 Person 丢失），快照也按 `huangli` 存导致刷新丢对话 —— `sessOf` 按 `#hl-tabs` pair 状态归到 `huangli_pair`，切 tab 归档传实际 `feat`，`saveStageSnap/restoreStageSnap` 按 Reading 所属功能存取并复用老黄历舞台。
+- [test] 紫微/紫微合婚因 py-iztro 非线程安全不在进程内 TestClient 跑链路矩阵，改由浏览器矩阵走真实 HTTP 覆盖；六爻新增「锁盘解析失败注入」变异断言，确认静默换卦一定报警。
+- [test] 全矩阵实测全绿：API 53 项（紫微两项因 PythonMonkey 线程安全在进程内跳过，由浏览器矩阵覆盖）、对象定点 33、对象契约 169、变异探针 4、浏览器高频 40、浏览器契约 112。
+- [docs] `SOFTWARE_ENGINEERING.md` 增「测试跟着契约走」铁律与一键跑全矩阵流程；portal.js / reading-core.js bump v122。
+
 ## v121 (2026-11-25)
 - [fix][架构] 把 v120 的紫微专用重绘保护收编为全功能通用机制：`preserveOutputs()` + `archiveBeforeRepaint()`。输出容器清单与 slot 映射从 `FEATURES` 注册表派生（`Core.outsOf/slotMap`），新增功能自动纳入，杜绝「一功能写一套」。同盘重绘（八字重排、紫微点宫/切视图）原样保留解读容器；换盘/换卦/换牌/切子功能（八字改出生资料、紫微换盘、黄历 personal↔pair）先按「旧 rk + 问题」归档，对象与 DOM 同步。
 - [fix] 对象与 DOM 脱节的三处：① `findAnswered/currentRoundRk` 只读主会话，紫微宫位槽的已解读问题定位不到 → 改为 `Core.sessionsOf` 跨槽查；② 个人中心历史详情追问写进 `profile` 会话、原 Reading 丢追问链 → 新增 `Core.findReadingById(hid)` 全局定位，写回原功能 Reading，并把快照存到原功能键；③ 紫微 `navigate()` 分支直接 `return` 漏掉 `restoreStageSnap`，刷新后对话与对象全丢 → 补上，并修正快照等待条件（紫微盘面无 `.p-result`）。

@@ -77,9 +77,11 @@ calc（确定性计算，出盘面/牌面/卦面）
 8. **轮次 key 严格 = 盘面/卦面/牌面身份 rk + 问题**：跨 slot 用 `Core.sessionsOf` 查；个人中心历史追问按 hid 用 `Core.findReadingById` 写回**原功能** Reading（不能落进 `profile` 会话），并同时保存原功能快照。紫微等异步命盘页必须在 `navigate()` 里调用 `restoreStageSnap`，等待排盘的判据不能只认 `.p-result`（紫微没有）。
 9. **登录态清理彻底**：未登录启动清残留快照；登录主动 `Core.clearAll()`；退出清全部命盘缓存与重绘缓存。别依赖「未登录不能解读」的前提。
 10. **运限失败只重排一次**：`zwHoro()` 失败重试必须一次性（新 chart id 会让它看起来像新请求），否则运算接口持续失败时会无限重排、结果区永远停在「正在起盘」；失败一律 `warn` 留痕。
+11. **测试跟着契约走，不跟着 bug 走**：`tests/contracts.json` 是「功能 × 场景 × 不变量」单一事实源，必须与 `reading-core.js` 的 FEATURES 严格对齐；对象层、API 链路层、浏览器层三套矩阵都从它生成。禁止为新发现的 bug 单独写一个功能专属测试文件——把不变量补进契约，让全部功能一起跑。`test_contract_matrix_guard.py` 会拦截新增功能漏登记、不变量无执行点。链路层禁止 mock 计算引擎（旧 `TestAllFeatures` mock 掉引擎，正好掩盖六爻「所见非所解」）；只 mock AI/RAG 输出。紫微/紫微合婚因 PythonMonkey 线程安全只能在浏览器矩阵走真实 HTTP。变异探针 `test_mutation_probes.js` 把历史 bug 注入临时副本，确认矩阵确实会报警。
 
 ## 4. 开发与验证流程
 
+0. **首选一条命令跑全矩阵**：`node tests/js/run_matrix.js`（API 链路矩阵+护栏 → 对象定点单测 → 对象契约矩阵 → 变异探针 → 浏览器高频场景 → 浏览器链路矩阵；已有服务可设 `BASE_URL`）。任何改动都先让它全绿，再考虑手工 E2E。
 1. 本地改代码 → 语法检查（`node --check`、`python -m py_compile`）。
 2. 跑 API 回归（必做，mock AI/引擎，秒级）：`PYTHONPATH=server:. .venv-dev/bin/python -m unittest discover -s tests/api -p 'test_*.py'`。改 prompt/路由/历史/去重时优先补这里的断言。
 3. 跑单元测试：`tests/unit_*.py`（六爻/奇门/合婚/历史等）。本地起 uvicorn（空闲端口）。

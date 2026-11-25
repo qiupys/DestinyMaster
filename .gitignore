@@ -32,3 +32,5 @@ tests/**
 !tests/api/*.py
 !tests/js/
 !tests/js/*.js
+# 契约矩阵的唯一事实源必须入库（Python 链路矩阵与 JS 对象/浏览器矩阵共用）
+!tests/contracts.json
