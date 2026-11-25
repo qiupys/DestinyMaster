@@ -167,6 +167,21 @@
     pfState = { filter: "", date: "", items: [], dates: [], editBirth: false, editAccount: false,
       birth: null, memories: [], editMem: 0, memDraft: "", memCat: "综合", memImportOpen: false, memSelected: [], memBusy: false };
   }
+  /* 加载登录档案的出生资料到 S.profileBirth：命盘类 Person 快照（对话导入用户信息）的
+     唯一来源。登录态可能来自 localStorage 恢复（未经 setProfile），故初始化与登录后都要拉。
+     只加载一次，档案变更走 profileBirthChanged() 刷新。 */
+  function loadProfileBirth() {
+    if (!S.profile || S.profileBirth || S.profileBirthLoading) return Promise.resolve(null);
+    S.profileBirthLoading = true;
+    return fetch("/api/profile/get?id=" + S.profile.id + "&token=" + encodeURIComponent(S.profile.token))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        S.profileBirthLoading = false;
+        if (d.ok && d.profile) S.profileBirth = d.profile.birth || null;
+        return S.profileBirth;
+      })
+      .catch(function (e) { S.profileBirthLoading = false; warn("加载档案出生资料失败", e); return null; });
+  }
   function setProfile(p) {
     var wasLogged = !!S.profile;
     var changed = wasLogged !== !!p;
@@ -175,7 +190,7 @@
     catch (e) { warn("保存登录态失败", e); }
     if (changed) {
       if (!p) clearUserData();
-      else dropStages();   // 登录：清掉"未登录态"的舞台，切到任何功能都按已登录重建
+      else { dropStages(); loadProfileBirth(); }   // 登录：清舞台 + 加载档案出生资料供 Person 快照
     }
     renderUser();
     // 登录/退出后立刻刷新当前视图：个人中心刷新统计，其它页强制重建（门禁 ↔ 档案带入）
@@ -4545,6 +4560,7 @@
   });
 
   renderUser();
+  loadProfileBirth();   // localStorage 恢复的登录态没走 setProfile，这里补加载档案出生资料
   var init = parseHash();
   // 品牌区点击返回首页
   var brand = $(".p-brand");

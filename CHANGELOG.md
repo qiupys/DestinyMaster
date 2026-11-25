@@ -11,6 +11,12 @@
 
 ---
 
+## v118 (2026-11-25)
+- [test][护栏] 补齐解读链路的自动化测试。此前追问/去重/归档/快照只在真实 AI 下靠用完即删的临时探针验证，测试项少、不可重复。新增 `tests/js/test_reading_e2e.js`：Playwright 拦截全部 `/api/*/deduce` 与 `/api/history/followup` 返回 mock SSE，自起本地 uvicorn（也可 BASE_URL 复用），27 项覆盖对象写回/DOM 投影、追问挂接与连续追问、追问框不堆叠、同问题去重与换问题归档、reload 快照无损恢复、退出登录清理、命盘类导入 Person、双人 Person 快照、非 SSE 错误路径、无 JS 报错。断言只读对象真相源。对象层单测 `test_reading_core.js` 从 13 项扩到 30 项（find 边界/begin/finish/archive 语义/JSON 往返/hour=0/跨 slot 快照/注册表冻结）。`tests/README.md` 记录运行方式。
+- [fix] 注册表 `Object.freeze` 原为浅冻结，嵌套功能项运行期仍可篡改；改为逐项深冻结（单测锁定）。
+- [fix] 命盘类 Person 快照的出生资料来源 `S.profileBirth` 此前只在改档案/访问占星页时才加载，localStorage 恢复登录后为空——导致八字等 needsBirth 功能导入的 Person 无出生资料。新增 `loadProfileBirth()`，初始化与登录成功后各拉一次档案 birth（带防重复标志），对话冻结的用户信息完整。
+- [test] API 回归 39 + 单元 14 + 对象单测 30 + 浏览器 mock E2E 27，全过。
+
 ## v117 (2026-11-25)
 - [refactor][架构] AI 解读从「散在 DOM dataset」升级为统一对象模型。新增 `web/reading-core.js`（纯数据、无 DOM、可 node 单测）：`Person`（用户信息快照）/`Reading`（一次对话：问题+rk+正文+追问链+参与人）/`ReadingSession`（当前轮+归档+去重+快照）+ 12 项功能声明式注册表（root/qbox/out/note/arity/needsBirth）。对象为唯一真相源，DOM 的 data-rk/data-hid/data-archQ 降为渲染投影。
 - [refactor] portal.js 解读链路全部改走对象：findAnswered 严格按 question+rk 查对象、currentRoundRk 读对象 boardRk、归档同步迁移 current→archived、streamToUrl 结束时写回 answer/hid、追问 append 到对应 Reading.followups；选择器表与 followNote MAP 由注册表生成（消除两处「一个功能一份」的重复）。

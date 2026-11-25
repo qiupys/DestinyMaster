@@ -80,6 +80,9 @@
       note: "追问会沿用这一次的局，不会重新起局"
     }
   };
+  // 深冻结：注册表是「新增功能只加一行」的单一真相源，运行期任何一项都不可被篡改
+  // （浅冻结只锁顶层 key，嵌套 def 对象仍可改，护栏测试会验证）。
+  Object.keys(FEATURES).forEach(function (k) { Object.freeze(FEATURES[k]); });
   Object.freeze(FEATURES);
 
   function def(feature) { return FEATURES[feature] || null; }

@@ -170,4 +170,187 @@ t("双人对话快照：两个 Person 随 Reading 无损序列化", function () 
   Core.clearAll();
 });
 
+/* ============ 边界语义补充（对象层是唯一真相源，必须逐条锁定） ============ */
+
+t("find：rk 为空时跨所有轮只按问题匹配（模板问题定位）", function () {
+  var s = Core.session("meihua");
+  s.begin("事业如何", "gua|本|A"); s.finish(1, "A");
+  s.current.addFollowup("细化", "A细化", 11);
+  s.archive();
+  s.begin("事业如何", "gua|本|B"); s.finish(2, "B");
+  var hit = s.find("事业如何", "");
+  assert(hit, "无 rk 应按问题命中");
+  assert.strictEqual(hit.reading.rk, "gua|本|A", "无 rk 时按既有优先级命中归档轮");
+  assert.strictEqual(s.find("别的问", ""), null);
+  Core.drop("meihua");
+});
+
+t("find：归档轮优先于当前轮（同问题同 rk 命中归档）", function () {
+  var s = Core.session("tarot");
+  s.begin("感情", "tarot|three|deckX"); s.finish(3, "旧");
+  s.archive();
+  s.begin("感情", "tarot|three|deckX"); s.finish(4, "新");
+  var hit = s.find("感情", "tarot|three|deckX");
+  assert(hit.archived, "相同身份应命中先入队的归档轮");
+  assert.strictEqual(hit.reading.answer, "旧");
+  Core.drop("tarot");
+});
+
+t("find：rk 严格相等，前缀/包含都不算命中", function () {
+  var s = Core.session("liuyao");
+  s.begin("长持吗", "liuyao|t|879877"); s.finish(5, "巽为风");
+  assert(s.find("长持吗", "liuyao|t|879877"));
+  assert.strictEqual(s.find("长持吗", "liuyao|t|87987"), null, "少一位不能命中");
+  assert.strictEqual(s.find("长持吗", "liuyao|t|879877|x"), null, "多后缀不能命中");
+  Core.drop("liuyao");
+});
+
+t("begin：新轮直接覆盖 current（归档是调用方职责，对象不隐式归档）", function () {
+  var s = Core.session("qimen");
+  var a = s.begin("问一", "qimen|a"); s.finish(6, "A");
+  var b = s.begin("问二", "qimen|b"); s.finish(7, "B");
+  assert.strictEqual(s.current, b);
+  assert.strictEqual(s.archived.length, 0, "对象层不替调用方归档，避免隐藏副作用");
+  assert.notStrictEqual(a, b);
+  Core.drop("qimen");
+});
+
+t("finish：无 id 时保留已有 id，busy 归零", function () {
+  var s = Core.session("bazi");
+  var r = s.begin("事业", "b|s");
+  s.busy = true;
+  s.finish(88, "正文");
+  assert.strictEqual(r.id, 88);
+  s.finish(0, "正文2");
+  assert.strictEqual(r.id, 88, "无 id 不应抹掉落盘 id");
+  assert.strictEqual(r.answer, "正文2");
+  assert.strictEqual(s.busy, false);
+  Core.drop("bazi");
+});
+
+t("archive：current 为空时安全返回 null，不破坏 archived", function () {
+  var s = Core.session("ziwei");
+  assert.strictEqual(s.archive(), null);
+  s.begin("命格", "chart|1"); s.finish(1, "答"); s.archive();
+  assert.strictEqual(s.archive(), null, "二次归档不应重复入队");
+  assert.strictEqual(s.archived.length, 1);
+  Core.drop("ziwei");
+});
+
+t("all()：current 在前，archived 最新在前", function () {
+  var s = Core.session("astrology");
+  s.begin("一", "a|1"); s.finish(1, "1"); s.archive();
+  s.begin("二", "a|2"); s.finish(2, "2"); s.archive();
+  s.begin("三", "a|3"); s.finish(3, "3");
+  var all = s.all();
+  assert.deepStrictEqual(all.map(function (r) { return r.question; }), ["三", "二", "一"]);
+  Core.drop("astrology");
+});
+
+t("setBoard：同步 lastQ 与 boardRk（换盘时更新盘面身份）", function () {
+  var s = Core.session("huangli");
+  s.setBoard("哪天搬家", "day|2026-11-26");
+  assert.strictEqual(s.lastQ, "哪天搬家");
+  assert.strictEqual(s.boardRk, "day|2026-11-26");
+  s.setBoard("", "");
+  assert.strictEqual(s.boardRk, "");
+  Core.drop("huangli");
+});
+
+t("findById：能在归档轮里定位（追问历史卡重绑依赖它）", function () {
+  var s = Core.session("bazi_marriage");
+  s.begin("合不合", "bazi-mar|q"); s.finish(91, "答");
+  s.addFollowupById ? s.addFollowupById(91, "追问", "追答", 92) : s.current.addFollowup("追问", "追答", 92);
+  s.archive();
+  assert.strictEqual(s.findById(91).question, "合不合");
+  assert.strictEqual(s.findById(92), null, "追问 id 不是独立 Reading，不参与 findById");
+  Core.drop("bazi_marriage");
+});
+
+t("Reading JSON 往返：追问链 + persons + status 无损", function () {
+  var r = new Core.Reading({
+    id: 9, feature: "ziwei_marriage", question: "合吗", rk: "zm|q",
+    answer: "正文", status: "archived", ts: "2026-11-25T00:00:00Z",
+    followups: [{ id: 91, question: "追问", answer: "追答", ts: "t" }],
+    persons: [
+      { role: "self", name: "甲", birth: { year: 1990, month: 1, day: 2 } },
+      { role: "partner", name: "乙", birth: { year: 1992, month: 3, day: 4 } }
+    ]
+  });
+  var back = Core.Reading.fromJSON(JSON.parse(JSON.stringify(r.toJSON())));
+  assert.strictEqual(back.status, "archived");
+  assert.strictEqual(back.followups[0].answer, "追答");
+  assert.strictEqual(back.persons.length, 2);
+  assert.strictEqual(back.person("partner").birth.year, 1992);
+});
+
+t("Person：hour=0 / minute=0 不能被 falsy 判断吞掉", function () {
+  var p = new Core.Person({
+    role: "self", birth: { year: 2000, month: 1, day: 1, hour: 0, minute: 0 }
+  });
+  assert.strictEqual(p.birth.hour, 0, "子时 0 点必须保留");
+  assert.strictEqual(p.birth.minute, 0);
+  assert(p.hasBirth());
+});
+
+t("Person JSON 往返：memory / profileId / 经纬度不丢", function () {
+  var p = new Core.Person({
+    role: "self", name: "甲", gender: "女", profileId: 42, memory: "偏谨慎",
+    birth: { year: 1990, month: 5, day: 6, lat: 30.2, lon: 120.1, tz: 8, place: "杭州" }
+  });
+  var back = Core.Person.fromJSON(JSON.parse(JSON.stringify(p.toJSON())));
+  assert.strictEqual(back.profileId, 42);
+  assert.strictEqual(back.memory, "偏谨慎");
+  assert.strictEqual(back.birth.place, "杭州");
+  assert.strictEqual(back.birth.lat, 30.2);
+});
+
+t("快照：serializeFeature 只含指定功能，不串台", function () {
+  Core.clearAll();
+  Core.session("liuyao").begin("六爻问", "ly|q"); Core.session("liuyao").finish(1, "答");
+  Core.session("tarot").begin("塔罗问", "tr|q"); Core.session("tarot").finish(2, "答");
+  var blob = Core.serializeFeature("liuyao");
+  assert.strictEqual(Object.keys(blob).length, 1);
+  assert(blob["liuyao|"].current.question === "六爻问");
+  assert(!JSON.stringify(blob).includes("塔罗问"), "不能把别的功能带进快照");
+  Core.clearAll();
+});
+
+t("快照：restoreFeature 增量恢复，不覆盖未涉及的会话", function () {
+  Core.clearAll();
+  Core.session("qimen").begin("保留我", "qm|1"); Core.session("qimen").finish(1, "答");
+  var blob = Core.serializeFeature("qimen");
+  Core.session("meihua").begin("梅花", "mh|1"); Core.session("meihua").finish(2, "答");
+  Core.restoreFeature(blob);
+  assert.strictEqual(Core.session("qimen").current.question, "保留我");
+  assert.strictEqual(Core.session("meihua").current.question, "梅花", "未涉及的会话应保留");
+  Core.clearAll();
+});
+
+t("followNote：全部功能文案来自注册表（单一来源，无散写 MAP）", function () {
+  Object.keys(Core.FEATURES).forEach(function (f) {
+    var note = Core.followNote(f);
+    assert(note && note.indexOf("追问") >= 0, f + " 追问提示缺失");
+    assert.strictEqual(note, Core.def(f).note, f + " 提示未走注册表");
+  });
+  assert(Core.followNote("not_exist").indexOf("追问") >= 0, "未知功能应有兜底文案");
+});
+
+t("FEATURES 冻结：注册表不可被运行期篡改", function () {
+  assert(Object.isFrozen(Core.FEATURES));
+  var before = Core.def("bazi").name;
+  try { Core.FEATURES.bazi.name = "篡改"; } catch (e) {}
+  assert.strictEqual(Core.def("bazi").name, before);
+});
+
+t("clearAll：多 slot 会话一并清空，重建是全新对象", function () {
+  Core.session("ziwei", "").begin("命格", "c|1");
+  var d = Core.session("ziwei", "zw-d");
+  d.begin("流年", "c|1|2027");
+  Core.clearAll();
+  assert.strictEqual(Core.session("ziwei", "").current, null);
+  assert.strictEqual(Core.session("ziwei", "zw-d").current, null);
+  assert.notStrictEqual(Core.session("ziwei", ""), d, "清空后应重建全新会话对象");
+});
+
 console.log("=== " + pass + " 项通过 ===");
