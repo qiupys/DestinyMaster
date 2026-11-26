@@ -515,6 +515,24 @@ function sessionState(page, feature, slot) {
     });
     check(o.card && o.cur, "O1 同参数重排不丢解读（preserveOutputs）", JSON.stringify(o));
 
+    // ---- P. 解读卡卡头收起/展开（v124：当前卡与归档卡同一交互） ----
+    console.log("\n[P] 解读卡收起/展开");
+    var p1 = await page.evaluate(function () {
+      var card = document.querySelector("#bz-ai-out .p-ai.done");
+      if (!card) return { has: false };
+      var head = card.querySelector(".p-ai-head"), body = card.querySelector(".p-ai-body");
+      var before = getComputedStyle(body).display;
+      head.click();
+      var folded = card.classList.contains("p-ai-folded");
+      var after = getComputedStyle(body).display;
+      head.click();
+      return { has: true, before: before, folded: folded, after: after,
+        reopened: !card.classList.contains("p-ai-folded"),
+        final: getComputedStyle(body).display };
+    });
+    check(p1.has && p1.folded && p1.after === "none" && p1.reopened && p1.final !== "none",
+      "P1 当前解读卡卡头可收起/展开", JSON.stringify(p1));
+
     check(jsErrors.length === 0, "Z. 全程无前端 JS 报错", jsErrors.slice(0, 2).join(" | "));
     await browser.close();
   } catch (e) {

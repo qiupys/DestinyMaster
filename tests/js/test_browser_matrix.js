@@ -159,6 +159,17 @@ function login(page, user) {
       try { await page.waitForSelector(qbox, { timeout: 5000 }); }
       catch (e) { check(false, f + " 提问框就绪", "找不到 " + qbox); continue; }
 
+      // 结构统一（v124）：AI 解读入口必须在独立提问卡内（.bz-ask/.zw-ask/.hl-ai-card），
+      // 不能嵌在 .p-result 盘面卡里。塔罗/梅花此前是唯一例外，回归断言锁紧。
+      var structure = await page.evaluate(function (sel) {
+        var b = document.querySelector(sel);
+        if (!b) return { ok: false, why: "no-button" };
+        var card = b.closest(".bz-ask, .zw-ask, .hl-ai-card");
+        var inResult = !!b.closest(".p-result");
+        return { ok: !!card && !inResult, card: card ? card.className : "", inResult: inResult };
+      }, ui.ask);
+      check(structure.ok, "structure: " + f + " 提问卡独立于盘面", JSON.stringify(structure));
+
       if (!ui.fillBeforeCast) await page.fill(qbox, Q1);
       await click(page, ui.ask);
       try { await page.waitForSelector(out + " .p-ai.done", { timeout: 10000 }); }

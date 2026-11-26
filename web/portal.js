@@ -1705,6 +1705,7 @@
         // 每次起卦 = 新一轮：先折叠归档上一整轮（卦象+解读+追问链），再渲染新卦象。
         // 带上旧轮的 rk，归档项才有完整身份；同问题不同卦因 rk 不同而各成平级轮。
         archiveRound($("#mh-result"), $("#mh-result").dataset.roundQ || $("#mh-result").dataset.lastQ || "上一轮起卦", $("#mh-result").dataset.rk);
+        // 结构统一（v124）：卦象卡 + 独立提问卡 + AI 解读输出三段平级，与六爻/奇门同构。
         $("#mh-result").innerHTML = '<div class="p-result">' + resultTitle("卦象") +
           '<div class="p-card"><div style="text-align:center;margin-bottom:14px"><div class="p-hero-tag">第' + d.ben_gua.index + '卦</div>' +
           '<div class="mh-pv-name">' + esc(d.ben_gua.name) + '</div>' +
@@ -1713,9 +1714,9 @@
             guaCard("本卦", d.ben_gua, d.upper, d.lower, false, "第 " + d.moving + " 爻动") +
             guaCard("互卦", d.hu_gua || d.ben_gua, (d.hu_gua || d).upper, (d.hu_gua || d).lower, false) +
             guaCard("变卦", d.bian_gua, bianUpper, bianLower, true, "第 " + d.moving + " 爻动") +
-          '</div>' +
-          '<button class="tool-ai" id="mh-ai" style="margin-top:16px">AI 解卦</button>' +
-          '</div></div>';
+          '</div></div></div>' +
+          '<div class="bz-ask"><div class="bz-ask-h">就这一卦提问<span>卦盘已锁定，追问与解读使用同一卦</span></div>' +
+          '<button class="tool-ai" id="mh-ai">AI 解卦</button></div>';
         lastGua = d;
         $("#mh-result").dataset.roundQ = q0;
         // 卦象身份 = 本卦序 + 动爻 + 变卦序；同问题不同卦是两轮，不能按问题文本去重
@@ -1849,9 +1850,12 @@
         var spreadNow = d.spread || segVal($("#tr-spread"));
         // 牌阵身份 = 牌阵类型 + 实际牌面串；换牌阵或重新抽牌都会得到新的 rk
         $("#tr-result").dataset.rk = "tarot|" + spreadNow + "|" + deck;
+        // 结构统一（v124）：牌面卡 + 独立提问卡 + AI 解读输出三段平级，
+        // 与六爻/奇门/八字/紫微同构；此前按钮内嵌在牌面卡里，是全站唯一的例外。
         $("#tr-result").innerHTML = '<div class="p-result">' + resultTitle("牌面") +
-          '<div class="p-card">' + showCards(d.cards, d.spread || segVal($("#tr-spread"))) +
-          '<button class="tool-ai" id="tr-ai" style="margin-top:18px">AI 解读牌义</button></div>' + '</div>';
+          '<div class="p-card">' + showCards(d.cards, d.spread || segVal($("#tr-spread"))) + '</div></div>' +
+          '<div class="bz-ask"><div class="bz-ask-h">就这一组牌提问<span>牌面已锁定，问题只决定解读焦点</span></div>' +
+          '<button class="tool-ai" id="tr-ai">AI 解读牌义</button></div>';
         $("#tr-result").dataset.roundQ = q0;
         $("#tr-result").dataset.deck = deck;
         $("#tr-ai").onclick = function () {
@@ -2484,6 +2488,7 @@
     if (!hit) return;
     var target = hit.node;
     if (hit.isArchive) target.classList.add("p-ai-open");
+    else target.classList.remove("p-ai-folded");   // 当前卡若被收起，定位时展开
     target.scrollIntoView({ behavior: "smooth", block: "center" });
     toast(msg || "已定位到这次解读，点卡头可展开回看");
   }
@@ -4697,12 +4702,14 @@
   $("#p-admin-x").onclick = function () { $("#p-admin-modal").classList.add("hidden"); };
   $("#p-admin-modal").addEventListener("click", function (e) { if (e.target === this) this.classList.add("hidden"); });
 
-  // 归档解读卡：点标题展开/收起回看（事件委托，切页后仍有效）
+  // 解读卡点卡头收起/展开（事件委托，切页后仍有效）：归档卡默认收起 → p-ai-open 展开；
+  // 当前卡与追问子卡默认展开 → p-ai-folded 收起。两类卡同一交互规则。
   document.addEventListener("click", function (e) {
-    var h = e.target.closest && e.target.closest(".p-ai-archived .p-ai-head");
-    if (!h) return;
+    var h = e.target.closest && e.target.closest(".p-ai > .p-ai-head");
+    if (!h || !h.parentElement) return;
     var card = h.parentElement;
-    if (card) card.classList.toggle("p-ai-open");
+    if (card.classList.contains("p-ai-archived")) card.classList.toggle("p-ai-open");
+    else card.classList.toggle("p-ai-folded");
   });
   // 「关于本功能」开合：委托到 document，页面重渲染后依然有效
   document.addEventListener("click", function (e) {

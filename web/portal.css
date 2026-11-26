@@ -380,7 +380,7 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .ag-btn:hover { filter: brightness(1.15); }
 /* 未登录：隐藏各功能真正的 AI 提问框/按钮，只留门禁卡 */
 .stage-locked .bz-ask, .stage-locked .zw-ask, .stage-locked .zw-d-ask, .stage-locked .as-ask,
-.stage-locked .ai-follow, .stage-locked #mh-ai, .stage-locked #tr-ai,
+.stage-locked .ai-follow,
 .stage-locked #hl-ai, .stage-locked #bz-ai, .stage-locked #zw-ask,
 .stage-locked #zw-dask { display: none !important; }
 /* 黄历的 AI 区是整张独立提问卡（输入框/快捷问题/八字开关），未登录时个人运势整张隐藏，
@@ -405,6 +405,16 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .p-ai-archived.p-ai-open .p-ai-body,
 .p-ai-archived.p-ai-open .ai-follow { display: block; }
 .p-ai-archived.p-ai-open .p-ai-head::after { content: "收起"; }
+/* 当前解读卡（含追问子卡）同样支持卡头收起/展开（v124）：与归档卡同一套视觉语言，
+   默认展开；折叠后正文与追问条一起隐藏，避免追问输入框漏在折叠卡外面。 */
+.p-ai:not(.p-ai-archived) .p-ai-head { cursor: pointer; }
+.p-ai:not(.p-ai-archived) .p-ai-head:hover { background: var(--accent-soft); }
+.p-ai:not(.p-ai-archived) .p-ai-head::after {
+  content: "收起"; float: right; font-size: var(--fs-xs); color: var(--ink-3); font-weight: 400;
+}
+.p-ai:not(.p-ai-archived).p-ai-folded .p-ai-head::after { content: "展开"; }
+.p-ai:not(.p-ai-archived).p-ai-folded .p-ai-body,
+.p-ai:not(.p-ai-archived).p-ai-folded .ai-follow { display: none; }
 
 /* 整轮归档区：一次「提问」归档为【一张 .p-ai.p-ai-archived 卡】，与新提问解读卡完全同构
    （卡头=问题，点按折叠/展开，卡体=解读正文），彻底避免「卡套卡」的嵌套感。
