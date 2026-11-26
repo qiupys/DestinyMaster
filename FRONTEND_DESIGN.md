@@ -57,7 +57,7 @@
 | 日历弹窗 | 全局单例 `dpEl` / `openDateLookup` | 两种模式由 `dpOnPick` 是否为空区分 |
 | 出生地三级联动 | `placeFieldsHTML/Bind/Collect` + `GEO_DATA` | 国家→省/州→城市；三列同一行，窄屏 <620 折单列；城市 select id=`${pfx}-city`；八字/占星/注册三处统一复用且必填，仅收集入档不做真太阳时校正 |
 | 双人表单 compact | `.mrg-person` + `--control-h-compact` | `min-width:901px` 生效：控件 36 / 控件字 base / 标签 sm / 卡头 base，间距收紧一档；只作用于填写控件，不动 `.mrg-p-card` 结果盘面 |
-| 双栏出生信息行 | `.bf-date-field` / `.bf-time-row` | 共用 `birthFieldsHTML(roomy)` 内：阳历/农历与「出生日期」同行，外框与日期按钮同为 `--control-h-compact`（按钮字 xs）；早晚子时由 `extraTime` 传入，与「时/分」选择同排并对齐分钟列；段间距 sm、字段内 xs；仅 `.mrg-person` 双栏 compact 下生效 |
+| 双栏出生信息行 | `.bf-date-field` | 共用 `birthFieldsHTML(roomy)` 内：阳历/农历与「出生日期」同行，外框与日期按钮同为 `--control-h-compact`（按钮字 xs）；段间距 sm、字段内 xs；仅 `.mrg-person` 双栏 compact 下生效。早晚子时开关已删除（无后端消费点、档案无对应字段） |
 | 八字可选项卡 | `.bz-options` | 大运/流年/流月独立成 `.p-card`，放在十神/神煞分析之后、提问卡之前；挂在结果根下，必须自声明 `max-width:var(--content-w)` 并居中 |
 | 注册弹窗宽度 | `.p-modal-box.is-reg` | 注册 tab 加宽 600px（移动 520px），登录保持 420px；`openAuth.showForm` 按 tab 切 `is-reg` |
 | 提问卡 | `.bz-ask` / `.zw-ask` / `.zw-d-ask` / `.bz-ask.as-ask` | 统一 `max-width:var(--content-w)`，禁止写死宽度 |

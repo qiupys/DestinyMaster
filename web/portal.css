@@ -1723,15 +1723,13 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .mrg-p2 .mrg-person { background: var(--panel); margin-top: 10px; }
 .mrg-person { min-width: 0; padding: calc(var(--gap-md) + 2px); border: var(--line-w) solid var(--line); border-radius: var(--radius-lg); background: var(--panel-2); }
 .mrg-ph { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-md); font-weight: 600; color: var(--ink); margin-bottom: var(--gap-md); letter-spacing: .04em; }
-/* 双方表单内部：每个信息段之间统一 16px（标题/姓名/出生信息/早晚子时/出生地） */
+/* 双方表单内部：每个信息段之间统一 16px（标题/姓名/出生信息/出生地） */
 .mrg-person > .tf-grid { margin-bottom: var(--gap-md); }
 .mrg-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .mrg-import { flex: none; font: inherit; font-size: var(--fs-xs); color: var(--ink-3); background: transparent;
   border: 1px solid var(--line-strong); border-radius: 5px; padding: 3px 8px; cursor: pointer; letter-spacing: 0; }
 .mrg-import:hover { color: var(--cinnabar); border-color: var(--cinnabar); }
 .mrg-pair-note { margin: 10px 0 0; }
-/* 用块级 flex 避免 inline-flex 的行盒 descender 让段间距视觉上多出 6px */
-.mrg-zz { display: flex; width: max-content; margin-top: var(--gap-md); }
 .mrg-person .place-fields { margin-top: var(--gap-md); }
 .mrg-person .pl-hint { margin: var(--gap-sm) 0 0; }
 .mrg-p-card { min-width: 0; padding: var(--gap-md); border: var(--line-w) solid var(--line); border-radius: var(--radius-lg); background: var(--panel-2); }
@@ -1785,16 +1783,12 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
   .mrg-person > .tf-grid { margin-bottom: var(--gap-sm); }
   .mrg-person .place-fields { margin-top: var(--gap-sm); }
   .mrg-person .pl-grid { gap: var(--gap-xs); }
-  .mrg-person .mrg-zz { margin-top: var(--gap-sm); }
-  /* v142：双栏下阳历/农历收进出生日期标签行，外框与日期按钮等高；早晚子时移到时/分同排。
+  /* v143：双栏下阳历/农历收进出生日期标签行，外框与日期按钮等高；早晚子时死开关已删除。
      只改 .mrg-person 内的 roomy 表单，不动单人出生表单与结果盘面。 */
   .mrg-person .bf-date-field { flex-direction: row; align-items: center; gap: var(--gap-sm); }
   .mrg-person .bf-date-field .bf-cal { flex: 1; height: var(--control-h-compact); padding: 0; }
   .mrg-person .bf-date-field .bf-cal button { flex: 1; height: 100%; padding: 0 var(--gap-xs); font-size: var(--fs-xs); }
   .mrg-person .bf-date-field .bf-lab { font-size: var(--fs-sm); }
-  .mrg-person .bf-time-row { display: grid; grid-template-columns: 1fr 1fr auto; align-items: center; gap: var(--gap-xs); }
-  .mrg-person .bf-time-row .bf-time { display: contents; }
-  .mrg-person .bf-time-row .mrg-zz { margin-top: 0; }
 }
 
 /* 六爻盘面 */

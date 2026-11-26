@@ -2,10 +2,25 @@
 from __future__ import annotations
 
 from datetime import datetime
+from functools import lru_cache
 
 GAN_WUXING = dict(zip("甲乙丙丁戊己庚辛壬癸", ["木","木","火","火","土","土","金","金","水","水"]))
 GAN_YINYANG = dict(zip("甲乙丙丁戊己庚辛壬癸", ["阳","阴","阳","阴","阳","阴","阳","阴","阳","阴"]))
 _GAN = "甲乙丙丁戊己庚辛壬癸"
+
+
+@lru_cache(maxsize=None)
+def _liuyue_pairs(year: int) -> tuple:
+    """按年缓存节气月柱；返回元组避免调用方改到缓存内容。"""
+    from lunar_python import Solar
+    pairs = []
+    for month in range(1, 13):
+        try:
+            ganzhi = Solar.fromYmdHms(year, month, 15, 12, 0, 0).getLunar().getEightChar().getMonth()
+        except Exception:
+            ganzhi = ""
+        pairs.append((month, ganzhi))
+    return tuple(pairs)
 
 
 def liuyue_of_year(year: int) -> list[dict]:
@@ -13,16 +28,9 @@ def liuyue_of_year(year: int) -> list[dict]:
 
     lunar-python 的 EightChar 月柱由节气精确界定的月支 + 五虎遁年干起月得出，
     取每月 15 日代表该公历月（月中稳在节气之间），保证界面所见与解读所依一致。
+    生成全部大运年份时同一年只算一次（lru_cache），每次返回新字典列表。
     """
-    from lunar_python import Solar
-    months = []
-    for month in range(1, 13):
-        try:
-            ganzhi = Solar.fromYmdHms(year, month, 15, 12, 0, 0).getLunar().getEightChar().getMonth()
-        except Exception:
-            ganzhi = ""
-        months.append({"month": month, "ganzhi": ganzhi})
-    return months
+    return [{"month": month, "ganzhi": ganzhi} for month, ganzhi in _liuyue_pairs(year)]
 
 
 def _solar_to_lunar(year: int, month: int, day: int, hour: int, minute: int = 0):
@@ -317,15 +325,22 @@ def chart(year: int, month: int, day: int, hour: int, minute: int = 0,
                     "tone": SHENSHA_TONE.get(item["name"], "中"),
                 })
 
-    # 流年：今年起 10 年（含今年），标出与大运的对应
+    # 流年：覆盖「今年起十年」+ 全部展示大运的年份。
+    # 以前只给今年起 10 年，点后面的大运时流年列表没数据可切，看起来像不联动；
+    # 这里把Board需要的流年一次性给全，前端按大运年份区间过滤，流月仍按选中流年取。
     now_year = datetime.now().year
     birth_year = year
+    ln_years = set(range(now_year, now_year + 10))
+    for d in dayun:
+        ln_years.update(range(d["start_year"], d["end_year"] + 1))
     liunian = []
-    for y in range(now_year, now_year + 10):
+    for y in sorted(ln_years):
         gz = GANZHI60[(y - 4) % 60]
         liunian.append({
             "year": y, "ganzhi": gz, "age": y - birth_year + 1,
             "shi_shen": _ten_god(day_gan, gz[0]),
+            "dayun": next((d["ganzhi"] for d in dayun
+                           if d["start_year"] <= y <= d["end_year"]), ""),
             "liuyue": liuyue_of_year(y),  # 该流年十二个公历月的节气月柱（供点选提问）
         })
     cur_age = now_year - birth_year + 1
@@ -349,7 +364,8 @@ def chart(year: int, month: int, day: int, hour: int, minute: int = 0,
             f"{d['age']}~{d['end_age']}岁{d['ganzhi']}({d['shi_shen']})" for d in dayun[:6]))
     if cur_dayun:
         lines.append(f"排盘基准大运（按 {now_year} 年计）：{cur_dayun['ganzhi']}（{cur_dayun['start_year']}-{cur_dayun['end_year']}，{cur_age}岁）")
-    lines.append(f"基准年起流年（{now_year} 起）：" + "　".join(f"{x['year']}{x['ganzhi']}({x['shi_shen']})" for x in liunian[:5]))
+    base_liunian = [x for x in liunian if now_year <= x["year"] < now_year + 5]
+    lines.append(f"基准年起流年（{now_year} 起）：" + "　".join(f"{x['year']}{x['ganzhi']}({x['shi_shen']})" for x in base_liunian))
     if birth_place:
         lines.append(f"出生地：{birth_place}")
     fact = "\n".join(lines)

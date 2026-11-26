@@ -285,6 +285,41 @@ function sessionState(page, feature, slot) {
     check(bz.current && bz.current.persons.length === 1 && bz.current.persons[0].role === "self", "H2 命盘类导入 1 个 self Person");
     check(bz.current && bz.current.persons[0].year === 1990, "H3 Person 含登录档案出生年", bz.current && String(bz.current.persons[0].year));
 
+    // ---- H4/H5. 八字选项联动：大运换流年，流年换流月 ----
+    var link = await page.evaluate(function () {
+      var years = function () {
+        return Array.prototype.map.call(document.querySelectorAll('.bz-step[data-kind=ln]'),
+          function (b) { return b.dataset.year; });
+      };
+      var before = years();
+      var dys = Array.prototype.slice.call(document.querySelectorAll('.bz-step[data-kind=dy]'));
+      var dy = dys[dys.length - 1];
+      if (!dy) return { error: "没有大运按钮", dyCount: dys.length };
+      var board = null;
+      var st = window.ReadingCore.session("bazi");
+      Object.keys(st.boards || {}).forEach(function (k) { board = st.boards[k]; });
+      var boardYears = board && board.data && board.data.liunian
+        ? board.data.liunian.map(function (x) { return x.year; }) : [];
+      dy.click();
+      var after = years();
+      var lo = Number(dy.dataset.from), hi = Number(dy.dataset.to);
+      var inRange = after.length > 0 && after.every(function (y) { return Number(y) >= lo && Number(y) <= hi; });
+      var ln = document.querySelector('.bz-step[data-kind=ln]');
+      if (!ln) return { error: "大运切换后没有流年按钮", after: after, dyCount: dys.length,
+        lo: lo, hi: hi, boardYearCount: boardYears.length, boardLast: boardYears[boardYears.length - 1] };
+      var lnYear = ln.dataset.year;
+      ln.click();
+      var lyYears = Array.prototype.map.call(document.querySelectorAll('#bz-liuyue .bz-step'),
+        function (b) { return b.dataset.year; });
+      return { before: before, after: after, dyCount: dys.length, lo: lo, hi: hi,
+        boardYearCount: boardYears.length, boardLast: boardYears[boardYears.length - 1],
+        inRange: inRange, lnYear: lnYear, lyYears: lyYears,
+        lyFollow: lyYears.length > 0 && lyYears.every(function (y) { return y === lnYear; }) };
+    });
+    check(link.inRange && link.before.join(",") !== link.after.join(","),
+      "H4 点大运后流年切到该大运十年", JSON.stringify(link));
+    check(link.lyFollow, "H5 点流年后流月切到该流年", JSON.stringify(link));
+
     // ---- G. 错误路径：非 SSE JSON 错误 → 卡内显示原因 ----
     console.log("\n[G] 错误路径");
     await page.evaluate(function () { window.ReadingCore.clearAll(); });

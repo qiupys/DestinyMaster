@@ -34,6 +34,20 @@ class TestBaziLiuyue(unittest.TestCase):
         for year_item in payload["liunian"]:
             self.assertEqual(len(year_item.get("liuyue", [])), 12)
 
+    def test_liunian_covers_all_displayed_dayun(self):
+        """v143：点任一大运都要有对应流年可切，流月再跟着选中流年走。"""
+        payload = bazi.chart(1990, 6, 15, 10, 30, "男")
+        self.assertTrue(payload["dayun"], "八字盘应有大运")
+        self.assertGreater(len(payload["liunian"]), 10, "流年只给今年起十年，点后段大运无数据可切")
+        for dy in payload["dayun"]:
+            matched = [x for x in payload["liunian"]
+                       if dy["start_year"] <= x["year"] <= dy["end_year"]]
+            self.assertTrue(matched, f"大运 {dy['ganzhi']} 没有对应流年")
+            self.assertTrue(all(x["dayun"] == dy["ganzhi"] for x in matched),
+                            f"流年的 dayun 归属与大运不一致：{dy['ganzhi']}")
+            self.assertTrue(all(len(x["liuyue"]) == 12 for x in matched),
+                            "大运内流年缺少节气流月")
+
     def test_liuyue_question_written_to_payload_and_fact(self):
         base = {"year": 1990, "month": 6, "day": 15, "hour": 10, "gender": "男", "calendar": "solar"}
         plain = calculations.calc_bazi(dict(base, question="我的事业格局如何？"))
@@ -51,6 +65,9 @@ class TestBaziLiuyue(unittest.TestCase):
     def test_frontend_uses_shared_scope_pattern(self):
         self.assertIn("data-kind=\"ly\"", JS)
         self.assertIn("bz-liuyue", JS)
+        self.assertIn("bz-liunian", JS)
+        self.assertIn("liunianForDayun", JS)
+        self.assertIn("applyDayunScope", JS)
         self.assertIn("pick.kind === \"ly\"", JS)
         # 流月 scope 走通用 q 参数 + 统一 factory，不新增专属参数
         self.assertIn("encodeURIComponent(scope + q)", JS)

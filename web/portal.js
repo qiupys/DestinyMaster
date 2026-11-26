@@ -1043,14 +1043,12 @@
     // roomy（双人表单）专用：标签与它所属控件绑成 .bf-field，段与段之间统一间距。
     // 旧版把标签/控件拆成 6 个 grid item 全用 11px row-gap，标签下空一大截。
     if (opts.roomy) {
-      // v142：双栏合婚把「阳历/农历」并入出生日期标签行；早晚子时由调用方以 extraTime
-      // 传入，与「时/分」选择同排（对齐分钟列），不再是单独一行。
-      var timeRow = '<div class="bf-time-row">' + timeHTML + (opts.extraTime || "") + '</div>';
+      // v143：阳历/农历保持与出生日期同行且等高；早晚子时是无消费点的死开关，已删除。
       return '<div class="bf-wrap bf-roomy">' + head +
         '<div class="bf-fields">' +
           '<div class="bf-sec"><div class="bf-field bf-date-field">' + labDate + calHTML + '</div>' + dateHTML + '</div>' +
           '<div class="bf-sec">' + knowHTML +
-            '<div class="bf-field" id="' + pfx + '-timewrap">' + labTime + timeRow + '</div>' + hintHTML +
+            '<div class="bf-field" id="' + pfx + '-timewrap">' + labTime + timeHTML + '</div>' + hintHTML +
           '</div>' +
         '</div>' + mbazi +
       '</div>';
@@ -1301,8 +1299,6 @@
      两人并列、字段完全一致：姓名 + 性别 + 出生信息 + 出生地 + 导入本人信息。
      不默认带入档案；登录用户点「导入本人信息」才把档案填入当前这一方。 */
   function pairPersonHTML(pfx, side, label) {
-    // v142：早晚子时开关移到时/分选择同一行（对齐分钟列）；只在共用模板里换位置，字段 id 不变。
-    var earlyZi = '<label class="p-switch mrg-zz"><input type="checkbox" id="' + pfx + '-earlyzi" /><span>早晚子时</span></label>';
     return '<div class="mrg-person">' +
       '<div class="mrg-ph"><span>' + esc(label) + '</span>' +
         (S.profile ? '<button type="button" class="mrg-import" data-import="' + pfx + '">导入本人信息</button>' : '') +
@@ -1313,7 +1309,7 @@
           '<option' + (side === "男" ? " selected" : "") + '>男</option>' +
           '<option' + (side === "女" ? " selected" : "") + '>女</option></select></div>' +
       '</div>' +
-      birthFieldsHTML(pfx, { title: "出生信息", noBazi: true, roomy: true, extraTime: earlyZi }) +
+      birthFieldsHTML(pfx, { title: "出生信息", noBazi: true, roomy: true }) +
       placeFieldsHTML(pfx, { hint: "出生地用于真太阳时校正，未收录城市可选邻近城市。" }) +
     '</div>';
   }
@@ -1836,19 +1832,41 @@
             '<i>' + y.start_year + '</i><em>' + esc(y.shi_shen) + '</em></button>';
         }).join("") + '</div></div>';
 
-        // 流年（今年起 10 年，可点选后提问）
-        var lnHtml = '<div class="bz-strip"><div class="bz-scroll">' + (d.liunian || []).map(function (x) {
-          var on = x.year === cur.year ? " on" : "";
-          return '<button type="button" class="bz-step' + on + '" data-kind="ln" data-gz="' + esc(x.ganzhi) + '"' +
-            ' data-year="' + x.year + '" data-age="' + x.age + '">' +
-            '<b>' + esc(x.ganzhi) + '</b><span>' + x.year + '</span>' +
-            '<i>' + x.age + '岁</i><em>' + esc(x.shi_shen) + '</em></button>';
-        }).join("") + '</div></div>';
+        // v143：流年按当前大运年份区间取，点大运换一整排；流月再按选中的流年取。
+        // 后端已给出覆盖全部大运的 liunian（每年含节气流月），前端只做投影过滤，不自行推干支。
+        var dayunList = d.dayun || [], liunianList = d.liunian || [];
+        function findLiunian(year) {
+          var found = null;
+          liunianList.forEach(function (x) { if (String(x.year) === String(year)) found = x; });
+          return found;
+        }
+        function liunianForDayun(dy) {
+          if (!dy) return [];
+          return liunianList.filter(function (x) { return x.year >= dy.start_year && x.year <= dy.end_year; });
+        }
+        function defaultLiunianFor(dy) {
+          var years = liunianForDayun(dy);
+          if (!years.length) return null;
+          return years.filter(function (x) { return x.year === cur.year; })[0] || years[0];
+        }
+        function lnRowHTML(dy) {
+          var years = liunianForDayun(dy);
+          if (!years.length) {
+            return '<div class="bz-strip"><div class="bz-scroll"><span class="p-note">请先在上方选中一个大运</span></div></div>';
+          }
+          return '<div class="bz-strip"><div class="bz-scroll">' + years.map(function (x) {
+            var on = x.year === cur.year ? " on" : "";
+            return '<button type="button" class="bz-step' + on + '" data-kind="ln" data-gz="' + esc(x.ganzhi) + '"' +
+              ' data-year="' + x.year + '" data-age="' + x.age + '">' +
+              '<b>' + esc(x.ganzhi) + '</b><span>' + x.year + '</span>' +
+              '<i>' + x.age + '岁</i><em>' + esc(x.shi_shen) + '</em></button>';
+          }).join("") + '</div></div>';
+        }
+        var curDy = dayunList.filter(function (x) { return x.ganzhi === cur.dayun; })[0] || null;
+        var defLnForLy = curDy ? defaultLiunianFor(curDy) : findLiunian(cur.year);
+        var lnHtml = lnRowHTML(curDy);
 
         // 流月：依附于选中的流年，十二个月的节气月柱由后端随流年一并返回（所见即所解）。
-        // 默认展示当年流年的流月；点选别的流年时刷新这一行。
-        var defLnForLy = null;
-        (d.liunian || []).forEach(function (x) { if (x.year === cur.year) defLnForLy = x; });
         function lyRowHTML(ln) {
           if (!ln || !(ln.liuyue || []).length) {
             return '<div class="bz-strip"><div class="bz-scroll"><span class="p-note">请先在上方选中一个流年</span></div></div>';
@@ -1893,8 +1911,9 @@
         // v141：大运/流年/流月是可点选的「选项」，不是四柱盘面的一部分；
         // 独立成卡放在神煞分析之后、提问卡之前，与紫微运势选择栏同一层级。
         '<div class="p-card bz-options">' +
-          '<div class="bz-sec"><div class="bz-sec-h">大运<span>十年一运 · 点选可据此提问</span></div>' + curLine + dyHtml + '</div>' +
-          '<div class="bz-sec"><div class="bz-sec-h">流年<span>今年起十年 · 点选后可看该年流月</span></div>' + lnHtml + '</div>' +
+          '<div class="bz-sec"><div class="bz-sec-h">大运<span>十年一运 · 点选后切换下方流年</span></div>' + curLine + dyHtml + '</div>' +
+          '<div class="bz-sec"><div class="bz-sec-h">流年<span>该大运十年 · 点选后切换下方流月</span></div>' +
+            '<div id="bz-liunian">' + lnHtml + '</div></div>' +
           '<div class="bz-sec"><div class="bz-sec-h">流月<span>节气月柱 · 点选可据此提问</span></div>' +
             '<div id="bz-liuyue">' + lyRowHTML(defLnForLy) + '</div></div>' +
         '</div>' +
@@ -1909,10 +1928,17 @@
         '<div id="bz-ai-out"></div>';
         }, "bazi");
 
-        // 大运 / 流年 / 流月点选：默认选中当年流年（与按钮高亮一致），再按用户点击切换。
-        // 用事件委托绑在 #bz-result：点流年刷新出的流月按钮无需重新绑定。
-        var defLn = null;
-        (d.liunian || []).forEach(function (x) { if (x.year === cur.year) defLn = x; });
+        // 大运 / 流年 / 流月点选：点大运换整排流年并重置流月，点流年只换流月。
+        // 用事件委托绑在 #bz-result：动态刷新出的按钮无需重新绑定。
+        function applyDayunScope(dy) {
+          var lnHost = $("#bz-liunian");
+          if (lnHost) lnHost.innerHTML = lnRowHTML(dy);
+          var lyHost = $("#bz-liuyue");
+          if (lyHost) lyHost.innerHTML = lyRowHTML(defaultLiunianFor(dy));
+          $$("#bz-result .bz-step[data-kind=ln], #bz-result .bz-step[data-kind=ly]")
+            .forEach(function (x) { x.classList.remove("on"); });
+        }
+        var defLn = defLnForLy;
         var pick = defLn
           ? { kind: "ln", gz: defLn.ganzhi, from: "", to: "", year: defLn.year, age: defLn.age, month: "" }
           : { kind: "", gz: "", from: "", to: "", year: "", age: "", month: "" };
@@ -1928,21 +1954,29 @@
             if (x.dataset.kind === kind && !same) x.classList.remove("on");
           });
           var on = b.classList.toggle("on", !same);
-          if (!on) { pick = { kind: "", gz: "", from: "", to: "", year: "", age: "", month: "" };
-            pickTip.textContent = "未选择大运、流年或流月"; return; }
+          if (!on) {
+            pick = { kind: "", gz: "", from: "", to: "", year: "", age: "", month: "" };
+            pickTip.textContent = "未选择大运、流年或流月";
+            if (kind === "dy") applyDayunScope(curDy);
+            return;
+          }
           pick = { kind: kind, gz: b.dataset.gz, from: b.dataset.from, to: b.dataset.to,
             year: b.dataset.year, age: b.dataset.age, month: b.dataset.month || "" };
           if (kind === "dy") {
             pickTip.textContent = "已选大运 " + pick.gz + "（" + pick.from + "-" + pick.to + "，虚岁 " + pick.age + "）";
             $("#bz-q").value = "在 " + pick.gz + " 大运（" + pick.from + "-" + pick.to + "）期间，我的事业与财运趋势如何？";
+            var dy = null;
+            dayunList.forEach(function (x) {
+              if (x.ganzhi === pick.gz && String(x.start_year) === String(pick.from) &&
+                  String(x.end_year) === String(pick.to)) dy = x;
+            });
+            applyDayunScope(dy);
           } else if (kind === "ln") {
             pickTip.textContent = "已选流年 " + pick.year + " " + pick.gz + "（" + pick.age + "岁）";
             $("#bz-q").value = pick.year + " 年 " + pick.gz + " 流年，我的运势重点与需要留意的地方是什么？";
             // 刷新流月行：跟随刚选中的流年（五虎遁干支已从该流年的 liuyue 取）
-            var ln = null;
-            (d.liunian || []).forEach(function (x) { if (String(x.year) === String(pick.year)) ln = x; });
             var host = $("#bz-liuyue");
-            if (host) host.innerHTML = lyRowHTML(ln);
+            if (host) host.innerHTML = lyRowHTML(findLiunian(pick.year));
             // 流年变了，旧的流月选中作废
             $$("#bz-result .bz-step.ly").forEach(function (x) { x.classList.remove("on"); });
           } else if (kind === "ly") {
