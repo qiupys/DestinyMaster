@@ -360,6 +360,65 @@ function sessionState(page, feature, slot) {
       check(zFu.current && zFu.current.followups.length === 1, "I4 切宫位后追问仍挂到同一 Reading");
     } else no("I4 切宫位后追问仍挂到同一 Reading", "追问框已丢失");
 
+    // ---- I-b. 流式输出中切宫位/切视图，正在写入的解读卡不得消失 ----
+    // 用户截图反馈：解读卡还是空白+光标（SSE 未结束）时点宫位，卡瞬间消失。
+    // 根因是 preserveOutputs 在新视图不含输出槽时把缓存节点丢弃。用可控慢流复现。
+    console.log("\n[I-b] 流式输出中切宫位/切视图保活解读卡");
+    await page.evaluate(function () { window.ReadingCore.clearAll(); });
+    await page.unroute("**/api/ziwei/deduce*");
+    await page.route("**/api/ziwei/deduce*", function (route) {
+      // 只发第一段增量后挂住不结束，制造「仍在流式输出」的中间态。
+      route.fulfill({ status: 200, contentType: "text/event-stream",
+        body: 'data: {"delta":"解读第一段"}\n\n' });
+    });
+    await page.goto(BASE + "/#/ziwei", { waitUntil: "domcontentloaded" });
+    await page.waitForSelector("#zw-plate .zw-pal", { timeout: 12000 });
+    await page.click("#zw-plate .zw-pal");
+    await page.waitForSelector("#zw-dq", { timeout: 5000 });
+    await page.fill("#zw-dq", "流式中切宫位会不会丢？");
+    await page.click("#zw-dask");
+    await page.waitForFunction(function () {
+      var c = document.querySelector("#zw-d-ai-out .p-ai .p-ai-body");
+      return c && c.textContent.indexOf("解读第一段") >= 0;
+    }, { timeout: 10000 });
+    var streamingCard = await page.evaluate(function () {
+      var c = document.querySelector("#zw-d-ai-out .p-ai");
+      return { exists: !!c, text: c ? c.textContent : "" };
+    });
+    check(streamingCard.exists && streamingCard.text.indexOf("解读第一段") >= 0,
+      "I-b1 解读流式中间态已出现在宫位槽", JSON.stringify(streamingCard).slice(0, 100));
+    // 切到「命格」视图：该视图只渲染 #zw-ai-out，没有 #zw-d-ai-out 容器。
+    await page.evaluate(function () {
+      var t = document.querySelector('#zw-tabs button[data-v="pattern"]');
+      if (t) t.click();
+    });
+    await page.waitForTimeout(300);
+    var afterTab = await page.evaluate(function () {
+      var cards = document.querySelectorAll("#zw-result .p-ai");
+      var live = Array.prototype.slice.call(cards).filter(function (c) {
+        return c.textContent.indexOf("解读第一段") >= 0;
+      });
+      return { count: live.length, inResult: live.length > 0 };
+    });
+    check(afterTab.inResult, "I-b2 流式未结束时切到命格视图，解读卡仍在结果区", JSON.stringify(afterTab));
+    // 切回「本命」视图并点宫位：卡应归位到宫位槽，而非被 innerHTML 冲掉。
+    await page.evaluate(function () {
+      var t = document.querySelector('#zw-tabs button[data-v="plate"]');
+      if (t) t.click();
+    });
+    await page.waitForTimeout(200);
+    await page.evaluate(function () {
+      var ps = document.querySelectorAll("#zw-plate .zw-pal");
+      if (ps[2]) ps[2].click();
+    });
+    await page.waitForTimeout(300);
+    var backHome = await page.evaluate(function () {
+      var c = document.querySelector("#zw-d-ai-out .p-ai");
+      return { hasCard: !!c, text: c ? c.textContent : "" };
+    });
+    check(backHome.hasCard && backHome.text.indexOf("解读第一段") >= 0,
+      "I-b3 切回本命视图后解读卡归位到宫位槽", JSON.stringify(backHome).slice(0, 100));
+
     // ---- J. 多对话：换卦换问题归档、同问题同卦去重 ----
     console.log("\n[J] 多对话轮次与 rk+question 严格身份");
     // G 组把六爻 deduce 改成了错误响应，这里恢复成功 mock（hid 与历史详情用例一致）

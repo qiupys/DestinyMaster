@@ -5,6 +5,24 @@ from datetime import datetime
 
 GAN_WUXING = dict(zip("甲乙丙丁戊己庚辛壬癸", ["木","木","火","火","土","土","金","金","水","水"]))
 GAN_YINYANG = dict(zip("甲乙丙丁戊己庚辛壬癸", ["阳","阴","阳","阴","阳","阴","阳","阴","阳","阴"]))
+_GAN = "甲乙丙丁戊己庚辛壬癸"
+
+
+def liuyue_of_year(year: int) -> list[dict]:
+    """该公历年十二个月的流月干支——按每月中旬的真实节气月柱（与八字排盘同源）。
+
+    lunar-python 的 EightChar 月柱由节气精确界定的月支 + 五虎遁年干起月得出，
+    取每月 15 日代表该公历月（月中稳在节气之间），保证界面所见与解读所依一致。
+    """
+    from lunar_python import Solar
+    months = []
+    for month in range(1, 13):
+        try:
+            ganzhi = Solar.fromYmdHms(year, month, 15, 12, 0, 0).getLunar().getEightChar().getMonth()
+        except Exception:
+            ganzhi = ""
+        months.append({"month": month, "ganzhi": ganzhi})
+    return months
 
 
 def _solar_to_lunar(year: int, month: int, day: int, hour: int, minute: int = 0):
@@ -40,6 +58,21 @@ def _ten_god(day_gan: str, other_gan: str) -> str:
 ZHI_WUXING = dict(zip("子丑寅卯辰巳午未申酉戌亥",
                       ["水", "土", "木", "木", "土", "火", "火", "土", "金", "金", "土", "水"]))
 
+# 十神释义：传统通识，供八字盘面的「十神分析」卡展示（确定性文本，不依赖 AI）。
+TEN_GOD_DESC = {
+    "比肩": "与主星同性同气，主自我、独立、协作与分财；过多则固执争竞。",
+    "劫财": "与主星同性异气，主行动、争取、竞争与分夺资源；过旺易冲动破财。",
+    "食神": "我生而同性，主才艺、口才、享受与生财之源；性温和。",
+    "伤官": "我生而异性，主才华、表达、创意与不服约束；过旺易傲气伤官非。",
+    "正财": "克我而异性所克（我克之异性），主正当收入、务实、妻财与稳重。",
+    "偏财": "我克之同性，主意外之财、机会、慷慨与交际；易得易失。",
+    "正官": "克我之异性，主规则、职位、责任与约束；象征事业与名誉。",
+    "七杀": "克我之同性，主压力、竞争、魄力与权威；有制则成权，无制为祸。",
+    "正印": "生我之异性，主学识、贵人、包容与名誉；护身而有依靠。",
+    "偏印": "生我之同性，主偏才、悟性、宗教哲思与孤独；亦名枭神。",
+}
+# 天干十神与藏干十神共用同一份释义；盘面按柱分别列出主气/中气/余气。
+
 # 神煞表：以日干或三合局定位目标地支（简化常用八种）
 SHENSHA_GAN = {
     "天乙贵人": {"甲": "丑未", "戊": "丑未", "庚": "丑未", "乙": "子申", "己": "子申",
@@ -67,6 +100,11 @@ SHENSHA_DESC = {
     "驿马": "主移动变换，宜异地、外派与出行",
     "华盖": "偏才艺与宗教哲思，喜独处",
     "将星": "主统御与决断，宜担当主导",
+}
+# 神煞吉凶倾向：吉神/凶神/中性，供盘面「神煞分析」卡角标展示（传统通识）。
+SHENSHA_TONE = {
+    "天乙贵人": "吉", "文昌贵人": "吉", "禄神": "吉", "金舆": "吉",
+    "将星": "吉", "驿马": "中", "桃花": "中", "华盖": "中", "羊刃": "凶",
 }
 GANZHI60 = [(("甲乙丙丁戊己庚辛壬癸")[i % 10]) + ("子丑寅卯辰巳午未申酉戌亥"[i % 12]) for i in range(60)]
 
@@ -253,6 +291,32 @@ def chart(year: int, month: int, day: int, hour: int, minute: int = 0,
 
     shensha = _shensha(pillars, day_gan)
 
+    # 十神分析：按柱组织天干十神 + 藏干十神，各带释义（盘面「十神分析」卡数据源）。
+    pillar_keys = ("year", "month", "day", "hour")
+    ten_god_detail = {
+        k: {
+            "gan": pillars[k][0], "main": ten_gods[k],
+            "main_desc": TEN_GOD_DESC.get(ten_gods[k], ""),
+            "hidden": [
+                {"gan": d["gan"], "shi_shen": d["shi_shen"],
+                 "desc": TEN_GOD_DESC.get(d["shi_shen"], "")}
+                for d in ten_god_zhi[k]
+            ],
+        }
+        for k in pillar_keys
+    }
+    # 神煞分析：引擎原本按神煞聚合（pillars 列表），这里转成按柱聚合，供逐柱展示。
+    _pillar_label = {"year": "年", "month": "月", "day": "日", "hour": "时"}
+    shensha_by_pillar = {k: [] for k in pillar_keys}
+    for item in shensha:
+        for pillar_label in item["pillars"]:
+            key = next((k for k in pillar_keys if _pillar_label[k] == pillar_label), None)
+            if key:
+                shensha_by_pillar[key].append({
+                    "name": item["name"], "desc": item.get("desc", ""),
+                    "tone": SHENSHA_TONE.get(item["name"], "中"),
+                })
+
     # 流年：今年起 10 年（含今年），标出与大运的对应
     now_year = datetime.now().year
     birth_year = year
@@ -262,6 +326,7 @@ def chart(year: int, month: int, day: int, hour: int, minute: int = 0,
         liunian.append({
             "year": y, "ganzhi": gz, "age": y - birth_year + 1,
             "shi_shen": _ten_god(day_gan, gz[0]),
+            "liuyue": liuyue_of_year(y),  # 该流年十二个公历月的节气月柱（供点选提问）
         })
     cur_age = now_year - birth_year + 1
     cur_dayun = next((d for d in dayun if d["start_year"] <= now_year <= d["end_year"]), None)
@@ -294,6 +359,7 @@ def chart(year: int, month: int, day: int, hour: int, minute: int = 0,
         "pillars": pillars, "ten_gods": ten_gods, "ten_god_zhi": ten_god_zhi, "nayin": nayin,
         "hidden": hidden, "day_master": day_gan, "dayun": dayun,
         "wuxing": wuxing, "shensha": shensha, "liunian": liunian,
+        "ten_god_detail": ten_god_detail, "shensha_by_pillar": shensha_by_pillar,
         "current": {"year": now_year, "age": cur_age,
                     "dayun": cur_dayun["ganzhi"] if cur_dayun else "",
                     "dayun_range": [cur_dayun["start_year"], cur_dayun["end_year"]] if cur_dayun else []},

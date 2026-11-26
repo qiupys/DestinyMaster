@@ -41,9 +41,24 @@ def calc_bazi(p: dict) -> dict:
     m = p.get("month") or now.month
     d = p.get("day") or now.day
     h = p.get("hour") if p.get("hour") is not None else 0
-    return bazi.chart(y, m, d, h, p.get("minute") or 0,
-                      p.get("gender") or "男", p.get("birth_place") or "",
-                      calendar=p.get("calendar") or "solar")
+    payload = bazi.chart(y, m, d, h, p.get("minute") or 0,
+                         p.get("gender") or "男", p.get("birth_place") or "",
+                         calendar=p.get("calendar") or "solar")
+    # 时点从问题文本解析（与紫微共用 parse_target_period，不造专属参数）：
+    # 用户点选流年/流月后，scope 形如「（只看 2027 丁未年 5 月流月）」写进问题。
+    # 把解析结果回写 payload → 进 dedupe key（不同流月=不同轮），并补进 fact
+    # 让 AI 看到明确的推演时点（铁律 6 以用户显式时点为最高优先级）。
+    target_year, target_month = parse_target_period(p.get("question") or "")
+    if target_year:
+        payload["target_year"] = target_year
+        payload["target_month"] = target_month
+        label = f"推演目标：{target_year} 年"
+        if target_month:
+            label += f" {target_month} 月流月（以节气月柱为准，公历月跨节气月时取该月节气月柱）"
+        else:
+            label += " 流年（立春界）"
+        payload["fact"] = (payload.get("fact", "") + "\n" + label).strip()
+    return payload
 
 
 def calc_huangli(p: dict) -> dict:

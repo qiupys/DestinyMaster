@@ -125,7 +125,16 @@
     paint();
     sels.forEach(function (sel) {
       var fresh = $(sel), old = OUT_CACHE[f][sel];
-      if (!fresh) return;
+      if (!fresh) {
+        // 重绘后的视图不含这个输出槽（如紫微切 tab 把 st.sel 重置为 null、
+        // 或切到命格视图时 #zw-d-ai-out 根本不渲染）：paint 的 innerHTML 已让
+        // 缓存节点脱离 DOM。若直接 return，正在流式写入的 body 引用就悬空，
+        // 解读卡「凭空消失」。把旧节点挂回容器末尾保活，切回对应视图时下一次
+        // preserveOutputs 会把它 replaceChild 归位——节点身份不变、追问链不断。
+        // appendChild 对已挂载节点会自动移动，无需 parentNode 守卫。
+        if (old && container && old.parentNode !== container) container.appendChild(old);
+        return;
+      }
       if (old && old !== fresh) {
         if (fresh.parentNode) fresh.parentNode.replaceChild(old, fresh);
       } else OUT_CACHE[f][sel] = fresh;
@@ -1351,6 +1360,45 @@
   }
 
   /* ================= 八字排盘 ================= */
+  /* 八字「十神分析 / 神煞分析」投影（v130）：纯函数，从 Board.data 渲染，
+     当前盘面与历史归档共用同一份——盘面数据来自后端确定性计算，前端不做命理推断。 */
+  function bzAnalysisHTML(boardData) {
+    var pillarNames = ["年柱", "月柱", "日柱", "时柱"], keys = ["year", "month", "day", "hour"];
+    var detail = boardData.ten_god_detail || {}, byPillar = boardData.shensha_by_pillar || {};
+    // 十神分析：逐柱列出天干十神（主气）+ 藏干十神，各带释义。
+    var godCols = keys.map(function (key) {
+      var cell = detail[key] || {};
+      var hidden = (cell.hidden || []).map(function (h) {
+        return '<span class="bz-god"><b>' + esc(h.shi_shen) + '</b>' +
+          (h.desc ? '<i>' + esc(h.desc) + '</i>' : '') + '</span>';
+      }).join("");
+      return '<div class="bz-god-col"><div class="bz-god-h"><b>' + pillarNames[keys.indexOf(key)] + '</b>' +
+        '<span>' + esc(cell.gan || "") + '</span></div>' +
+        '<span class="bz-god main"><b>' + esc(cell.main || "—") + '</b>' +
+        (cell.main_desc ? '<i>' + esc(cell.main_desc) + '</i>' : '') + '</span>' +
+        hidden + '</div>';
+    }).join("");
+    var godCard = '<div class="p-card bz-analysis"><div class="bz-sec-h">十神分析<span>四柱天干与藏干的十神关系</span></div>' +
+      '<div class="bz-god-grid">' + godCols + '</div>' +
+      '<p class="p-note bz-analysis-note">十神描述的是日主与其余各字的生克关系，不同柱位对应不同人生阶段：年柱主早年与长辈，月柱主成长与父母，日柱主自我与配偶，时柱主晚年与子嗣；它们共同构成性格底色与人生面向。</p>' +
+      '</div>';
+    // 神煞分析：逐柱列出命中所带神煞，带吉凶角标与释义。
+    var toneClass = { "吉": "good", "凶": "bad", "中": "mid" };
+    var shaCols = keys.map(function (key) {
+      var list = byPillar[key] || [];
+      var items = list.length ? list.map(function (s) {
+        return '<span class="bz-sha"><b>' + esc(s.name) + '</b>' +
+          '<em class="' + (toneClass[s.tone] || "mid") + '">' + esc(s.tone) + '</em>' +
+          (s.desc ? '<i>' + esc(s.desc) + '</i>' : '') + '</span>';
+      }).join("") : '<span class="p-note">本柱未见常用神煞</span>';
+      return '<div class="bz-sha-col"><div class="bz-sha-h">' + pillarNames[keys.indexOf(key)] +
+        '<span>' + (list.length ? "共 " + list.length + " 项" : "—") + '</span></div>' + items + '</div>';
+    }).join("");
+    var shaCard = '<div class="p-card bz-analysis"><div class="bz-sec-h">神煞分析<span>神煞仅作辅助参考，不宜单独据以言吉凶</span></div>' +
+      '<div class="bz-sha-grid">' + shaCols + '</div></div>';
+    return godCard + shaCard;
+  }
+
   function renderBazi() {
     S.bzFromProfile = false;
     stageEl().innerHTML =
@@ -1454,6 +1502,21 @@
             '<i>' + x.age + '岁</i><em>' + esc(x.shi_shen) + '</em></button>';
         }).join("") + '</div></div>';
 
+        // 流月：依附于选中的流年，十二个月的节气月柱由后端随流年一并返回（所见即所解）。
+        // 默认展示当年流年的流月；点选别的流年时刷新这一行。
+        var defLnForLy = null;
+        (d.liunian || []).forEach(function (x) { if (x.year === cur.year) defLnForLy = x; });
+        function lyRowHTML(ln) {
+          if (!ln || !(ln.liuyue || []).length) {
+            return '<div class="bz-strip"><div class="bz-scroll"><span class="p-note">请先在上方选中一个流年</span></div></div>';
+          }
+          return '<div class="bz-strip"><div class="bz-scroll">' + ln.liuyue.map(function (month) {
+            return '<button type="button" class="bz-step' + '" data-kind="ly" data-gz="' + esc(month.ganzhi) + '"' +
+              ' data-year="' + ln.year + '" data-month="' + month.month + '">' +
+              '<b>' + esc(month.ganzhi) + '</b><span>' + month.month + ' 月</span></button>';
+          }).join("") + '</div></div>';
+        }
+
         var curLine = cur.dayun
           ? '<p class="bz-cur">当前 ' + cur.year + ' 年 · ' + cur.age + ' 岁 · 行 ' + esc(cur.dayun) + ' 大运（' +
             (cur.dayun_range || []).join("-") + '）</p>'
@@ -1482,11 +1545,14 @@
           '<div class="p-card">' + note + kv + wxHtml +
             '<div class="bz-sec"><div class="bz-sec-h">神煞</div>' + ssHtml + '</div>' +
             '<div class="bz-sec"><div class="bz-sec-h">大运<span>十年一运 · 点选可据此提问</span></div>' + curLine + dyHtml + '</div>' +
-            '<div class="bz-sec"><div class="bz-sec-h">流年<span>今年起十年 · 点选可据此提问</span></div>' + lnHtml + '</div>' +
+            '<div class="bz-sec"><div class="bz-sec-h">流年<span>今年起十年 · 点选后可看该年流月</span></div>' + lnHtml + '</div>' +
+            '<div class="bz-sec"><div class="bz-sec-h">流月<span>节气月柱 · 点选可据此提问</span></div>' +
+              '<div id="bz-liuyue">' + lyRowHTML(defLnForLy) + '</div></div>' +
           '</div>' +
         '</div>' +
+        bzAnalysisHTML(d) +
         '<div class="bz-ask">' +
-          '<div class="bz-ask-h">就这张盘提问<span id="bz-pick">未选择大运或流年</span></div>' +
+          '<div class="bz-ask-h">就这张盘提问<span id="bz-pick">未选择大运、流年或流月</span></div>' +
           '<div class="p-suggest zw-chips">' + chips.map(function (c) {
             return '<button type="button" data-q="' + esc(c.q) + '">' + esc(c.t) + '</button>';
           }).join("") + '</div>' +
@@ -1496,34 +1562,48 @@
         '<div id="bz-ai-out"></div>';
         }, "bazi");
 
-        // 大运 / 流年点选：默认选中当年流年（与按钮高亮一致），再按用户点击切换
+        // 大运 / 流年 / 流月点选：默认选中当年流年（与按钮高亮一致），再按用户点击切换。
+        // 用事件委托绑在 #bz-result：点流年刷新出的流月按钮无需重新绑定。
         var defLn = null;
         (d.liunian || []).forEach(function (x) { if (x.year === cur.year) defLn = x; });
         var pick = defLn
-          ? { kind: "ln", gz: defLn.ganzhi, from: "", to: "", year: defLn.year, age: defLn.age }
-          : { kind: "", gz: "", from: "", to: "", year: "", age: "" };
+          ? { kind: "ln", gz: defLn.ganzhi, from: "", to: "", year: defLn.year, age: defLn.age, month: "" }
+          : { kind: "", gz: "", from: "", to: "", year: "", age: "", month: "" };
         var pickTip = $("#bz-pick");
         if (defLn) pickTip.textContent = "已选流年 " + defLn.year + " " + defLn.ganzhi + "（" + defLn.age + "岁）";
-        $$("#bz-result .bz-step").forEach(function (b) {
-          b.onclick = function () {
-            var same = pick.kind === b.dataset.kind && (pick.gz === b.dataset.gz);
-            $$("#bz-result .bz-step").forEach(function (x) {
-              if (x.dataset.kind === b.dataset.kind && !same) x.classList.remove("on");
-            });
-            var on = b.classList.toggle("on", !same);
-            if (!on) { pick.kind = ""; pickTip.textContent = "未选择大运或流年"; return; }
-            pick = { kind: b.dataset.kind, gz: b.dataset.gz, from: b.dataset.from,
-              to: b.dataset.to, year: b.dataset.year, age: b.dataset.age };
-            if (pick.kind === "dy") {
-              pickTip.textContent = "已选大运 " + pick.gz + "（" + pick.from + "-" + pick.to + "，虚岁 " + pick.age + "）";
-              $("#bz-q").value = "在 " + pick.gz + " 大运（" + pick.from + "-" + pick.to + "）期间，我的事业与财运趋势如何？";
-            } else {
-              pickTip.textContent = "已选流年 " + pick.year + " " + pick.gz + "（" + pick.age + "岁）";
-              $("#bz-q").value = pick.year + " 年 " + pick.gz + " 流年，我的运势重点与需要留意的地方是什么？";
-            }
-            $("#bz-q").focus();
-          };
-        });
+        $("#bz-result").onclick = function (e) {
+          var b = e.target.closest && e.target.closest(".bz-step");
+          if (!b) return;
+          var kind = b.dataset.kind;
+          var same = pick.kind === kind && pick.gz === b.dataset.gz &&
+            (kind !== "ly" || pick.month === b.dataset.month);
+          $$("#bz-result .bz-step").forEach(function (x) {
+            if (x.dataset.kind === kind && !same) x.classList.remove("on");
+          });
+          var on = b.classList.toggle("on", !same);
+          if (!on) { pick = { kind: "", gz: "", from: "", to: "", year: "", age: "", month: "" };
+            pickTip.textContent = "未选择大运、流年或流月"; return; }
+          pick = { kind: kind, gz: b.dataset.gz, from: b.dataset.from, to: b.dataset.to,
+            year: b.dataset.year, age: b.dataset.age, month: b.dataset.month || "" };
+          if (kind === "dy") {
+            pickTip.textContent = "已选大运 " + pick.gz + "（" + pick.from + "-" + pick.to + "，虚岁 " + pick.age + "）";
+            $("#bz-q").value = "在 " + pick.gz + " 大运（" + pick.from + "-" + pick.to + "）期间，我的事业与财运趋势如何？";
+          } else if (kind === "ln") {
+            pickTip.textContent = "已选流年 " + pick.year + " " + pick.gz + "（" + pick.age + "岁）";
+            $("#bz-q").value = pick.year + " 年 " + pick.gz + " 流年，我的运势重点与需要留意的地方是什么？";
+            // 刷新流月行：跟随刚选中的流年（五虎遁干支已从该流年的 liuyue 取）
+            var ln = null;
+            (d.liunian || []).forEach(function (x) { if (String(x.year) === String(pick.year)) ln = x; });
+            var host = $("#bz-liuyue");
+            if (host) host.innerHTML = lyRowHTML(ln);
+            // 流年变了，旧的流月选中作废
+            $$("#bz-result .bz-step.ly").forEach(function (x) { x.classList.remove("on"); });
+          } else if (kind === "ly") {
+            pickTip.textContent = "已选 " + pick.year + " 年 " + pick.month + " 月 " + pick.gz + " 流月";
+            $("#bz-q").value = pick.year + " 年 " + pick.month + " 月（" + pick.gz + " 流月），这个月的运势重点是什么？";
+          }
+          $("#bz-q").focus();
+        };
         $$("#bz-result .zw-chips button").forEach(function (b) {
           b.onclick = function () { pickQuestion(b.dataset.q, "#bz-q"); };
         });
@@ -1533,6 +1613,7 @@
           var scope = "";
           if (pick.kind === "dy") scope = "（只看 " + pick.gz + " 大运 " + pick.from + "-" + pick.to + "）";
           if (pick.kind === "ln") scope = "（只看 " + pick.year + " " + pick.gz + " 流年）";
+          if (pick.kind === "ly") scope = "（只看 " + pick.year + " 年 " + pick.month + " 月 " + pick.gz + " 流月）";
           streamAI("bazi", lastQS + "&q=" + encodeURIComponent(scope + q) + authParam(), q, $("#bz-ai-out"), lastQS + "|" + scope);
         };
         $("#bz-ai").onclick = askBz;

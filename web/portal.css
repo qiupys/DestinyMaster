@@ -1554,6 +1554,32 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .bz-step.on b { color: var(--cinnabar); }
 .bz-cur { margin: 0 0 8px; font-size: var(--fs-xs); color: var(--ink-3); }
 
+/* 八字：十神分析 / 神煞分析卡（v130，从 Board.data 投影，逐柱展开） */
+.bz-analysis { margin-top: var(--gap-sm); }
+.bz-analysis .bz-sec-h { margin-bottom: var(--gap-sm); }
+.bz-god-grid, .bz-sha-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--gap-sm); }
+@media (max-width: 680px) { .bz-god-grid, .bz-sha-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+.bz-god-col, .bz-sha-col { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: var(--panel-2); padding: var(--gap-sm); display: flex; flex-direction: column; gap: var(--gap-xs); }
+.bz-god-h, .bz-sha-h { display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.bz-god-h b, .bz-sha-h { font-size: var(--fs-sm); color: var(--ink); font-weight: 600; }
+.bz-god-h span, .bz-sha-h span { font-size: var(--fs-xs); color: var(--ink-3); font-weight: 400; }
+.bz-god, .bz-sha { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); }
+.bz-god b { color: var(--ink-2); font-weight: 600; }
+.bz-god.main { padding: 6px 8px; border-radius: var(--radius-sm); background: var(--accent-soft); }
+.bz-god.main b { color: var(--ink); font-size: var(--fs-base); }
+.bz-god i, .bz-sha i { font-style: normal; color: var(--ink-3); line-height: 1.5; }
+.bz-sha { position: relative; padding-right: 26px; }
+.bz-sha b { color: var(--ink-2); font-weight: 600; }
+.bz-sha em { position: absolute; top: 0; right: 0; font-style: normal; font-size: var(--fs-fine);
+  width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: var(--radius-sm); color: #fff; }
+.bz-sha em.good { background: var(--br-good); }
+.bz-sha em.bad { background: var(--cinnabar); }
+.bz-sha em.mid { background: var(--ink-3); }
+.bz-analysis-note { margin: var(--gap-sm) 0 0; padding-top: var(--gap-sm); border-top: 1px solid var(--line);
+  font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.7; }
+
 /* 八字：结果下方的提问卡（与四柱盘面同宽居中） */
 .bz-ask { max-width: var(--content-w); margin: var(--gap-md) auto 0; border: 1px solid var(--line); border-radius: 12px;
   background: var(--panel-2); padding: 14px 16px; }

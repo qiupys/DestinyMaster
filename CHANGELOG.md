@@ -11,6 +11,12 @@
 
 ---
 
+## v130 (2026-11-26)
+- [fix] 修复「解读流式输出中切换宫位/视图，解读卡凭空消失」：根因是通用重绘逻辑 `preserveOutputs` 在新视图不含输出槽时（如切到命格视图没有 `#zw-d-ai-out`）直接丢弃缓存节点，导致正在写入的 SSE body 引用悬空。改为把旧节点挂回容器末尾保活，切回对应视图时自动归位——通用修复，非紫微特例。
+- [feat] 八字新增流月选择：选中流年后展示该年十二个月的节气月柱（后端 lunar-python 按每月 15 日真实节气月柱计算，与八字排盘同源），点选后把「（只看 YYYY 年 M 月 干支 流月）」拼进问题文本；calc_bazi 复用共用 `parse_target_period` 把时点回写 payload/fact（进 dedupe key），不同流月是不同轮。紫微与八字流月同为二十四节气之「节」分界口径，已写入护栏。
+- [feat] 八字新增「十神分析 / 神煞分析」卡：后端 bazi.chart 增 `ten_god_detail`（逐柱天干十神+藏干十神+释义）与 `shensha_by_pillar`（逐柱神煞+吉凶角标+释义），前端 `bzAnalysisHTML` 从 Board.data 投影渲染，当前盘面与归档共用同一份。
+- [test] 新增 `tests/api/test_bazi_liuyue.py`（6 项）；E2E 新增 I-b 组（流式切宫位保活 3 项）。全矩阵：API 67（12 skip）/对象 37/契约 169/变异 4/E2E 48/浏览器链路 148 全绿。
+
 ## v129 (2026-11-26)
 - [refactor] 紫微彻底并入统一工厂：删除独立 `/api/deduce` 与紫微专属指纹（`ziwei_fingerprint`/`ensure_ziwei_fingerprints`），紫微改走 `/api/ziwei/calc` + `/api/ziwei/deduce`，与其他 10 功能共用同一套 dedupe_key / 缓存命中 / SSE 回放 / 落盘 / 追问链路。
 - [refactor] 消除紫微专属参数：v128 曾给紫微造 `date`/`time_index`/`target_year` 等新参数，实则八字选流年只把「只看 2027 流年」拼进问题文本即可；紫微改为复用通用 `year/month/day/hour`，hour→时辰用共用 `hour_to_time_index`，目标流年用共用 `parse_target_period` 从问题文本解析，宫位主体措辞本身就在问题里。
