@@ -790,6 +790,51 @@
     }
     setTimeout(attempt, 0);
   }
+  /* v136：舞台已标 ready 但解读投影丢失时的极端竞态自愈（异常重绘/节点被移走）。
+     只从有效快照回填输出槽与归档区，绝不重绘盘面、不碰提问框——
+     v135 曾无条件复用 restoreStageSnap 重绘紫微，反而弄丢宫位提问框。
+     对象先于 DOM：对象为空说明发生会话边界（刷新/退出），此时绝不允许恢复。 */
+  function restoreOutputsOnly(featName, stage) {
+    if (!S.profile || !stage) return false;
+    var raw;
+    try { raw = sessionStorage.getItem(snapKey(featName)); } catch (e) { return false; }
+    if (!raw) return false;
+    var snap;
+    try { snap = JSON.parse(raw); } catch (e) { return false; }
+    var tokenNow = S.profile.token || "";
+    if (snap.pageEpoch !== S.pageEpoch || snap.profileToken !== tokenNow) return false;
+    var restored = false;
+    if (snap.arcHtml != null) {
+      var arc = $(".round-archive", stage);
+      if (!arc) { arc = document.createElement("div"); arc.className = "round-archive"; stage.appendChild(arc); }
+      arc.innerHTML = snap.arcHtml;
+      Array.prototype.slice.call(arc.querySelectorAll(
+        ".p-ai-archived .tool-ai, .p-ai-archived .p-suggest, .p-ai-archived .p-switch"))
+        .forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
+      restored = true;
+    }
+    var tmp = document.createElement("div");
+    if (snap.rootHtml != null) tmp.innerHTML = snap.rootHtml;
+    if (!OUT_CACHE[featName]) OUT_CACHE[featName] = {};
+    Core.outsOf(featName).forEach(function (sel) {
+      var html = snap.outHtml && snap.outHtml[sel];
+      var src = null;
+      if (html != null) {
+        src = document.createElement("div");
+        src.innerHTML = html;
+      } else {
+        var id = sel.replace(/^#/, "");
+        src = tmp.querySelector(sel) || tmp.querySelector("#" + id);
+      }
+      if (!src) return;
+      var dst = $(sel, stage);
+      if (dst) { dst.innerHTML = src.innerHTML; OUT_CACHE[featName][sel] = dst; }
+      else OUT_CACHE[featName][sel] = src;
+      restored = true;
+    });
+    if (restored) rebindFollows(stage);
+    return restored;
+  }
   function clearAllSnaps() {
     try {
       Object.keys(sessionStorage).forEach(function (k) {
@@ -821,6 +866,13 @@
     if (feat === "profile") { renderProfile(); return; }
     if (st.dataset.ready === "1" && !force) {  // 已有内容，切回来直接复用
       if (pairAlias && hlApplyMode) hlApplyMode("pair");
+      // v136：舞台标了 ready 却丢解读投影时按快照回填，但只回填 DOM——
+      // 对象为空（刷新/退出等会话边界）绝不恢复，避免把上次会话的对话串回来；
+      // 也不重绘盘面/提问框，杜绝 v135 那种"修好切换却弄丢紫微提问框"的回归。
+      var backFeat = pairAlias ? "huangli_pair" : feat;
+      var hasCurrent = Core.sessionsOf(backFeat).some(function (sessItem) { return !!sessItem.current; });
+      var firstOut = (Core.outsOf(backFeat) || [])[0];
+      if (hasCurrent && firstOut && !$(firstOut + " .p-ai", st)) restoreOutputsOnly(backFeat, st);
       return;
     }
     st.dataset.ready = "1";

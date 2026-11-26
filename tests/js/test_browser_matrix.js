@@ -137,7 +137,12 @@ function login(page, user) {
       console.log("\n[" + f + "]");
       try {
       await page.evaluate(function () { window.ReadingCore.clearAll(); });
-      await page.goto(BASE + "/" + ui.route, { waitUntil: "domcontentloaded" });
+      // 全程 SPA 内部 hash 导航：page.goto 到同文档 hash 在资源紧张时会退化成整页重载，
+      // 刷新即新 epoch（v127 会话边界）→ 对话按设计清空，测试却误判为"切页丢对话"。
+      await page.evaluate(function (route) {
+        if (location.hash !== route) location.hash = route;
+        else window.dispatchEvent(new Event("hashchange"));
+      }, ui.route);
       await page.waitForTimeout(350);
 
       var out = await page.evaluate(function (feat) {
@@ -285,6 +290,9 @@ function login(page, user) {
         "archive: " + f + " 盘面摘要从 Board 投影非空", JSON.stringify(digestInfo));
 
       // switch：切走再切回（同一页面打开内，epoch 不变），会话与投影都保留
+      // 诊断：记录页面 timeOrigin，若切换后变化说明发生整页重载（会话边界），
+      // 那不是产品丢对话，而是测试导航把页面 reload 了。
+      var originBefore = await page.evaluate(function () { return performance.timeOrigin; });
       // 先等快照真正落盘（SSE 完成回调里异步写），否则机器繁忙时会在写入前就切走。
       try {
         await page.waitForFunction(function (name) {
@@ -310,9 +318,33 @@ function login(page, user) {
       } catch (e) { /* 交由下方 check 输出诊断信息 */ }
       var sw = await page.evaluate(function (o) {
         var s = window.ReadingCore.session(o.f);
-        return { cur: !!s.current, card: !!document.querySelector(o.out + " .p-ai.done") };
+        return { cur: !!s.current, card: !!document.querySelector(o.out + " .p-ai.done"),
+          origin: performance.timeOrigin, hash: location.hash };
       }, { f: f, out: out });
-      check(sw.cur && sw.card, "switch: " + f + " 功能切换后对话完整", JSON.stringify(sw));
+      check(sw.cur && sw.card && sw.origin === originBefore,
+        "switch: " + f + " 功能切换后对话完整",
+        JSON.stringify(sw) + " originBefore=" + originBefore +
+        " reloaded=" + (sw.origin !== originBefore));
+
+      // v136 自愈护栏（只对紫微合婚跑一次，兼防 v135 的提问框丢失回归）：
+      // 对象仍在但解读卡被异常移走，切回必须按快照回填投影，且不能重绘盘面/吞掉提问框。
+      if (f === "ziwei_marriage") {
+        await page.evaluate(function (s) {
+          var card = document.querySelector(s + " .p-ai");
+          if (card && card.parentNode) card.parentNode.removeChild(card);
+        }, out);
+        await page.evaluate(function () { location.hash = "#/home"; });
+        await page.waitForTimeout(150);
+        await page.evaluate(function (route) { location.hash = route; }, ui.route);
+        await page.waitForTimeout(500);
+        var healed = await page.evaluate(function (o) {
+          return { card: !!document.querySelector(o.out + " .p-ai.done"),
+            ask: !!document.querySelector(o.ask),
+            origin: performance.timeOrigin };
+        }, { out: out, ask: ui.ask });
+        check(healed.card && healed.ask && healed.origin === originBefore,
+          "selfheal: " + f + " 投影丢失后切回自愈且保留提问框", JSON.stringify(healed));
+      }
 
       // reload（v127 会话边界=本次打开页面）：刷新即新会话，旧对话与快照不恢复
       await page.waitForTimeout(350);
