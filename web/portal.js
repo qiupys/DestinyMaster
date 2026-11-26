@@ -112,6 +112,16 @@
       return labels[key] + " " + ((pillars || {})[key] || "—") + (tenGod ? "(" + tenGod + ")" : "");
     }).join(" · ");
   }
+  // 运限区间在不同来源里可能是数组、{start,end} 对象或普通字符串，统一安全格式化。
+  function digestRange(value) {
+    if (value == null) return "";
+    if (Array.isArray(value)) return value.join("~");
+    if (typeof value === "object") {
+      return [value.start, value.end, value.from, value.to, value.startYear, value.endYear]
+        .filter(function (part) { return part != null && part !== ""; }).join("~");
+    }
+    return String(value);
+  }
   function baziBoardView(boardData) {
     var labels = { year: "年", month: "月", day: "日", hour: "时" };
     var wuxing = boardData.wuxing || {}, nayin = boardData.nayin || {};
@@ -188,11 +198,11 @@
     });
     var horo = boardData.horoscope || {};
     if (horo.decadal) facts.push(digestFact("大限", (horo.decadal.heavenlyStem || "") +
-      (horo.decadal.earthlyBranch || "") + (horo.decadal.range ? " · " + horo.decadal.range.join("-") + "岁" : "")));
+      (horo.decadal.earthlyBranch || "") + (digestRange(horo.decadal.range) ? " · " + digestRange(horo.decadal.range) + "岁" : "")));
     if (horo.yearly) facts.push(digestFact("流年", (horo.yearly.heavenlyStem || "") +
-      (horo.yearly.earthlyBranch || "") + (horo.yearly.solarRange ? " · " + horo.yearly.solarRange.join("~") : "")));
+      (horo.yearly.earthlyBranch || "") + (digestRange(horo.yearly.solarRange) ? " · " + digestRange(horo.yearly.solarRange) : "")));
     if (horo.monthly) facts.push(digestFact("流月", (horo.monthly.heavenlyStem || "") +
-      (horo.monthly.earthlyBranch || "") + (horo.monthly.solarRange ? " · " + horo.monthly.solarRange.join("~") : "")));
+      (horo.monthly.earthlyBranch || "") + (digestRange(horo.monthly.solarRange) ? " · " + digestRange(horo.monthly.solarRange) : "")));
     return digestCard("紫微命盘", facts);
   }
   BOARD_VIEWS.ziwei = ziweiBoardView;
@@ -2857,8 +2867,24 @@
     // 历史回看读的是解读那一刻冻结的盘面数据，不是从旧 DOM 复制 HTML。
     // 仅当该轮尚未登记 Board（老快照/未接入功能）才回退到 DOM 并清理控件。
     var factHtml = "";
-    var board = Core.findBoard(sessOf(container).feature, rk) || (main.board || null);
-    var projected = boardView(sessOf(container).feature, board);
+    var roundSess = sessOf(container);
+    // 盘面身份未必与轮次身份同键：双人择日/导入八字的 rk 还含双方出生参数，
+    // 而 loadDay 登记 Board 时只有日期键。此时 Reading.board 才是该轮真相源，
+    // 必须回退到它，不能只查 boards[rk]（曾导致归档卡摘要整段消失）。
+    var roundReading = roundSess.find(question, rk);
+    if (!roundReading) {
+      var rounds = roundSess.all();
+      for (var ri = 0; ri < rounds.length; ri++) {
+        if (rounds[ri].rk === rk) { roundReading = rounds[ri]; break; }
+      }
+    }
+    // 最可靠的一端是解读卡自身的 hid：全局定位该轮 Reading，直接读取它冻结的 Board。
+    var cardHid = Number(main.dataset.hid || 0);
+    var located = cardHid ? Core.findReadingById(cardHid) : null;
+    var board = Core.findBoard(roundSess.feature, rk) ||
+      (located && located.reading && located.reading.board) ||
+      (roundReading && roundReading.board) || (main.board || null);
+    var projected = boardView(roundSess.feature, board);
     if (projected) {
       factHtml = '<div class="pf-arch-fact">' + projected + '</div>';
     } else {

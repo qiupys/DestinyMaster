@@ -118,10 +118,15 @@ function login(page, user) {
       route.fulfill({ status: 200, contentType: "text/event-stream",
         body: sse("矩阵 mock 追问答复。", ++hidSeq) });
     });
-    // 本地缺 horoscope.js：紫微运限失败会重试排盘。mock 掉让矩阵聚焦解读链路。
+    // 本地缺 horoscope.js：紫微运限走 mock。range 用线上真实形态（对象区间），
+    // 防止投影再用 array.join 时静默抛错、归档摘要变空（v131 线上抽查抓到）。
     await page.route("**/api/horoscope*", function (route) {
       route.fulfill({ status: 200, contentType: "application/json",
-        body: JSON.stringify({ ok: true, horoscope: {} }) });
+        body: JSON.stringify({ ok: true, horoscope: {
+          decadal: { heavenlyStem: "甲", earthlyBranch: "寅", range: { start: 30, end: 39 } },
+          yearly: { heavenlyStem: "丙", earthlyBranch: "午",
+            solarRange: ["2026-02-04", "2027-02-03"] }
+        } }) });
     });
 
     var features = Object.keys(CONTRACT.features);
@@ -260,10 +265,40 @@ function login(page, user) {
       });
       check(arcRo.bad === 0, "archive: " + f + " 归档卡只读化（无 AI 触发按钮）", JSON.stringify(arcRo));
       check(arcRo.follow >= 1, "archive: " + f + " 归档卡保留追问入口", JSON.stringify(arcRo));
+      // v132：每个功能的归档卡都必须有从 Board 对象投影出的盘面摘要。
+      // 投影内部抛错会被 boardView 兜住只留 warn，DOM 上看就是卡里没摘要——
+      // 必须显式断言，不能只看归档卡存在。限定当前功能舞台，避免命中别的 stage。
+      // 卦面/牌面的专属投影用自有结构而非 .pf-fact 标签，因此断言摘要容器有内容。
+      var stageSel = f === "huangli_pair"
+        ? "#p-stage-huangli_pair, #p-stage-huangli" : "#p-stage-" + f;
+      var digestInfo = await page.evaluate(function (sels) {
+        var boxes = 0, length = 0;
+        Array.prototype.forEach.call(document.querySelectorAll(sels), function (stage) {
+          Array.prototype.forEach.call(stage.querySelectorAll(".round-archive .pf-arch-fact"), function (box) {
+            boxes++;
+            length += (box.textContent || "").trim().length;
+          });
+        });
+        return { boxes: boxes, length: length };
+      }, stageSel);
+      check(digestInfo.boxes >= 1 && digestInfo.length > 0,
+        "archive: " + f + " 盘面摘要从 Board 投影非空", JSON.stringify(digestInfo));
 
       // switch：切走再切回（同一页面打开内，epoch 不变），会话与投影都保留
-      await page.goto(BASE + "/#/home", { waitUntil: "domcontentloaded" });
-      await page.goto(BASE + "/" + ui.route, { waitUntil: "domcontentloaded" });
+      // 先等快照真正落盘（SSE 完成回调里异步写），否则机器繁忙时会在写入前就切走。
+      try {
+        await page.waitForFunction(function (name) {
+          var raw = localStorage.getItem("zw-profile");
+          if (!raw) return false;
+          var uid = JSON.parse(raw).id;
+          return !!sessionStorage.getItem("zs-snap-" + name + "-" + uid);
+        }, f, { timeout: 10000 });
+      } catch (e) { /* 下方 check 会报出具体状态 */ }
+      // 必须走 SPA 内部 hash 切换：page.goto 到新 hash 在部分时机触发整页重载，
+      // 重载会换新 pageEpoch 并丢弃快照（v127 设计），那就不是在测「同一页面切功能」。
+      await page.evaluate(function () { location.hash = "#/home"; });
+      await page.waitForTimeout(200);
+      await page.evaluate(function (route) { location.hash = route; }, ui.route);
       await page.waitForTimeout(700);
       // 命盘类登录自动排盘 + 快照恢复是异步链路，固定 700ms 在机器繁忙时会
       // 先于恢复完成就断言。按状态等待（超时仍会让下面的 check 报出具体状态）。
@@ -271,7 +306,7 @@ function login(page, user) {
         await page.waitForFunction(function (o) {
           var s = window.ReadingCore.session(o.f);
           return !!s.current && !!document.querySelector(o.out + " .p-ai.done");
-        }, { f: f, out: out }, { timeout: 10000 });
+        }, { f: f, out: out }, { timeout: 20000 });
       } catch (e) { /* 交由下方 check 输出诊断信息 */ }
       var sw = await page.evaluate(function (o) {
         var s = window.ReadingCore.session(o.f);
