@@ -242,6 +242,18 @@ function login(page, user) {
         return document.querySelectorAll(".round-archive .p-ai-archived").length;
       });
       check(arcDom >= 1, "archive: " + f + " 归档卡可见", String(arcDom));
+      // v125：归档卡是只读回看——不得残留触发新一轮解读的按钮；追问入口必须保留。
+      var arcRo = await page.evaluate(function () {
+        var cards = document.querySelectorAll(".round-archive .p-ai-archived");
+        var bad = 0, follow = 0;
+        Array.prototype.forEach.call(cards, function (c) {
+          bad += c.querySelectorAll(".tool-ai, .p-suggest, .p-switch").length;
+          follow += c.querySelectorAll(".ai-follow-btn").length;
+        });
+        return { cards: cards.length, bad: bad, follow: follow };
+      });
+      check(arcRo.bad === 0, "archive: " + f + " 归档卡只读化（无 AI 触发按钮）", JSON.stringify(arcRo));
+      check(arcRo.follow >= 1, "archive: " + f + " 归档卡保留追问入口", JSON.stringify(arcRo));
 
       // reload：快照恢复对象与 DOM
       await page.waitForTimeout(350);

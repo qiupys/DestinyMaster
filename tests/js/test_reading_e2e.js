@@ -533,6 +533,41 @@ function sessionState(page, feature, slot) {
     check(p1.has && p1.folded && p1.after === "none" && p1.reopened && p1.final !== "none",
       "P1 当前解读卡卡头可收起/展开", JSON.stringify(p1));
 
+    // ---- Q. 存量快照的归档卡只读化（v125：旧结构残留的 AI 按钮必须清掉） ----
+    console.log("\n[Q] 存量归档卡只读化");
+    var q1 = await page.evaluate(function () {
+      var key = null;
+      for (var i = 0; i < sessionStorage.length; i++) {
+        var k = sessionStorage.key(i);
+        if (k && k.indexOf("zs-snap-bazi-") === 0) { key = k; break; }
+      }
+      if (!key) return { key: false };
+      var snap = JSON.parse(sessionStorage.getItem(key));
+      // 模拟 v123 及更早的快照：归档卡的盘面摘要里嵌着「AI 解读」按钮。
+      snap.arcHtml = '<div class="p-ai p-ai-archived" data-hid="100001">' +
+        '<div class="p-ai-head"><span class="dot"></span><span class="p-ai-title">历史 · 上一轮抽牌</span></div>' +
+        '<div class="p-ai-body"><div class="pf-arch-fact">' +
+        '<button class="tool-ai">AI 解读牌义</button></div>解读正文</div>' +
+        '<div class="ai-follow"><div class="ai-follow-row">' +
+        '<input class="ti" /><button class="ai-follow-btn">追问</button></div></div></div>';
+      sessionStorage.setItem(key, JSON.stringify(snap));
+      return { key: true };
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(600);
+    var q2 = await page.evaluate(function () {
+      var st = document.querySelector("#p-stage-bazi");
+      var cards = st ? st.querySelectorAll(".round-archive .p-ai-archived") : [];
+      var bad = 0, follow = 0;
+      Array.prototype.forEach.call(cards, function (c) {
+        bad += c.querySelectorAll(".tool-ai").length;
+        follow += c.querySelectorAll(".ai-follow-btn").length;
+      });
+      return { cards: cards.length, bad: bad, follow: follow };
+    });
+    check(q1.key && q2.cards >= 1 && q2.bad === 0 && q2.follow >= 1,
+      "Q1 存量快照归档卡残留按钮清除且追问保留", JSON.stringify({ q1: q1, q2: q2 }));
+
     check(jsErrors.length === 0, "Z. 全程无前端 JS 报错", jsErrors.slice(0, 2).join(" | "));
     await browser.close();
   } catch (e) {

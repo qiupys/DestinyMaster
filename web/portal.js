@@ -425,6 +425,10 @@
         var arc = $(".round-archive", st);
         if (!arc) { arc = document.createElement("div"); arc.className = "round-archive"; st.appendChild(arc); }
         arc.innerHTML = snap.arcHtml; restored = true;
+        // v125：存量快照（v123 及之前）的归档卡里嵌着旧结构的 AI 按钮，
+        // 恢复后统一只读化——历史回看不该留下触发新一轮解读的入口。
+        Array.prototype.slice.call(arc.querySelectorAll(".p-ai-archived .tool-ai, .p-ai-archived .p-suggest, .p-ai-archived .p-switch"))
+          .forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
       }
       if (snap.formHidden) {
         var fc = $(".tool-card[id$='-form-card']", st);
@@ -2370,16 +2374,20 @@
   /* 归档轮只读化：移除会「触发新一轮解读」的控件（AI 解读按钮、快捷问题 chips、开关），
      保留解读正文、追问结果链与追问输入框——在归档轮里继续追问仍沿用本轮旧牌/旧卦，是合理的。
      这样归档轮不会再用旧牌去解读一个新问题（历史对话点 AI 解读触发新解读的怪逻辑）。 */
-  /* 从一轮的解读卡里提取可归档的正文（去掉卡壳/控制控件），用于装进归档卡卡体。 */
-  function extractReviewBody(node) {
-    var body = $(".p-ai-body", node);
-    if (!body) return "";
-    var clone = body.cloneNode(true);
-    // 只读化：去掉会触发新一轮解读的控件；追问条在归档卡里保留可用（沿用本轮旧盘）。
+  /* 只读化：剥掉会触发新一轮解读的控件（AI 按钮/快捷问题/开关）。
+     追问条用 .ai-follow-btn，不在清理名单内——归档轮沿用旧盘继续追问是合理的。 */
+  function stripArchiveControls(node) {
+    var clone = node.cloneNode(true);
     Array.prototype.slice.call(clone.querySelectorAll(".tool-ai, .p-suggest, .p-switch")).forEach(function (c) {
       if (c.parentNode) c.parentNode.removeChild(c);
     });
     return clone.innerHTML;
+  }
+  /* 从一轮的解读卡里提取可归档的正文（去掉卡壳/控制控件），用于装进归档卡卡体。 */
+  function extractReviewBody(node) {
+    var body = $(".p-ai-body", node);
+    if (!body) return "";
+    return stripArchiveControls(body);
   }
   /* 把 container 当前一轮打包成【一张 .p-ai.p-ai-archived 卡】归档。
      结构刻意与「新提问的解读卡」完全同构：卡头=问题（点按折叠/展开），卡体=解读正文。
@@ -2411,7 +2419,9 @@
     var factHtml = "";
     if (resultCard) {
       var rc = $(".p-ai-body", resultCard) || resultCard;
-      factHtml = '<div class="pf-arch-fact">' + (rc.innerHTML || "") + '</div>';
+      // v125：盘面摘要此前直接复制 innerHTML，绕过了只读化清理——旧结构里
+      // 「AI 解读牌义」等按钮嵌在盘面卡内，归档后仍可点击（历史里触发新一轮解读）。
+      factHtml = '<div class="pf-arch-fact">' + stripArchiveControls(rc) + '</div>';
     }
     var host = archiveHost(container);
     var item = document.createElement("div");
