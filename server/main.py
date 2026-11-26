@@ -312,27 +312,6 @@ async def api_deduce(
     if not pid:
         return {"ok": False, "error": "请先登录后再使用 AI 解读与追问"}
 
-    # 缓存复用：同 key（档案+视图+宫位+问题）且未强制刷新时，直接回放上次回答。
-    # 必须在命盘会话校验之前：服务重启会清空 CHARTS，但已落盘的推演缓存仍然有效。
-    # 优先查统一 feature_history（带 hid，可追问），回落查旧 messages 缓存（紫微历史缓存）。
-    if key and not force and pid:
-        cached_answer, cached_hid = None, None
-        entry = history.find_cached_entry(pid, "ziwei", key)
-        if entry:
-            cached_hid, cached_answer = entry
-        else:
-            cached_answer = profile_store.find_cached(pid, key)
-        if cached_answer:
-            async def replay():
-                yield f"data: {json.dumps({'cached': True}, ensure_ascii=False)}\n\n"
-                yield f"data: {json.dumps({'delta': feature_api._with_disclaimer(cached_answer)}, ensure_ascii=False)}\n\n"
-                if cached_hid:
-                    yield f"data: {json.dumps({'hid': cached_hid}, ensure_ascii=False)}\n\n"
-                yield "data: [DONE]\n\n"
-            return StreamingResponse(
-                replay(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
-            )
-
     session = CHARTS.get(id)
     if session and session.get("profile_id") and session["profile_id"] != pid:
         # 命盘属于别的账号：即使用户自己的 token 有效，也不能借他人盘面推演、更不能让
@@ -359,6 +338,31 @@ async def api_deduce(
 
     # 统一链路：盘面事实由 prepare_ziwei 结构化（可 JSON 落盘），画像/历史走 history 统一层
     ziwei_data = ai.prepare_ziwei(session["chart"], question, target_horo, target_label, focus_terms)
+
+    # 落盘 payload：保存结构化 prompt 数据 + 排盘参数，追问时无需内存 chart 即可重建
+    payload = {"ziwei_data": ziwei_data, "chart_id": id, "year": year, "month": month_q,
+               "focus": focus_terms, "rag_query": ziwei_data.get("rag_query", ""),
+               "rag_extra": ziwei_data.get("rag_extra", [])}
+
+    # 缓存复用（v128）：同盘 + 同运限 + 同宫位 + 同问题 → 直接回放历史解读，不重复消耗模型。
+    # 紫微不能套通用 dedupe_key（payload 含随机 chart_id 与每日变化的「今日运限」），
+    # 改用 history.ziwei_fingerprint 只取稳定身份字段；存量老记录首次命中时自动回填指纹。
+    key = history.ziwei_fingerprint(payload, question)
+    if not force:
+        history.ensure_ziwei_fingerprints(pid)
+        entry = history.find_cached_entry(pid, "ziwei", key)
+        cached_hid, cached_answer = entry if entry else (None, None)
+        if cached_answer:
+            async def replay():
+                yield f"data: {json.dumps({'cached': True}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'delta': feature_api._with_disclaimer(cached_answer)}, ensure_ascii=False)}\n\n"
+                if cached_hid:
+                    yield f"data: {json.dumps({'hid': cached_hid}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            return StreamingResponse(
+                replay(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
+            )
+
     up, recent = "", []
     if pid:
         ctx = history.personalization(pid, "ziwei")
@@ -371,11 +375,6 @@ async def api_deduce(
         # 个性注入唯一来源=个人记忆（ctx["user_profile"] 已是其文本）；
         # 旧的「对话摘要 summary」属已废弃的 AI 记忆管理，不再注入。
     prompt = ai.build_ziwei_prompt(ziwei_data, question, recent, user_profile=up)
-
-    # 落盘 payload：保存结构化 prompt 数据 + 排盘参数，追问时无需内存 chart 即可重建
-    payload = {"ziwei_data": ziwei_data, "chart_id": id, "year": year, "month": month_q,
-               "focus": focus_terms, "rag_query": ziwei_data.get("rag_query", ""),
-               "rag_extra": ziwei_data.get("rag_extra", [])}
 
     async def gen():
         full = ""

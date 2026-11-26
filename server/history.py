@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime
 
@@ -104,6 +105,62 @@ def find_cached_entry(profile_id: int, feature: str, dedupe_key: str) -> tuple[i
         (profile_id, feature, dedupe_key),
     ).fetchone()
     return (row["id"], row["answer"]) if row else None
+
+
+# ── 紫微专属稳定指纹 ──────────────────────────────────────────────────────────
+# 通用 dedupe_key 对整个 payload 取 hash，但紫微 payload 里有两类易变字段：
+#   1. chart_id：每次排盘 uuid4 随机，刷新页面即变；
+#   2. ziwei_data.digest 末尾的「当前运限（今日）」：随系统日期变化。
+# 若直接套通用 key，同一张盘 + 同一问题在刷新/隔天都会被判成新一轮，重复消耗模型。
+# 这里只取真正决定解读身份的字段：出生盘面（去掉今日运限）+ 选定流年/月 +
+# 宫位聚焦词 + 问题原文，保证「同盘 + 同运限 + 同宫位 + 同问题」跨刷新/跨天稳定命中。
+_ZIWEI_TODAY_MARK = "【当前运限（今日）】"
+_ZIWEI_BACKFILLED: set[tuple[str, int]] = set()  # (库路径, 用户) 双键，测试隔离库互不干扰
+
+
+def ziwei_fingerprint(payload: dict, question: str) -> str:
+    """紫微推演的稳定去重键；与用户/功能隔离由 find_cached_entry 的 WHERE 条件负责。"""
+    zw = payload.get("ziwei_data") or {}
+    digest = zw.get("digest") or ""
+    stable_digest = digest.split(_ZIWEI_TODAY_MARK)[0].strip()
+    raw = json.dumps({
+        "d": stable_digest,
+        "y": payload.get("year"),
+        "m": payload.get("month"),
+        "f": payload.get("focus") or [],
+        "q": question,
+    }, ensure_ascii=False, sort_keys=True)
+    return hashlib.md5(raw.encode()).hexdigest()[:16]
+
+
+def ensure_ziwei_fingerprints(profile_id: int) -> None:
+    """把存量紫微历史的 dedupe_key 回填成稳定指纹（每个进程/用户只做一次）。
+
+    老版本前端从未传 key，紫微落盘的 dedupe_key 全是 NULL，即使修好命中逻辑
+    也匹配不到历史。这里按已落盘的 payload 反算指纹并回写，让升级前的对话
+    同样能被同题复用。解析失败的记录留空，不猜、不覆盖已有有效 key。
+    """
+    marker = (str(profile_store.DB_PATH), profile_id) if profile_id else None
+    if not marker or marker in _ZIWEI_BACKFILLED:
+        return
+    _ZIWEI_BACKFILLED.add(marker)  # 先占位，避免回填异常时每轮请求反复扫全表
+    _ensure_table()
+    c = profile_store.db()
+    rows = c.execute(
+        "SELECT id, question, payload FROM feature_history "
+        "WHERE profile_id=? AND feature='ziwei' AND dedupe_key IS NULL",
+        (profile_id,),
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"])
+        except (ValueError, TypeError):
+            log.warning("紫微历史指纹回填跳过非法 payload id=%s", row["id"])
+            continue
+        key = ziwei_fingerprint(payload, row["question"])
+        c.execute("UPDATE feature_history SET dedupe_key=? WHERE id=?", (key, row["id"]))
+    if rows:
+        c.commit()
 
 
 def list_history(profile_id: int, feature: str | None = None,

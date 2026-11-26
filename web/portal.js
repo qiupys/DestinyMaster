@@ -3998,12 +3998,12 @@
     // 运势盘选中的流年必须随提问带给后端，否则后端只拿到命盘 id，只能按今日运限解读
     // （用户在运势盘选了 2027，AI 却仍按 2026 丙午年作答）。命格/本命视图不传，保持只论本命的口径。
     var year = st.view === "fortune" ? (parseInt(st.year, 10) || "") : "";
-    // 轮次身份纳入年份：同一问题切到另一个流年是新的一轮，不能命中旧解读或塞进旧轮。
-    var rk = "chart|" + st.id + (year ? "|" + year : "");
-    if (!prepareNewQuestion(out, q, rk)) return;
     // 宫位提问：把主体宫 + 三方四正/四化作为检索聚焦词传给后端，保证文献覆盖面，
     // 而非只命中单宫词条（解读口径由后端 prompt 的「主体宫位法则」约束）。
     var focus = focusPalace ? focusPalace + ",三方四正,四化" : "";
+    // 轮次身份与后端指纹对齐：命盘 + 流年 + 宫位。任一变化都是新一轮，不命中旧解读、不塞进旧轮。
+    var rk = "chart|" + st.id + (year ? "|" + year : "") + (focus ? "|" + focus : "");
+    if (!prepareNewQuestion(out, q, rk)) return;
     var url = "/api/deduce?id=" + encodeURIComponent(st.id) + "&q=" + encodeURIComponent(q) +
       (year ? "&year=" + year : "") + (focus ? "&focus=" + encodeURIComponent(focus) : "") + authParam();
     streamToUrl(url, "AI 解读", q, out, false, rk);
