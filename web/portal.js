@@ -20,6 +20,67 @@
   /* 容器 → 解读会话：feature 显式传入优先；紫微运势盘用独立 slot 与命格盘隔离。
      黄历 personal/pair 共用 #hl-result，靠调用方传入的 feature 区分（不靠 DOM）。 */
   var SLOT_CONTAINERS = Core.slotMap();
+
+  /* ===== Board 投影框架（v126）=====
+   * 盘面（牌面/卦象/命盘/黄历）是一等对象 Board，不是 DOM 里的 HTML 字符串。
+   * calc 成功后 putBoard() 把结构化数据 d 存进会话仓库；DOM 只是它的投影。
+   * 归档摘要、快照恢复一律 boardView() 从对象重新渲染——绝不复制旧 DOM，
+   * 这样按钮/事件/失效状态根本不会从旧画面漏进历史卡。
+   * 每个功能在 calc 后调用 putBoard(feature, rk, d, params, when)；
+   * boardView 按 feature 分派到注册过的投影函数（见 BOARD_VIEWS）。
+   */
+  var BOARD_VIEWS = {};
+  function putBoard(featureName, roundKey, boardData, lockParams, castTime) {
+    if (!featureName || !roundKey || !boardData) return null;
+    var board = new Core.Board({
+      feature: featureName,
+      kind: featureName,
+      roundKey: roundKey,
+      data: boardData,
+      params: lockParams || {},
+      castTime: castTime || boardData.when || ""
+    });
+    Core.session(featureName).setBoard(board);
+    return board;
+  }
+  /* 从 Board 对象渲染只读盘面摘要（归档卡用），无按钮/无提问框/无事件。
+     命盘类无专用投影时用通用事实摘要：递归提取 board.data 的标量字段，
+     历史回看读的是冻结的对象数据，不是旧 DOM——保证只读且不失真。 */
+  var BOARD_FACT_LABELS = {
+    pillars: "四柱", wuxing: "五行", shensha: "神煞", sizhu: "四柱",
+    palaces: "宫位", planets: "行星", aspects: "相位", houses: "宫",
+    ben_gua: "本卦", bian_gua: "变卦", hu_gua: "互卦", yaos: "六爻",
+    cards: "牌", deck: "卦签", yi: "宜", ji: "忌", jieqi_info: "节气",
+    a_data: "甲方", b_data: "乙方", cross: "合盘", majorStars: "主星",
+    yuejian: "月建", richen: "日辰", xunkong: "旬空"
+  };
+  function generalBoardView(featureName, board) {
+    var data = board.data || {};
+    var lines = [];
+    Object.keys(data).forEach(function (key) {
+      var value = data[key];
+      if (value == null || typeof value === "object" || value === "") return;
+      var label = BOARD_FACT_LABELS[key] || key;
+      lines.push('<span class="pf-fact"><b>' + esc(label) + '</b>' + esc(String(value)) + '</span>');
+    });
+    // 关键数组/对象字段（四柱、宫位、牌）：只列名字，避免历史卡过长
+    ["pillars", "sizhu", "ben_gua", "bian_gua", "a_data", "b_data"].forEach(function (key) {
+      var obj = data[key];
+      if (!obj || typeof obj !== "object") return;
+      var parts = Object.keys(obj).slice(0, 8).map(function (subKey) {
+        return esc(subKey) + " " + esc(String(obj[subKey] && typeof obj[subKey] === "object" ? (obj[subKey].name || "") : obj[subKey]));
+      });
+      if (parts.length) lines.push('<span class="pf-fact"><b>' + (BOARD_FACT_LABELS[key] || key) + '</b>' + parts.join(" · ") + '</span>');
+    });
+    if (!lines.length) return "";
+    return '<div class="p-result"><div class="p-card pf-board-digest">' + lines.join("") + '</div></div>';
+  }
+  function boardView(featureName, board) {
+    if (!board) return "";
+    var renderProjection = BOARD_VIEWS[featureName] || generalBoardView;
+    try { return renderProjection(board.data, board); }
+    catch (error) { warn("盘面投影渲染失败：" + featureName, error); return ""; }
+  }
   function sessOf(container, feature) {
     var f = feature || S.feature;
     var slot = "";
@@ -1395,6 +1456,9 @@
           archiveBeforeRepaint(bzRoot, "bazi");
         }
         bzRoot.dataset.chartKey = cacheKey;
+        // v126：八字盘数据存进 Board 对象（真相源）。rk = bazi|出生参数。
+        var baziRoundKey = "bazi|" + cacheKey;
+        putBoard("bazi", baziRoundKey, d, { params: cacheKey }, "");
         preserveOutputs(bzRoot, function () {
         bzRoot.innerHTML = '<div class="p-result">' +
           '<div class="result-head"><div class="result-title">四柱盘面</div>' + profileAside() + '</div>' +
@@ -1691,6 +1755,21 @@
         (movingLabel ? '<div class="mv">' + esc(movingLabel) + '</div>' : '') +
       '</div>';
     }
+    // v126：卦面投影（纯函数）——从 Board.data 重建盘面卡，归档/快照都走它，不读旧 DOM。
+    function mhBoardView(boardData) {
+      var bianUpper = (boardData.bian_gua && boardData.bian_gua.upper) || boardData.upper;
+      var bianLower = (boardData.bian_gua && boardData.bian_gua.lower) || boardData.lower;
+      return '<div class="p-result">' + resultTitle("卦象") +
+        '<div class="p-card"><div style="text-align:center;margin-bottom:14px"><div class="p-hero-tag">第' + boardData.ben_gua.index + '卦</div>' +
+        '<div class="mh-pv-name">' + esc(boardData.ben_gua.name) + '</div>' +
+        '<div class="mh-pv-move">第 ' + boardData.moving + ' 爻动 · 变卦 ' + esc(boardData.bian_gua.name) + '</div></div>' +
+        '<div class="mh-gua-row">' +
+          guaCard("本卦", boardData.ben_gua, boardData.upper, boardData.lower, false, "第 " + boardData.moving + " 爻动") +
+          guaCard("互卦", boardData.hu_gua || boardData.ben_gua, (boardData.hu_gua || boardData).upper, (boardData.hu_gua || boardData).lower, false) +
+          guaCard("变卦", boardData.bian_gua, bianUpper, bianLower, true, "第 " + boardData.moving + " 爻动") +
+        '</div></div></div>';
+    }
+    BOARD_VIEWS.meihua = mhBoardView;
     var mhDrawing = false;
     function castMeihua(autoAskQ) {
       if (mhDrawing) return;
@@ -1709,29 +1788,23 @@
         // 每次起卦 = 新一轮：先折叠归档上一整轮（卦象+解读+追问链），再渲染新卦象。
         // 带上旧轮的 rk，归档项才有完整身份；同问题不同卦因 rk 不同而各成平级轮。
         archiveRound($("#mh-result"), $("#mh-result").dataset.roundQ || $("#mh-result").dataset.lastQ || "上一轮起卦", $("#mh-result").dataset.rk);
-        // 结构统一（v124）：卦象卡 + 独立提问卡 + AI 解读输出三段平级，与六爻/奇门同构。
-        $("#mh-result").innerHTML = '<div class="p-result">' + resultTitle("卦象") +
-          '<div class="p-card"><div style="text-align:center;margin-bottom:14px"><div class="p-hero-tag">第' + d.ben_gua.index + '卦</div>' +
-          '<div class="mh-pv-name">' + esc(d.ben_gua.name) + '</div>' +
-          '<div class="mh-pv-move">第 ' + d.moving + ' 爻动 · 变卦 ' + esc(d.bian_gua.name) + '</div></div>' +
-          '<div class="mh-gua-row">' +
-            guaCard("本卦", d.ben_gua, d.upper, d.lower, false, "第 " + d.moving + " 爻动") +
-            guaCard("互卦", d.hu_gua || d.ben_gua, (d.hu_gua || d).upper, (d.hu_gua || d).lower, false) +
-            guaCard("变卦", d.bian_gua, bianUpper, bianLower, true, "第 " + d.moving + " 爻动") +
-          '</div></div></div>' +
-          '<div class="bz-ask"><div class="bz-ask-h">就这一卦提问<span>卦盘已锁定，追问与解读使用同一卦</span></div>' +
-          '<button class="tool-ai" id="mh-ai">AI 解卦</button></div>';
-        lastGua = d;
-        $("#mh-result").dataset.roundQ = q0;
         // 卦象身份 = 本卦序 + 动爻 + 变卦序；同问题不同卦是两轮，不能按问题文本去重
         // 身份含起卦时刻：同一卦不同时辰，外应与时令旺衰不同，属不同轮
         var mhRk = "gua|" + d.ben_gua.index + "-" + d.moving + "-" + d.bian_gua.index + "|" + (d.when || "");
-        $("#mh-result").dataset.rk = mhRk;
         // 锁定本次卦象与起卦时刻：deduce 用 manual + 这组上下卦/动爻重算，并沿用 calc 的实际时刻。
         // 少了 when，用户指定了起卦时间也会被 deduce 的「当前时刻」覆盖，时令旺衰与所见不一致。
         var mhLock = "method=manual&upper=" + encodeURIComponent(d.upper.name) +
           "&lower=" + encodeURIComponent(d.lower.name) + "&moving=" + d.moving +
           "&when=" + encodeURIComponent(d.when || "");
+        // v126：盘面数据存进 Board 对象（真相源），DOM 只是投影。
+        putBoard("meihua", mhRk, d, { lock: mhLock, upper: d.upper.name, lower: d.lower.name, moving: d.moving }, d.when);
+        // 结构统一（v124）：卦象卡 + 独立提问卡 + AI 解读输出三段平级，与六爻/奇门同构。
+        $("#mh-result").innerHTML = mhBoardView(d) +
+          '<div class="bz-ask"><div class="bz-ask-h">就这一卦提问<span>卦盘已锁定，追问与解读使用同一卦</span></div>' +
+          '<button class="tool-ai" id="mh-ai">AI 解卦</button></div>';
+        lastGua = d;
+        $("#mh-result").dataset.roundQ = q0;
+        $("#mh-result").dataset.rk = mhRk;
         $("#mh-ai").onclick = function () {
           var q = $("#mh-q").value.trim();
           if (!q) { toast("请先写下所问之事"); return; }
@@ -1829,6 +1902,12 @@
         '</div>';
       }).join("") + '</div>';
     }
+    // v126：牌面投影（纯函数）——从 Board.data 重建，供归档/快照使用。
+    function trBoardView(boardData) {
+      return '<div class="p-result">' + resultTitle("牌面") +
+        '<div class="p-card">' + showCards(boardData.cards || [], boardData.spread) + '</div></div>';
+    }
+    BOARD_VIEWS.tarot = trBoardView;
     function askTarot(deck, q) {
       var useStar = $("#tr-star") && $("#tr-star").checked && S.profile ? "&use_star=1" : "";
       streamAI("tarot", trParam() + "&q=" + encodeURIComponent(q) + "&deck=" + encodeURIComponent(deck) + useStar + authParam(), q, $("#tr-result"), $("#tr-result").dataset.rk);
@@ -1853,11 +1932,13 @@
         var deck = (d.cards || []).map(function(c){ return c.slug + "|" + (c.reversed ? 1 : 0); }).join(",");
         var spreadNow = d.spread || segVal($("#tr-spread"));
         // 牌阵身份 = 牌阵类型 + 实际牌面串；换牌阵或重新抽牌都会得到新的 rk
-        $("#tr-result").dataset.rk = "tarot|" + spreadNow + "|" + deck;
+        var trRk = "tarot|" + spreadNow + "|" + deck;
+        $("#tr-result").dataset.rk = trRk;
+        // v126：牌面数据存进 Board 对象（真相源），DOM 只是投影。
+        putBoard("tarot", trRk, d, { deck: deck, spread: spreadNow }, d.when);
         // 结构统一（v124）：牌面卡 + 独立提问卡 + AI 解读输出三段平级，
         // 与六爻/奇门/八字/紫微同构；此前按钮内嵌在牌面卡里，是全站唯一的例外。
-        $("#tr-result").innerHTML = '<div class="p-result">' + resultTitle("牌面") +
-          '<div class="p-card">' + showCards(d.cards, d.spread || segVal($("#tr-spread"))) + '</div></div>' +
+        $("#tr-result").innerHTML = trBoardView(d) +
           '<div class="bz-ask"><div class="bz-ask-h">就这一组牌提问<span>牌面已锁定，问题只决定解读焦点</span></div>' +
           '<button class="tool-ai" id="tr-ai">AI 解读牌义</button></div>';
         $("#tr-result").dataset.roundQ = q0;
@@ -1989,6 +2070,8 @@
         archiveBeforeRepaint(asRoot, "astrology");
       }
       asRoot.dataset.chartKey = rk;
+      // v126：占星本命盘数据存进 Board 对象（真相源），DOM 只是投影。
+      putBoard("astrology", rk, d, { params: qs }, "");
       preserveOutputs(asRoot, function () {
       var big = '<div class="as-big3">' +
         posLine("太阳 ☉", "☉", d.sun.sign, d.sun.degree, d.sun.house) +
@@ -2247,6 +2330,9 @@
     function loadDay() {
       fetch("/api/huangli/calc?" + hlParam()).then(function (r) { return r.json(); }).then(function (d) {
         if (!d.ok) { $("#hl-day").innerHTML = '<p class="p-err" style="text-align:center">' + esc(d.error || "查询失败") + '</p>'; return; }
+        // v126：历注数据存进 Board 对象（真相源）；日期身份让追问/归档能按盘回看。
+        putBoard(feat, "day|" + sel.y + "-" + sel.m + "-" + sel.d, d,
+          { date: sel.y + "-" + sel.m + "-" + sel.d }, "");
         var yiItems = (d.yi || []).slice(0, 14), jiItems = (d.ji || []).slice(0, 14);
         var yi = yiItems.length ? yiItems.map(function (t) { return "• " + esc(t); }).join("  ") : "诸事不宜";
         var ji = jiItems.length ? jiItems.map(function (t) { return "• " + esc(t); }).join("  ") : "—";
@@ -2414,14 +2500,21 @@
         return extractReviewBody(fu) || (fu.textContent || "");
       }).join("") + '</div>';
     }
-    // 盘面卡纯文本摘要并入卡体顶部（如需回看确定性结果），避免再套一层结果卡
-    var resultCard = container.querySelector(":scope > .p-result");
+    // 盘面摘要并入卡体顶部，避免再套一层结果卡。
+    // v126：优先从 Board 对象重新投影（只读、天然无按钮/事件）——盘面是对象，
+    // 历史回看读的是解读那一刻冻结的盘面数据，不是从旧 DOM 复制 HTML。
+    // 仅当该轮尚未登记 Board（老快照/未接入功能）才回退到 DOM 并清理控件。
     var factHtml = "";
-    if (resultCard) {
-      var rc = $(".p-ai-body", resultCard) || resultCard;
-      // v125：盘面摘要此前直接复制 innerHTML，绕过了只读化清理——旧结构里
-      // 「AI 解读牌义」等按钮嵌在盘面卡内，归档后仍可点击（历史里触发新一轮解读）。
-      factHtml = '<div class="pf-arch-fact">' + stripArchiveControls(rc) + '</div>';
+    var board = Core.findBoard(sessOf(container).feature, rk) || (main.board || null);
+    var projected = boardView(sessOf(container).feature, board);
+    if (projected) {
+      factHtml = '<div class="pf-arch-fact">' + projected + '</div>';
+    } else {
+      var resultCard = container.querySelector(":scope > .p-result");
+      if (resultCard) {
+        var rc = $(".p-ai-body", resultCard) || resultCard;
+        factHtml = '<div class="pf-arch-fact">' + stripArchiveControls(rc) + '</div>';
+      }
     }
     var host = archiveHost(container);
     var item = document.createElement("div");
@@ -2591,6 +2684,11 @@
   }
   function streamAI(feature, query, question, container, rk) {
     if (!prepareNewQuestion(container, question, rk)) return;
+    // v126：解读发起时把「最近排出的盘面」绑定到本轮 rk（rk 含提问后才确定的 scope，
+    // 如八字大运/流年）。盘面数据已在 calc 时存进 Board，这里只补索引键；
+    // 追问/归档凭 rk 从对象仓库取回同一张盘，不依赖 DOM。
+    var sess = sessOf(container, feature);
+    sess.bindBoardToRound(rk);
     streamToUrl("/api/" + feature + "/deduce?" + query, "AI 解读", question, container, false, rk);
   }
   /* 通用 SSE 流式渲染：解读 / 历史追问共用 */
@@ -3913,6 +4011,8 @@
       st.chart = hit.chart; st.id = hit.id; st.key = key; st.birth = birth;
       st.sel = null; st.view = keepView && st.view ? st.view : (hit.view || "plate");
       st.year = hit.year || new Date().getFullYear();
+      // v126：紫微命盘数据存进 Board 对象（真相源），DOM/宫位渲染只是投影。
+      putBoard("ziwei", "chart|" + st.id, st.chart, { chartId: st.id, birthKey: key }, "");
       zwRender();
       if (st.view === "fortune") zwHoro().then(zwRender);
       return;
@@ -3941,6 +4041,8 @@
     fetch("/api/chart?" + p.toString()).then(function (r) { return r.json(); }).then(function (d) {
       if (!d.ok) throw new Error(d.error || "排盘失败");
       st.chart = d.chart; st.id = d.id;
+      // v126：命盘数据存进 Board 对象（真相源）。
+      putBoard("ziwei", "chart|" + st.id, st.chart, { chartId: st.id }, "");
       if (S.zwSaveBirth && S.profile) {
         S.zwSaveBirth = false;
         toast("出生信息已同步到个人档案，其它功能将使用新信息");
@@ -4123,7 +4225,10 @@
         // 换双人信息 = 新盘：旧轮（解读 + 追问）先平级归档，再重建盘面与提问卡。
         if (out && root.dataset.rk) archiveRound(out, out.dataset.lastQ || title, root.dataset.rk);
         lastPair = qs;
-        root.dataset.rk = (isBazi ? "bazi-mar|" : (isAstro ? "astro-mar|" : "ziwei-mar|")) + qs;
+        var pairRoundKey = (isBazi ? "bazi-mar|" : (isAstro ? "astro-mar|" : "ziwei-mar|")) + qs;
+        root.dataset.rk = pairRoundKey;
+        // v126：双人合盘数据存进 Board 对象（真相源），DOM 只是投影。
+        putBoard(feat, pairRoundKey, d, { params: qs }, "");
         root.dataset.lastQ = "";
         root.innerHTML = renderPairResult(d, isBazi, pre, isAstro);
         bindAsk();
@@ -4318,8 +4423,11 @@
           archiveRound(root, question, root.dataset.rk);
           root.innerHTML = renderLiuyaoResult(d);
           // 身份 = 起卦时刻 + 六爻 deck；同一爻象不同月建日辰也属不同轮
-          root.dataset.rk = "liuyao|" + (d.when || "") + "|" + d.deck;
+          var lyRk = "liuyao|" + (d.when || "") + "|" + d.deck;
+          root.dataset.rk = lyRk;
           var lock = "deck=" + encodeURIComponent(d.deck) + "&when=" + encodeURIComponent(d.when || "");
+          // v126：卦象数据存进 Board 对象（真相源），DOM 只是投影。
+          putBoard("liuyao", lyRk, d, { lock: lock, deck: d.deck }, d.when);
           $("#ly-ask").onclick = function () {
             var q = $("#ly-q").value.trim();
             if (!q) { toast("请先写下所问之事"); return; }
@@ -4335,50 +4443,52 @@
     };
     applyGate("liuyao");
   }
-  function renderLiuyaoResult(d) {
-    function gua(g) {
-      return '<div class="ly-gua' + (g && d.bian_gua && g.name === d.bian_gua.name ? ' bian' : '') + '">' +
-        '<div class="ly-gua-tag">' + (g && d.bian_gua && g.name === d.bian_gua.name ? '变卦' : '本卦') + '</div>' +
-        '<div class="ly-gua-nm">' + esc((g || {}).name || "—") + '</div>' +
-        '<div class="ly-gua-sub">第' + esc((g || {}).index || "—") + '卦 · 上' + esc((g || {}).upper || "") + '下' + esc((g || {}).lower || "") + '</div>' +
-        '<div class="ly-gua-sub">' + esc((g || {}).gong || "") + '宫 · ' + esc((g || {}).gong_wuxing || "") + '</div></div>';
-    }
-    var rows = (d.yaos || []).slice().reverse().map(function (y) {
-      // 老阳9记○、老阴6记×（皆为动爻）；少阳7/少阴8为静爻，不加标记
-      var mv = y.value === 9 ? ' <b>○</b>' : y.value === 6 ? ' <b>×</b>' : '';
-      return '<div class="ly-yao' + (y.moving ? ' moving' : '') + '">' +
-        '<span class="ly-pos">' + esc(y.name) + '</span>' +
-        '<span class="ly-line ' + (y.yang ? 'yang' : 'yin') + '">' +
-          (y.yang ? '<i></i>' : '<i></i><i></i>') + '</span><span class="ly-mv">' + mv + '</span>' +
-        '<span>' + esc(y.gan || "") + esc(y.zhi || "") + '(' + esc(y.wuxing || "") + ')</span>' +
-        '<span>' + esc(y.liuqin || "") + '</span><span>' + esc(y.liushen || "") + '</span>' +
-        '<span class="ly-sy">' + esc(y.shiying || "") + '</span></div>';
-    }).join("");
-    var movings = (d.yaos || []).filter(function (y) { return y.moving; });
-    var movingNote = movings.length
-      ? '动爻 ' + movings.length + ' 个（' + movings.map(function (y) { return y.name; }).join('、') + '）'
-      : '六爻皆静（无动爻），传统称「静卦」，故无变卦——这是正常的起卦结果，不是缺漏';
-    // 铜钱摇卦：把六掷结果逐爻展开，让人看懂静卦从何而来
-    var coinDetail = '';
-    if (d.method === 'coin' && d.deck) {
-      var names = ['初爻','二爻','三爻','四爻','五爻','上爻'];
-      var valName = { 6: '老阴×动', 7: '少阳', 8: '少阴', 9: '老阳○动' };
-      coinDetail = '<div class="ly-coins"><div class="ly-coins-h">铜钱六掷明细（自下而上）</div><div class="ly-coins-row">' +
-        names.map(function (n, i) {
-          var v = +String(d.deck)[i];
-          return '<span class="' + (v === 6 || v === 9 ? 'mv' : '') + '">' + n + ' ' + (valName[v] || v) + '</span>';
-        }).join('') + '</div><div class="ly-coins-note">三枚铜钱每掷求和：三阳=9老阳、二阳一阴=8少阴、一阳二阴=7少阳、三阴=6老阴；老阴老阳为动爻，其余为静爻。</div></div>';
-    }
-    return '<div class="p-result">' + resultTitle("六爻卦盘") +
-      '<div class="p-card"><div class="ly-gua-row">' + gua(d.ben_gua) + (d.bian_gua ? gua(d.bian_gua) : '') + '</div>' +
-        '<div class="ly-meta">月建 ' + esc(d.yuejian || "—") + '　日辰 ' + esc(d.richen || "—") + '　旬空 ' + esc(d.xunkong || "—") + '</div>' +
-        '<div class="ly-meta">' + esc(movingNote) + '</div>' +
-        coinDetail +
-        '<div class="ly-yaos">' + rows + '</div>' +
-      '</div></div>' +
+  function renderLiuyaoResult(boardData) {
+    return liuyaoBoardView(boardData) +
       '<div class="bz-ask"><div class="bz-ask-h">就这一卦提问<span>卦盘已锁定，追问与解读使用同一卦</span></div>' +
         '<button class="tool-ai" id="ly-ask">AI 解卦</button></div>';
   }
+  /* v126：六爻盘面投影（纯函数）——从 Board.data 重建盘面卡，归档/快照走它。 */
+  function liuyaoBoardView(boardData) {
+    function renderGua(gua) {
+      return '<div class="ly-gua' + (gua && boardData.bian_gua && gua.name === boardData.bian_gua.name ? ' bian' : '') + '">' +
+        '<div class="ly-gua-tag">' + (gua && boardData.bian_gua && gua.name === boardData.bian_gua.name ? '变卦' : '本卦') + '</div>' +
+        '<div class="ly-gua-nm">' + esc((gua || {}).name || "—") + '</div>' +
+        '<div class="ly-gua-sub">第' + esc((gua || {}).index || "—") + '卦 · 上' + esc((gua || {}).upper || "") + '下' + esc((gua || {}).lower || "") + '</div>' +
+        '<div class="ly-gua-sub">' + esc((gua || {}).gong || "") + '宫 · ' + esc((gua || {}).gong_wuxing || "") + '</div></div>';
+    }
+    var yaoRows = (boardData.yaos || []).slice().reverse().map(function (yao) {
+      var movingMark = yao.value === 9 ? ' <b>○</b>' : yao.value === 6 ? ' <b>×</b>' : '';
+      return '<div class="ly-yao' + (yao.moving ? ' moving' : '') + '">' +
+        '<span class="ly-pos">' + esc(yao.name) + '</span>' +
+        '<span class="ly-line ' + (yao.yang ? 'yang' : 'yin') + '">' +
+          (yao.yang ? '<i></i>' : '<i></i><i></i>') + '</span><span class="ly-mv">' + movingMark + '</span>' +
+        '<span>' + esc(yao.gan || "") + esc(yao.zhi || "") + '(' + esc(yao.wuxing || "") + ')</span>' +
+        '<span>' + esc(yao.liuqin || "") + '</span><span>' + esc(yao.liushen || "") + '</span>' +
+        '<span class="ly-sy">' + esc(yao.shiying || "") + '</span></div>';
+    }).join("");
+    var movingYaos = (boardData.yaos || []).filter(function (yao) { return yao.moving; });
+    var movingNote = movingYaos.length
+      ? '动爻 ' + movingYaos.length + ' 个（' + movingYaos.map(function (yao) { return yao.name; }).join('、') + '）'
+      : '六爻皆静（无动爻），传统称「静卦」，故无变卦——这是正常的起卦结果，不是缺漏';
+    var coinDetail = '';
+    if (boardData.method === 'coin' && boardData.deck) {
+      var names = ['初爻','二爻','三爻','四爻','五爻','上爻'];
+      var valueNames = { 6: '老阴×动', 7: '少阳', 8: '少阴', 9: '老阳○动' };
+      coinDetail = '<div class="ly-coins"><div class="ly-coins-h">铜钱六掷明细（自下而上）</div><div class="ly-coins-row">' +
+        names.map(function (name, index) {
+          var value = +String(boardData.deck)[index];
+          return '<span class="' + (value === 6 || value === 9 ? 'mv' : '') + '">' + name + ' ' + (valueNames[value] || value) + '</span>';
+        }).join('') + '</div><div class="ly-coins-note">三枚铜钱每掷求和：三阳=9老阳、二阳一阴=8少阴、一阳二阴=7少阳、三阴=6老阴；老阴老阳为动爻，其余为静爻。</div></div>';
+    }
+    return '<div class="p-result">' + resultTitle("六爻卦盘") +
+      '<div class="p-card"><div class="ly-gua-row">' + renderGua(boardData.ben_gua) + (boardData.bian_gua ? renderGua(boardData.bian_gua) : '') + '</div>' +
+        '<div class="ly-meta">月建 ' + esc(boardData.yuejian || "—") + '　日辰 ' + esc(boardData.richen || "—") + '　旬空 ' + esc(boardData.xunkong || "—") + '</div>' +
+        '<div class="ly-meta">' + esc(movingNote) + '</div>' + coinDetail +
+        '<div class="ly-yaos">' + yaoRows + '</div>' +
+      '</div></div>';
+  }
+  BOARD_VIEWS.liuyao = liuyaoBoardView;
 
   /* 奇门表单的「?」是真正的备注触发器：点击弹出说明，再点/点外部/ESC 关闭。
      舞台会整体重绘，故用 document 事件委托，气泡全局单例。 */
@@ -4518,15 +4628,18 @@
           archiveRound(root, question, root.dataset.rk);
           root.innerHTML = renderQimenResult(d);
           // 轮次身份 = 起局时刻 + 定局口径 + 实际局数/状态 + 年命/用神；同问题重新起局会成新一轮
-          root.dataset.rk = "qimen|" + d.when + "|" + method + "|" + d.ju_jieqi + d.ju + "|" + d.dingju_state +
+          var qmRk = "qimen|" + d.when + "|" + method + "|" + d.ju_jieqi + d.ju + "|" + d.dingju_state +
             "|" + ($("#qm-na-on").checked ? $("#qm-na").value : "") +
             "|" + ($("#qm-ys-on").checked ? $("#qm-ys").value : "");
+          root.dataset.rk = qmRk;
           // 起局时刻必须回传 calc 实际使用的 d.when：否则用户未勾选指定时间时，
           // deduce 会按「此刻」另起一局，AI 解读的盘与屏幕上看到的盘可能不同。
           var lock = "method=" + method +
             ($("#qm-na-on").checked ? "&year_na=" + encodeURIComponent($("#qm-na").value) : "") +
             ($("#qm-ys-on").checked && $("#qm-ys").value ? "&yongshen=" + encodeURIComponent($("#qm-ys").value) : "") +
             "&when=" + encodeURIComponent(d.when || "");
+          // v126：局盘数据存进 Board 对象（真相源），DOM 只是投影。
+          putBoard("qimen", qmRk, d, { lock: lock, method: method }, d.when);
           $("#qm-ask").onclick = function () {
             var q = $("#qm-q").value.trim();
             if (!q) { toast("请先写下所问之事"); return; }
@@ -4542,40 +4655,45 @@
     };
     applyGate("qimen");
   }
-  function renderQimenResult(d) {
-    // 洛书九宫展示顺序：4 9 2 / 3 5 7 / 8 1 6
-    var order = [4, 9, 2, 3, 5, 7, 8, 1, 6];
-    var byGong = {}; (d.palaces || []).forEach(function (p) { byGong[p.gong] = p; });
-    var cells = order.map(function (g) {
-      var p = byGong[g] || {};
-      return '<div class="qm-cell' + (p.xunkong ? ' kong' : '') + '">' +
-        '<div class="qm-c-h"><b>' + esc(p.name || "") + '</b><span>' + esc(p.dir || "") + '</span></div>' +
-        '<div class="qm-c-main"><span class="qm-c-tg">' + esc(p.tiangan || "—") + '</span><i>天</i>' +
-          '<span class="qm-c-dg">' + esc(p.digan || "—") + '</span><i>地</i></div>' +
-        '<div class="qm-c-row"><b>' + esc(p.star || "—") + '</b><span>' + esc(p.door || "—") + '</span></div>' +
-        '<div class="qm-c-god">' + esc(p.god || "—") + '</div>' +
-        (p.note ? '<div class="qm-c-note">' + esc(p.note) + '</div>' : '') + '</div>';
-    }).join("");
-    var sz = d.sizhu || {};
-    return '<div class="p-result">' + resultTitle("奇门遁甲 · 九宫盘") +
-      '<div class="p-card"><div class="qm-head">' +
-        '<span>四柱 ' + esc([sz.year, sz.month, sz.day, sz.hour].join(" ")) + '</span>' +
-        '<span>' + esc(d.jieqi || "") + ' · ' + esc(d.yinyang || "") + esc(d.ju || "") + '局 · ' + esc(d.yuan || "") +
-          (d.method === 'zhirun' ? ' · 置闰法' + (d.dingju_state ? '（' + esc(d.dingju_state) + '）' : '') : ' · 拆补法') + '</span>' +
-        '<span>值符 ' + esc(d.zhi_fu || "") + ' · 值使 ' + esc(d.zhi_shi || "") + '</span></div>' +
-        (d.focus && (d.focus.year_na || d.focus.yongshen)
-          ? '<div class="qm-focus">' +
-            (d.focus.year_na ? '<span>年命 <b>' + esc(d.focus.year_na.ganzhi) + '</b> 寄' +
-              esc(d.focus.year_na.gong ? d.focus.year_na.gong + '宫' : '—') +
-              (d.focus.year_na.palace ? '（' + esc(d.focus.year_na.palace) + '）' : '') + '</span>' : '') +
-            (d.focus.yongshen ? '<span>用神 <b>' + esc(d.focus.yongshen.name) + '</b>' +
-              (d.focus.yongshen.gong ? ' 落' + esc(d.focus.yongshen.gong) + '宫（' + esc(d.focus.yongshen.palace) + '）' : '') + '</span>' : '') +
-            '</div>' : '') +
-        '<div class="qm-grid">' + cells + '</div>' +
-      '</div></div>' +
+  function renderQimenResult(boardData) {
+    return qmBoardView(boardData) +
       '<div class="bz-ask"><div class="bz-ask-h">就这一局提问<span>局数星门已锁定，问题只决定阅读焦点</span></div>' +
         '<button class="tool-ai" id="qm-ask">AI 解盘</button></div>';
   }
+  /* v126：奇门盘面投影（纯函数）——从 Board.data 重建九宫盘，归档/快照走它。 */
+  function qmBoardView(boardData) {
+    // 洛书九宫展示顺序：4 9 2 / 3 5 7 / 8 1 6
+    var order = [4, 9, 2, 3, 5, 7, 8, 1, 6];
+    var byGong = {}; (boardData.palaces || []).forEach(function (palace) { byGong[palace.gong] = palace; });
+    var cells = order.map(function (gong) {
+      var palace = byGong[gong] || {};
+      return '<div class="qm-cell' + (palace.xunkong ? ' kong' : '') + '">' +
+        '<div class="qm-c-h"><b>' + esc(palace.name || "") + '</b><span>' + esc(palace.dir || "") + '</span></div>' +
+        '<div class="qm-c-main"><span class="qm-c-tg">' + esc(palace.tiangan || "—") + '</span><i>天</i>' +
+          '<span class="qm-c-dg">' + esc(palace.digan || "—") + '</span><i>地</i></div>' +
+        '<div class="qm-c-row"><b>' + esc(palace.star || "—") + '</b><span>' + esc(palace.door || "—") + '</span></div>' +
+        '<div class="qm-c-god">' + esc(palace.god || "—") + '</div>' +
+        (palace.note ? '<div class="qm-c-note">' + esc(palace.note) + '</div>' : '') + '</div>';
+    }).join("");
+    var fourPillars = boardData.sizhu || {};
+    return '<div class="p-result">' + resultTitle("奇门遁甲 · 九宫盘") +
+      '<div class="p-card"><div class="qm-head">' +
+        '<span>四柱 ' + esc([fourPillars.year, fourPillars.month, fourPillars.day, fourPillars.hour].join(" ")) + '</span>' +
+        '<span>' + esc(boardData.jieqi || "") + ' · ' + esc(boardData.yinyang || "") + esc(boardData.ju || "") + '局 · ' + esc(boardData.yuan || "") +
+          (boardData.method === 'zhirun' ? ' · 置闰法' + (boardData.dingju_state ? '（' + esc(boardData.dingju_state) + '）' : '') : ' · 拆补法') + '</span>' +
+        '<span>值符 ' + esc(boardData.zhi_fu || "") + ' · 值使 ' + esc(boardData.zhi_shi || "") + '</span></div>' +
+        (boardData.focus && (boardData.focus.year_na || boardData.focus.yongshen)
+          ? '<div class="qm-focus">' +
+            (boardData.focus.year_na ? '<span>年命 <b>' + esc(boardData.focus.year_na.ganzhi) + '</b> 寄' +
+              esc(boardData.focus.year_na.gong ? boardData.focus.year_na.gong + '宫' : '—') +
+              (boardData.focus.year_na.palace ? '（' + esc(boardData.focus.year_na.palace) + '）' : '') + '</span>' : '') +
+            (boardData.focus.yongshen ? '<span>用神 <b>' + esc(boardData.focus.yongshen.name) + '</b>' +
+              (boardData.focus.yongshen.gong ? ' 落' + esc(boardData.focus.yongshen.gong) + '宫（' + esc(boardData.focus.yongshen.palace) + '）' : '') + '</span>' : '') +
+            '</div>' : '') +
+        '<div class="qm-grid">' + cells + '</div>' +
+      '</div></div>';
+  }
+  BOARD_VIEWS.qimen = qmBoardView;
 
   /* ---------------- 启动 ---------------- */
   // 盘面事实不再对用户展开：所有功能由引擎确定性运算保证正确，结果区只展示可读盘面。

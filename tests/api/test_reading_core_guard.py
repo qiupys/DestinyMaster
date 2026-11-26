@@ -71,6 +71,31 @@ class TestReadingCoreGuard(unittest.TestCase):
         self.assertIn("new Core.Person(", JS)
         self.assertIn("setPartner(", JS, "双人功能未写入对方 Person 快照")
 
+    def test_board_is_first_class_object(self):
+        """v126：盘面是一等对象 Board——Reading 持有它，仓库按 roundKey 索引。"""
+        self.assertIn("function Board(", CORE, "缺少 Board 对象")
+        self.assertIn("this.roundKey", CORE, "Board 字段应为 roundKey（不用缩写）")
+        self.assertIn("this.board = Board.fromJSON", CORE, "Reading 未持有 Board")
+        self.assertIn("this.boards = Object.create(null)", CORE, "会话缺少盘面仓库")
+        self.assertIn("bindBoardToRound", CORE, "缺少盘面→轮次绑定")
+        self.assertIn("Board: Board", CORE, "Board 未导出")
+
+    def test_every_feature_puts_board(self):
+        """12 功能每个 calc 落地都要 putBoard——盘面数据必须进对象，不能只留在 DOM。"""
+        # 单功能走字面量 feature；黄历 personal/pair 与三个合婚共用舞台，feat 运行时决定
+        for feature in ("bazi", "ziwei", "meihua", "liuyao", "qimen", "tarot", "astrology"):
+            self.assertIn('putBoard("' + feature + '"', JS, f"{feature} 未把盘面数据存进 Board")
+        self.assertGreaterEqual(JS.count("putBoard(feat,"), 2, "黄历 personal/pair 与合婚未走 Board")
+
+    def test_archive_fact_from_board_not_dom(self):
+        """归档盘面摘要必须从 Board 对象投影，禁止再复制 .p-result 的 innerHTML。"""
+        self.assertIn("var projected = boardView(", JS, "归档摘要未从 Board 投影")
+        self.assertIn("BOARD_VIEWS", JS, "缺少盘面投影注册表")
+        # 归档函数体内不得直接复制结果卡 innerHTML 作为摘要源
+        m = re.search(r"function archiveRound\(.*?\n  \}", JS, re.S)
+        self.assertIsNotNone(m, "找不到 archiveRound")
+        self.assertNotIn("resultCard.innerHTML", m.group(0), "归档仍在复制盘面 DOM HTML")
+
 
 if __name__ == "__main__":
     unittest.main()

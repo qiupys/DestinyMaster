@@ -11,6 +11,12 @@
 
 ---
 
+## v126 (2026-11-26)
+- [refactor] 盘面一等对象化：新增 reading-core.js 的 Board 对象（feature/kind/roundKey/data/params/castTime/createdAt，数据深拷贝+逐层冻结），Reading 持有冻结盘面，ReadingSession 以 roundKey 为键管理盘面仓库（含 latestBoard + bindBoardToRound）。12 功能 calc 落地全部 putBoard 存结构化盘面数据，DOM 降级为投影。
+- [refactor] 归档盘面摘要改为从 Board 对象投影（boardView）：牌面/卦象/六爻/奇门有专用投影，命盘类走通用事实摘要；归档卡不再复制旧 DOM HTML，历史回看读的是解读那一刻冻结的对象数据。按钮/事件从架构上不可能漏进历史卡（投影函数不生成按钮），不再只靠事后字符串清理。
+- [refactor] 命名整改：新增代码参数/局部变量一律用全名（featureName/roundKey/boardData/castTime 等），Board 字段无 rk/d 缩写；既有 Reading.rk 与 data-rk DOM 属性属 v116 契约保持不变。
+- [test] 护栏新增 Board 一等对象、12 功能 putBoard、归档从对象投影（禁止复制 .p-result innerHTML）三组断言；核心单测 37 项，浏览器矩阵 148 项。真实链路实测：塔罗/六爻 Board 登记与深冻结、归档卡无 AI 按钮且盘面摘要来自对象、零 JS 错误。
+
 ## v125 (2026-11-26)
 - [fix] 历史归档卡残留「AI 解读牌义」按钮：盘面摘要此前直接复制 innerHTML，绕过了只读化清理；改为解读正文与盘面摘要共用同一套 stripArchiveControls（剥掉 tool-ai/p-suggest/p-switch，保留追问条）。
 - [fix] 存量快照兼容：恢复 arcHtml 时清掉旧版归档卡里嵌着的 AI 按钮，历史回看不再留下触发新一轮解读的入口。

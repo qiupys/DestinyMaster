@@ -149,6 +149,56 @@
 
   Person.fromJSON = function (o) { return new Person(o); };
 
+  /* ============ Board：被解读的盘面（牌面/卦象/命盘/黄历） ============
+   * v126：盘面此前只活在 DOM 的 .p-result HTML + dataset.deck/lastGua 里，
+   * 快照存 HTML 字符串、归档复制 HTML——按钮混进历史卡、事件被覆盖都是这个根因。
+   * 现在盘面是一等对象：与 Person 一样是「解读那一刻的冻结快照」，DOM 只是它的投影。
+   *   feature = 所属功能；kind = 盘面种类（tarot 牌阵 / meihua 卦 / ziwei 命盘…）
+   *   rk      = 确定性身份（不含问题；问题+rk 才是一轮身份）
+   *   data    = 结构化盘面事实（cards/gua/palaces/bazi…）——「所见即所解」的真相源
+   *   params  = 锁盘参数（deduce 回传，保证解读用的盘 == 用户看到的盘）
+   *   when    = 起盘时刻
+   * 所有字段深冻结：一次解读用同一张盘，追问不得因外部数据变化而悄悄换盘。
+   */
+  function freezeDeep(value, visited) {
+    if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+    visited = visited || [];
+    if (visited.indexOf(value) >= 0) return value;
+    visited.push(value);
+    Object.keys(value).forEach(function (key) { freezeDeep(value[key], visited); });
+    return Object.freeze(value);
+  }
+  function cloneDeep(value) {
+    if (value === null || typeof value !== "object") return value;
+    if (Object.prototype.toString.call(value) === "[object Array]") {
+      return value.map(cloneDeep);
+    }
+    var result = {};
+    Object.keys(value).forEach(function (key) { result[key] = cloneDeep(value[key]); });
+    return result;
+  }
+
+  function Board(options) {
+    options = options || {};
+    this.feature = options.feature || "";
+    this.kind = options.kind || "";
+    this.roundKey = options.roundKey || "";
+    this.data = freezeDeep(cloneDeep(options.data || {}));
+    this.params = freezeDeep(cloneDeep(options.params || {}));
+    this.castTime = options.castTime || "";
+    this.createdAt = options.createdAt || now();
+  }
+
+  Board.prototype.toJSON = function () {
+    return {
+      feature: this.feature, kind: this.kind, roundKey: this.roundKey,
+      data: cloneDeep(this.data || {}), params: cloneDeep(this.params || {}),
+      castTime: this.castTime, createdAt: this.createdAt
+    };
+  };
+
+  Board.fromJSON = function (serialized) { return serialized ? new Board(serialized) : null; };
+
   /* ============ Reading：一次 AI 解读 ============ */
   function Reading(o) {
     o = o || {};
@@ -159,6 +209,7 @@
     this.answer = o.answer || "";                // markdown 正文（含系统免责）
     this.followups = [];                         // [{id, question, answer, ts}]
     this.persons = [];                           // Person[]：参与人快照（单人 1，双人 2）
+    this.board = Board.fromJSON(o.board);        // Board|null：解读那一刻的盘面快照
     this.status = o.status === "archived" ? "archived" : "active";
     this.ts = o.ts || "";
     var src = o.followups || [];
@@ -195,7 +246,9 @@
     for (var k = 0; k < this.persons.length; k++) persons.push(this.persons[k].toJSON());
     return {
       id: this.id, feature: this.feature, question: this.question, rk: this.rk,
-      answer: this.answer, followups: fus, persons: persons, status: this.status, ts: this.ts
+      answer: this.answer, followups: fus, persons: persons,
+      board: this.board ? this.board.toJSON() : null,
+      status: this.status, ts: this.ts
     };
   };
 
@@ -210,7 +263,40 @@
     this.busy = false;                           // 是否有流在写 current
     this.lastQ = "";                             // 当前盘面上一次问的问题（归档标题用）
     this.boardRk = "";                           // 当前盘面身份（换盘时更新）
+    this.boards = Object.create(null);           // rk → Board：本功能所有见过的盘面（含归档轮）
+    this.latestBoard = null;                     // 最近一次排出的盘面（rk 依赖提问时才确定时用）
   }
+
+  /* 登记一个盘面对象。后续 begin() 会把当前盘面冻结进 Reading；
+     归档轮凭自己的 rk 回仓库取盘面重建 DOM——不再保存/复制 HTML。 */
+  /* 登记盘面对象（新签名 setBoard(board)）；兼容旧签名 setBoard(question, rk)：
+     旧调用只更新身份字符串，不造 Board（黄历等历史路径仍可能这么调）。 */
+  ReadingSession.prototype.setBoard = function (boardOrQuestion, roundKeyText) {
+    if (typeof boardOrQuestion === "string" || boardOrQuestion == null) {
+      this.lastQ = boardOrQuestion || "";
+      this.boardRk = roundKeyText || "";
+      return null;
+    }
+    var stored = boardOrQuestion instanceof Board ? boardOrQuestion : Board.fromJSON(boardOrQuestion);
+    if (!stored) return null;
+    if (stored.roundKey) this.boards[stored.roundKey] = stored;
+    this.latestBoard = stored;
+    this.boardRk = stored.roundKey || this.boardRk;
+    return stored;
+  };
+
+  ReadingSession.prototype.getBoard = function (roundKey) {
+    if (!roundKey) return null;
+    return this.boards[roundKey] || null;
+  };
+
+  /* 把最近排出的盘面绑定到某个解读 rk（八字/紫微等 rk 含提问时才确定的 scope）。
+     盘面对象数据不变，只是换一个索引键——保证追问/归档能按 rk 找回同一张盘。 */
+  ReadingSession.prototype.bindBoardToRound = function (roundKey) {
+    if (!roundKey || !this.latestBoard) return null;
+    if (!this.boards[roundKey]) this.boards[roundKey] = this.latestBoard;
+    return this.boards[roundKey];
+  };
 
   ReadingSession.prototype.all = function () {
     var out = [];
@@ -243,7 +329,10 @@
   /* 开始新一轮：创建 current 并标记 streaming。调用方负责先归档旧轮。
      persons 是参与人快照（单人或双人），解读与追问都冻结在这一份上。 */
   ReadingSession.prototype.begin = function (question, rk, persons) {
-    this.current = new Reading({ feature: this.feature, question: question, rk: rk, persons: persons });
+    // 当前盘面对象冻结进本轮 Reading（追问/归档回看都读它，不读 DOM）。
+    // 旧调用（无 setBoard）沿用 roundKey 自建最小 Board，保证兼容。
+    var board = this.boards[rk] || (rk ? new Board({ feature: this.feature, roundKey: rk }) : null);
+    this.current = new Reading({ feature: this.feature, question: question, rk: rk, persons: persons, board: board });
     this.busy = true;
     this.lastQ = question;
     this.boardRk = rk || "";
@@ -270,30 +359,41 @@
     return r;
   };
 
-  ReadingSession.prototype.setBoard = function (question, rk) {
-    this.lastQ = question || "";
-    this.boardRk = rk || "";
-  };
-
   ReadingSession.prototype.toJSON = function () {
     var arcs = [];
     for (var i = 0; i < this.archived.length; i++) arcs.push(this.archived[i].toJSON());
+    var boards = {};
+    Object.keys(this.boards).forEach(function (roundKey) { boards[roundKey] = this.boards[roundKey].toJSON(); }, this);
     return {
       feature: this.feature, slot: this.slot,
       current: this.current ? this.current.toJSON() : null,
       archived: arcs, busy: false,               // 快照恢复时不可能是 streaming
-      lastQ: this.lastQ, boardRk: this.boardRk
+      lastQ: this.lastQ, boardRk: this.boardRk, boards: boards,
+      latestBoard: this.latestBoard ? this.latestBoard.toJSON() : null
     };
   };
 
   ReadingSession.fromJSON = function (o) {
     o = o || {};
     var s = new ReadingSession(o.feature, o.slot);
+    var storedBoards = o.boards || {};
+    Object.keys(storedBoards).forEach(function (roundKey) {
+      s.boards[roundKey] = Board.fromJSON(storedBoards[roundKey]);
+    });
     s.current = o.current ? Reading.fromJSON(o.current) : null;
     var arcs = o.archived || [];
-    for (var i = 0; i < arcs.length; i++) s.archived.push(Reading.fromJSON(arcs[i]));
+    for (var i = 0; i < arcs.length; i++) {
+      var r = Reading.fromJSON(arcs[i]);
+      // 老快照的归档轮没有 board 字段：从仓库按 rk 回填（有则回填，无则留空）
+      if (!r.board && r.rk && s.boards[r.rk]) r.board = s.boards[r.rk];
+      s.archived.push(r);
+    }
+    if (s.current && !s.current.board && s.current.rk && s.boards[s.current.rk]) {
+      s.current.board = s.boards[s.current.rk];
+    }
     s.lastQ = o.lastQ || "";
     s.boardRk = o.boardRk || "";
+    s.latestBoard = o.latestBoard ? Board.fromJSON(o.latestBoard) : null;
     return s;
   };
 
@@ -372,11 +472,24 @@
     return d ? d.note : "追问会沿用这一次的解读内容，不会重新推演";
   }
 
+  /* 跨 slot 按 rk 找盘面对象（归档卡回看时凭 rk 重建盘面，不读 HTML） */
+  function findBoard(featureName, roundKey) {
+    if (!roundKey) return null;
+    var sessions = sessionsOf(featureName);
+    for (var i = 0; i < sessions.length; i++) {
+      var board = sessions[i].getBoard(roundKey);
+      if (board) return board;
+    }
+    return null;
+  }
+
   return {
     FEATURES: FEATURES,
     def: def,
     outSel: outSel,
     Person: Person,
+    Board: Board,
+    findBoard: findBoard,
     Reading: Reading,
     ReadingSession: ReadingSession,
     session: session,

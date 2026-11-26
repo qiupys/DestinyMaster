@@ -384,4 +384,56 @@ t("outsOf/slotMap：重绘保护清单从注册表派生", function () {
   assert.strictEqual(Core.slotMap()["bz-result"], undefined, "普通功能不应产生 slot 映射");
 });
 
+/* ============ Board：盘面一等对象（v126） ============ */
+t("Board 深拷贝 + 深冻结：解读快照不受外部数据变化影响", function () {
+  var src = { cards: [{ slug: "ace", reversed: false }], spread: "three" };
+  var b = new Core.Board({ feature: "tarot", kind: "tarot|three", roundKey: "tarot|three|deckA",
+    data: src, params: { deck: "deckA" }, castTime: "t1" });
+  src.cards[0].reversed = true;                 // 外部改源数据
+  assert.strictEqual(b.data.cards[0].reversed, false, "Board 必须深拷贝，不被外部篡改");
+  assert(Object.isFrozen(b.data) && Object.isFrozen(b.data.cards) && Object.isFrozen(b.data.cards[0]),
+    "Board.data 必须逐层冻结");
+  assert(Object.isFrozen(b.params), "Board.params 必须冻结");
+  assert.throws(function () { b.data.cards[0].reversed = true; }, "冻结后不可写");
+});
+
+t("Board JSON 往返无损（cards/gua/palaces 任意结构）", function () {
+  var b = new Core.Board({ feature: "liuyao", kind: "liuyao", roundKey: "liuyao|t|879877",
+    data: { deck: "879877", gua: { name: "巽为风", yao: [6, 7, 8, 9, 6, 7] } },
+    params: { method: "manual", deck: "879877" }, castTime: "2026-11-25T16:01:50" });
+  var b2 = Core.Board.fromJSON(JSON.parse(JSON.stringify(b.toJSON())));
+  assert.deepStrictEqual(b2.toJSON(), b.toJSON());
+});
+
+t("Reading 持有 Board：begin 冻结当前盘面进 Reading", function () {
+  var s = Core.session("meihua");
+  s.setBoard({ feature: "meihua", kind: "meihua|gua", roundKey: "gua|11-3-8|t1",
+    data: { ben_gua: { index: 11, name: "泰" }, moving: 3 }, params: { method: "manual", moving: 3 }, when: "t1" });
+  var r = s.begin("事业如何？", "gua|11-3-8|t1", []);
+  assert(r.board, "Reading 必须持有盘面对象");
+  assert.strictEqual(r.board.data.ben_gua.name, "泰");
+  assert.strictEqual(r.board.roundKey, r.rk, "盘面身份与轮次身份一致");
+  s.finish(1, "解读");
+  var snap = Core.serializeFeature("meihua");
+  Core.drop("meihua");
+  Core.restoreFeature(snap);
+  var r2 = Core.session("meihua").current;
+  assert(r2.board && r2.board.data.ben_gua.name === "泰", "快照恢复后盘面对象无损");
+  assert(Core.findBoard("meihua", "gua|11-3-8|t1"), "仓库可按 rk 回查盘面");
+  Core.drop("meihua");
+});
+
+t("归档轮凭 rk 回查盘面（历史回看不依赖 DOM）", function () {
+  var s = Core.session("tarot");
+  var rk1 = "tarot|three|deckA", rk2 = "tarot|three|deckB";
+  s.setBoard({ feature: "tarot", kind: "tarot|three", roundKey: rk1, data: { cards: ["A"] }, params: {} });
+  s.begin("问题一", rk1, []); s.finish(1, "A");
+  s.setBoard({ feature: "tarot", kind: "tarot|three", roundKey: rk2, data: { cards: ["B"] }, params: {} });
+  s.begin("问题二", rk2, []); s.finish(2, "B");
+  s.archive();
+  assert.strictEqual(s.archived[0].board.data.cards[0], "B", "归档轮持有自己的盘面对象");
+  assert.strictEqual(Core.findBoard("tarot", rk1).data.cards[0], "A", "旧盘面仍在仓库可回看");
+  Core.drop("tarot");
+});
+
 console.log("=== " + pass + " 项通过 ===");
