@@ -1,39 +1,43 @@
-"""紫微去重回归（v128）：同盘 + 同运限 + 同宫位 + 同问题必须复用历史解读。
+"""紫微去重回归（v129）：接入统一工厂后，dedupe_key 与其他 10 功能完全同构。
 
-历史 bug：前端从不传 key，后端缓存条件 `if key` 永远为假，紫微每次都重新生成；
-且旧记录 dedupe_key 全为 NULL，补传 key 也匹配不到。本测试同时覆盖：
-- 稳定指纹排除随机 chart_id 与每日变化的「今日运限」；
-- 问题/流年/宫位任一变化都起新一轮；
-- 存量 NULL 记录自动回填后可被命中；
+- 同出生 + 同问题（含时点/宫位措辞）→ 复用历史解读；
+- 问题/时点/出生任一变化都起新一轮；
+- 存量旧格式记录迁移到统一 key 后可被命中；
 - force=1 仍可强制重新生成。
 """
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import ai
+import chart as ziwei_chart
 import history
-import main
+import rag
+from features import common as feature_common
 
 from testkit import ApiTestCase, event_hid, event_text
+
+BIRTH_PARAMS = {"year": 1990, "month": 6, "day": 15, "hour": 10,
+                "gender": "男", "calendar": "solar"}
 
 
 class TestZiweiDedupe(ApiTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.prepare_seq = 0
         cls.engine_patchers = [
-            patch.object(main, "get_chart", return_value={"mock": "chart"}),
-            patch.object(main, "horoscope_for",
+            patch.object(ziwei_chart, "get_chart", return_value={"mock": "chart"}),
+            patch.object(ziwei_chart, "horoscope_for",
                          side_effect=lambda *a, **k: {"mock": "horo", "year": a[1] if len(a) > 1 else None}),
+            patch.object(rag, "retrieve", return_value=[]),
         ]
         for p in cls.engine_patchers:
             p.start()
 
         def fake_prepare(chart, question, target_horo=None, target_label="", focus_terms=None):
-            cls.prepare_seq += 1
-            # 稳定段固定；今日运限段按调用序号变化，用来验证指纹不受其干扰。
+            # 稳定段固定；今日运限段按序号变化，验证统一 payload 不受其干扰。
+            cls.prepare_seq = getattr(cls, "prepare_seq", 0) + 1
             digest = f"STABLE_BIRTH_CHART\n【当前运限（今日）】TODAY_{cls.prepare_seq}"
             target = f"【{target_label}】\nMOCK_HORO" if target_label else ""
             return {
@@ -50,104 +54,71 @@ class TestZiweiDedupe(ApiTestCase):
             p.stop()
         super().tearDownClass()
 
-    def _chart_id(self, pid: int, token: str) -> str:
-        resp = self.client.get("/api/chart", params={
-            "date": "1990-6-15", "timeIndex": 10, "gender": "男",
-            **self.auth_params(pid, token),
-        })
-        self.assertTrue(resp.json().get("ok"), resp.text)
-        return resp.json()["id"]
-
-    def _ask(self, pid, token, chart_id, question, focus="", year=None, force=0):
-        params = {"id": chart_id, "q": question,
-                  **self.auth_params(pid, token)}
-        if focus:
-            params["focus"] = focus
-        if year:
-            params["year"] = year
+    def _ask(self, pid, token, question, birth=None, force=0):
+        params = {**(birth or BIRTH_PARAMS), "q": question, **self.auth_params(pid, token)}
         if force:
             params["force"] = force
-        return self.get_sse("/api/deduce", params)[0]
+        return self.get_sse("/api/ziwei/deduce", params)[0]
 
     def test_same_question_reuses_history(self):
         pid, token = self.new_user()
-        chart_id = self._chart_id(pid, token)
-        params = dict(question="以「命宫」为主体，我的优势是什么？",
-                      focus="命宫,三方四正,四化", year=2027)
-        first = self._ask(pid, token, chart_id, **params)
+        question = "以「命宫」为主体，我的优势是什么？"
+        first = self._ask(pid, token, question)
         self.assertFalse(any(e.get("cached") for e in first))
         first_hid = event_hid(first)
         calls = len(self.ai_mock.prompts)
 
-        second = self._ask(pid, token, chart_id, **params)
+        second = self._ask(pid, token, question)
         self.assertTrue(any(e.get("cached") for e in second), second)
         self.assertEqual(len(self.ai_mock.prompts), calls, "命中历史不应再调用模型")
         self.assertEqual(event_text(second), event_text(first))
         self.assertEqual(event_hid(second), first_hid, "回放应带回原 hid，追问写回同一条历史")
 
-    def test_new_chart_id_same_birth_still_reuses(self):
+    def test_question_and_time_and_birth_changes_start_new_round(self):
         pid, token = self.new_user()
-        first_id = self._chart_id(pid, token)
-        self._ask(pid, token, first_id, "财帛宫财运如何？", focus="财帛宫,三方四正,四化")
-        calls = len(self.ai_mock.prompts)
-
-        # 重新排盘会生成随机 chart_id；出生盘面相同仍应命中同一解读。
-        second_id = self._chart_id(pid, token)
-        self.assertNotEqual(second_id, first_id)
-        events = self._ask(pid, token, second_id, "财帛宫财运如何？",
-                           focus="财帛宫,三方四正,四化")
-        self.assertTrue(any(e.get("cached") for e in events), events)
-        self.assertEqual(len(self.ai_mock.prompts), calls)
-
-    def test_question_year_focus_changes_start_new_round(self):
-        pid, token = self.new_user()
-        chart_id = self._chart_id(pid, token)
-        base = dict(question="官禄宫事业如何？", focus="官禄宫,三方四正,四化", year=2027)
-        self._ask(pid, token, chart_id, **base)
-
+        base = "以「官禄宫」为主体，事业如何？"
+        self._ask(pid, token, base)
         variants = [
-            dict(base, question="官禄宫明年要不要跳槽？"),
-            dict(base, year=2028),
-            dict(base, focus="财帛宫,三方四正,四化"),
+            ("以「官禄宫」为主体，明年要不要跳槽？", None),
+            ("只看2033年以「官禄宫」为主体，事业如何？", None),
+            (base, {**BIRTH_PARAMS, "hour": 14}),   # 换时辰 = 换盘
         ]
-        for idx, variant in enumerate(variants):
-            events = self._ask(pid, token, chart_id, **variant)
+        for idx, (question, birth) in enumerate(variants):
+            events = self._ask(pid, token, question, birth=birth)
             self.assertFalse(any(e.get("cached") for e in events),
-                             f"问题/流年/宫位变化必须起新一轮 #{idx}")
+                             f"问题/时点/出生变化必须起新一轮 #{idx}")
 
-    def test_legacy_null_key_record_is_backfilled_and_reused(self):
+    def test_legacy_record_migrates_to_unified_key(self):
         pid, token = self.new_user()
-        chart_id = self._chart_id(pid, token)
-        question = "以「命宫」为主体，结合三方四正与四化，我的优势与需要警惕之处分别是什么？"
-        focus = "命宫,三方四正,四化"
-        # 模拟升级前落盘的记录：dedupe_key 为 NULL。
+        question = "以「命宫」为主体，我的优势与需要警惕之处分别是什么？"
         legacy_payload = {
             "ziwei_data": {"digest": "STABLE_BIRTH_CHART\n【当前运限（今日）】OLD_DAY",
-                           "target": "", "kb_block": "", "rag_query": "", "rag_extra": []},
+                           "target": "", "kb_block": "", "rag_query": "ziwei mock", "rag_extra": []},
             "chart_id": "old_random_id", "year": None, "month": None,
-            "focus": ["命宫", "三方四正", "四化"], "rag_query": "", "rag_extra": [],
+            "focus": ["命宫", "三方四正", "四化"], "rag_query": "ziwei mock", "rag_extra": [],
         }
-        hid = history.save(pid, "ziwei", question, "【历史解读】旧答案",
-                           legacy_payload, None)
+        hid = history.save(pid, "ziwei", question, "【历史解读】旧答案", legacy_payload, None)
         calls = len(self.ai_mock.prompts)
 
-        # 首次请求触发该用户回填；同题必须命中旧记录而不是重新生成。
-        events = self._ask(pid, token, chart_id, question, focus=focus)
+        events = self._ask(pid, token, question)
         self.assertTrue(any(e.get("cached") for e in events), events)
         self.assertIn("【历史解读】旧答案", event_text(events))
         self.assertEqual(event_hid(events), hid)
-        self.assertEqual(len(self.ai_mock.prompts), calls, "命中回填的历史不应调用模型")
+        self.assertEqual(len(self.ai_mock.prompts), calls, "命中迁移的历史不应调用模型")
 
         row = history.profile_store.db().execute(
-            "SELECT dedupe_key FROM feature_history WHERE id=?", (hid,)).fetchone()
-        self.assertEqual(row["dedupe_key"], history.ziwei_fingerprint(legacy_payload, question))
+            "SELECT payload, dedupe_key FROM feature_history WHERE id=?", (hid,)).fetchone()
+        new_payload = json.loads(row["payload"])
+        self.assertNotIn("chart_id", new_payload)
+        self.assertNotIn("【当前运限（今日）】", new_payload["ziwei_data"]["digest"])
+        expected = feature_common.dedupe_key(pid, "ziwei", new_payload, question)
+        self.assertEqual(row["dedupe_key"], expected, "存量记录必须用统一 dedupe_key")
 
     def test_force_regenerates(self):
         pid, token = self.new_user()
-        chart_id = self._chart_id(pid, token)
-        self._ask(pid, token, chart_id, "福德宫精神状态如何？", focus="福德宫,三方四正,四化")
+        question = "以「福德宫」为主体，精神状态如何？"
+        self._ask(pid, token, question)
         calls = len(self.ai_mock.prompts)
-        events = self._ask(pid, token, chart_id, "福德宫精神状态如何？",
-                           focus="福德宫,三方四正,四化", force=1)
+        events = self._ask(pid, token, question, force=1)
         self.assertFalse(any(e.get("cached") for e in events), events)
         self.assertEqual(len(self.ai_mock.prompts), calls + 1)

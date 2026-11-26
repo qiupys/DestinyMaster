@@ -84,7 +84,8 @@ class TestChainMatrix(ApiTestCase):
     def _deduce_url(self, feature: str) -> str:
         if feature == "history":
             return "/api/history/followup"
-        return "/api/deduce" if self._api(feature).get("chart_params") else f"/api/{feature}/deduce"
+        # 全功能统一 /api/<feature>/deduce（含紫微，v129 起不再有独立 /api/deduce）。
+        return f"/api/{feature}/deduce"
 
     def _deduce(self, feature: str, params: dict) -> tuple[list[dict], object]:
         resp = self.client.get(self._deduce_url(feature), params=params)

@@ -68,9 +68,13 @@ class TestZiweiPalaceAskFrontend(unittest.TestCase):
     def test_chips_use_subject_wording(self):
         self.assertIn("以「\" + pn + \"」为主体，结合三方四正与四化", JS)
 
-    def test_focus_palace_passed_to_backend(self):
-        self.assertIn("focusPalace", JS)
-        self.assertIn('"&focus=" + encodeURIComponent(focus)', JS)
+    def test_subject_wording_goes_into_question_text(self):
+        """v129 起宫位不再走专属 focus 参数：主体措辞本身写进问题文本，
+        与其他功能一样由 q= 统一传给后端（RAG 从问题文本提取关键词）。"""
+        self.assertIn("为主体，结合三方四正与四化）", JS)
+        self.assertIn("zwPN(psel.name)", JS)
+        self.assertIn("q: q", JS)  # 统一工厂入口用通用 q 参数
+        self.assertNotIn('"&focus=" + encodeURIComponent(focus)', JS)
 
     def test_trine_offsets_are_correct(self):
         """三方四正快捷跳转偏移须为 +4/+8/+6，与命格解析口径一致。"""

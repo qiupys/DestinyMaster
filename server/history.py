@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime
 
@@ -107,58 +106,88 @@ def find_cached_entry(profile_id: int, feature: str, dedupe_key: str) -> tuple[i
     return (row["id"], row["answer"]) if row else None
 
 
-# ── 紫微专属稳定指纹 ──────────────────────────────────────────────────────────
-# 通用 dedupe_key 对整个 payload 取 hash，但紫微 payload 里有两类易变字段：
-#   1. chart_id：每次排盘 uuid4 随机，刷新页面即变；
-#   2. ziwei_data.digest 末尾的「当前运限（今日）」：随系统日期变化。
-# 若直接套通用 key，同一张盘 + 同一问题在刷新/隔天都会被判成新一轮，重复消耗模型。
-# 这里只取真正决定解读身份的字段：出生盘面（去掉今日运限）+ 选定流年/月 +
-# 宫位聚焦词 + 问题原文，保证「同盘 + 同运限 + 同宫位 + 同问题」跨刷新/跨天稳定命中。
+# ── 存量紫微记录归一（一次性迁移）────────────────────────────────────────────
+# 紫微曾长期不落 dedupe_key；v128 又用过一版"专属指纹"。两者都用统一工厂的
+# dedupe_key 重算：用档案出生信息 + 旧 payload 的盘面事实重建标准 payload，
+# 让升级前/中间版本的对话同样能被同题命中。只迁移"看上去是旧格式"的记录，
+# 不碰已是新格式的有效 key。
 _ZIWEI_TODAY_MARK = "【当前运限（今日）】"
-_ZIWEI_BACKFILLED: set[tuple[str, int]] = set()  # (库路径, 用户) 双键，测试隔离库互不干扰
+_MIGRATED: set[tuple[str, int]] = set()  # (库路径, 用户) 双键，测试隔离库互不干扰
 
 
-def ziwei_fingerprint(payload: dict, question: str) -> str:
-    """紫微推演的稳定去重键；与用户/功能隔离由 find_cached_entry 的 WHERE 条件负责。"""
-    zw = payload.get("ziwei_data") or {}
-    digest = zw.get("digest") or ""
-    stable_digest = digest.split(_ZIWEI_TODAY_MARK)[0].strip()
-    raw = json.dumps({
-        "d": stable_digest,
-        "y": payload.get("year"),
-        "m": payload.get("month"),
-        "f": payload.get("focus") or [],
-        "q": question,
-    }, ensure_ascii=False, sort_keys=True)
-    return hashlib.md5(raw.encode()).hexdigest()[:16]
+def normalize_legacy_ziwei(payload: dict, birth: dict | None = None) -> dict:
+    """旧 payload（含 chart_id / 今日运限 / kb_block）→ 统一工厂的标准 payload。"""
+    from features import calculations as calculations_layer
+    raw = dict(payload.get("ziwei_data") or {})
+    digest = (raw.get("digest") or "").split(_ZIWEI_TODAY_MARK)[0].strip()
+    target = raw.get("target") or ""
+    target_year, target_month = calculations_layer.parse_target_period(target)
+    # 旧 payload 显式记过 year/month 的（前端曾单独传参），优先沿用，避免问题文本没写年份时丢失时点。
+    if payload.get("year") and not target_year:
+        target_year = payload.get("year")
+        target_month = payload.get("month")
+    birth = birth or {}
+    birth_date = birth.get("date")
+    if not birth_date and all(birth.get(k) is not None for k in ("year", "month", "day")):
+        birth_date = f"{birth['year']}-{birth['month']}-{birth['day']}"
+    normalized_birth = {
+        "date": str(birth_date or ""),
+        "time_index": birth.get("timeIndex"),
+        "gender": birth.get("gender") or "男",
+        "calendar": birth.get("calendar") or "solar",
+    }
+    data = {
+        "digest": digest, "target": target,
+        "rag_query": raw.get("rag_query") or payload.get("rag_query") or "",
+        "rag_extra": raw.get("rag_extra") or payload.get("rag_extra") or [],
+    }
+    return {
+        "ziwei_data": data,
+        "birth": normalized_birth,
+        "target_year": target_year, "target_month": target_month,
+        "rag_query": data["rag_query"], "rag_extra": data["rag_extra"],
+        "fact": digest + ("\n" + target if target else ""),
+        "feature": "ziwei", "feature_name": FEATURE_NAMES["ziwei"],
+    }
 
 
-def ensure_ziwei_fingerprints(profile_id: int) -> None:
-    """把存量紫微历史的 dedupe_key 回填成稳定指纹（每个进程/用户只做一次）。
+def migrate_legacy_ziwei(profile_id: int) -> None:
+    """把存量紫微历史归一成统一 payload + dedupe_key（每进程/用户只做一次）。
 
-    老版本前端从未传 key，紫微落盘的 dedupe_key 全是 NULL，即使修好命中逻辑
-    也匹配不到历史。这里按已落盘的 payload 反算指纹并回写，让升级前的对话
-    同样能被同题复用。解析失败的记录留空，不猜、不覆盖已有有效 key。
+    通过回调注入 key 计算，避免 history ↔ features 循环 import；失败留痕不猜测。
     """
     marker = (str(profile_store.DB_PATH), profile_id) if profile_id else None
-    if not marker or marker in _ZIWEI_BACKFILLED:
+    if not marker or marker in _MIGRATED:
         return
-    _ZIWEI_BACKFILLED.add(marker)  # 先占位，避免回填异常时每轮请求反复扫全表
+    _MIGRATED.add(marker)
     _ensure_table()
+    from features import common as common_layer
+    profile = profile_store.get_profile(profile_id) or {}
+    birth = profile.get("birth") or {}
+    if birth.get("timeIndex") is None:
+        hour = birth.get("hour")
+        birth = {**birth, "timeIndex": (
+            6 if hour in (None, "") else (12 if int(hour) == 23 else (int(hour) + 1) // 2)
+            if birth.get("know_time") is not False else 6)}
     c = profile_store.db()
     rows = c.execute(
         "SELECT id, question, payload FROM feature_history "
-        "WHERE profile_id=? AND feature='ziwei' AND dedupe_key IS NULL",
+        "WHERE profile_id=? AND feature='ziwei'",
         (profile_id,),
     ).fetchall()
     for row in rows:
         try:
-            payload = json.loads(row["payload"])
+            old = json.loads(row["payload"])
         except (ValueError, TypeError):
-            log.warning("紫微历史指纹回填跳过非法 payload id=%s", row["id"])
+            log.warning("紫微历史迁移跳过非法 payload id=%s", row["id"])
             continue
-        key = ziwei_fingerprint(payload, row["question"])
-        c.execute("UPDATE feature_history SET dedupe_key=? WHERE id=?", (key, row["id"]))
+        # 新格式：无 chart_id 且 ziwei_data 无 kb_block，说明已是统一工厂落的盘，跳过。
+        if "chart_id" not in old and "kb_block" not in (old.get("ziwei_data") or {}):
+            continue
+        new_payload = normalize_legacy_ziwei(old, birth)
+        key = common_layer.dedupe_key(profile_id, "ziwei", new_payload, row["question"])
+        c.execute("UPDATE feature_history SET payload=?, dedupe_key=? WHERE id=?",
+                  (json.dumps(new_payload, ensure_ascii=False), key, row["id"]))
     if rows:
         c.commit()
 

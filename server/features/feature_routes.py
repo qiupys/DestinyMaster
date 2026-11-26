@@ -146,7 +146,13 @@ def _mark_identity(feature: str, params: dict, payload: dict) -> None:
             "name", "year", "month", "day", "hour", "minute", "gender", "calendar")]
 
 
-def _make_calc_and_deduce(feature: str, compute_fn):
+def _make_calc_and_deduce(feature: str, compute_fn, prompt_builder=None):
+    """注册一功能的 calc/deduce 统一路由。
+
+    prompt_builder 是可选的函数 (payload, question, up, recent) -> str：
+    绝大多数功能用通用 ai.build_prompt；紫微有独立的 12 宫/四化推演规则集，
+    通过同一个回调插槽接入，而不是再写一套独立的 dedupe/缓存/落盘路由。
+    """
     async def calc(p: dict = Depends(common_params)):
         # compute_fn 必须 async 执行：py-iztro 依赖 PythonMonkey，非主线程调用会段错误。
         payload = _compute(feature, compute_fn, p)
@@ -185,17 +191,16 @@ def _make_calc_and_deduce(feature: str, compute_fn):
         if feature == "meihua" and not context.bazi_complete(pid):
             return {"ok": False, "error": "梅花解卦需结合您的八字命局以提高准确度，请先到「个人中心」补全出生年月日与出生时间（含时辰）。"}
 
+        # 紫微存量记录（老格式 / v128 专属指纹）在首次解读时归一到统一 key，
+        # 之后与其他功能完全一样走 common.dedupe_key + find_cached_entry。
+        if feature == "ziwei":
+            history.migrate_legacy_ziwei(pid)
         key = common.dedupe_key(pid, feature, payload, question)
         if not p.get("force"):
             cached = history.find_cached_entry(pid, feature, key)
             if cached:
                 return common.sse_replay(cached[1], cached[0])
 
-        if feature == "tarot":
-            excerpts = tarot.retrieve_excerpts(payload.get("cards", []), question, total_chars=5200)
-        else:
-            query = (payload.get("rag_query", "") or "") + " " + question
-            excerpts = common._retrieve(feature, query, payload.get("rag_extra"), payload)
         up, recent = context.personalize(pid, feature)
         up, injected = context.augment_profile(
             pid, feature, up, use_bazi=p.get("use_bazi") or 0, use_star=p.get("use_star") or 0,
@@ -207,10 +212,19 @@ def _make_calc_and_deduce(feature: str, compute_fn):
         )
         if injected:
             payload["_injected"] = injected
-        prompt = ai.build_prompt(
-            history.FEATURE_NAMES[feature], payload.get("fact", ""), question,
-            excerpts, user_profile=up, history=recent,
-        )
+        if prompt_builder:
+            # 紫微专属规则集通过回调接入，dedupe / 缓存 / 落盘仍走本工厂。
+            prompt = prompt_builder(payload, question, up, recent)
+        else:
+            if feature == "tarot":
+                excerpts = tarot.retrieve_excerpts(payload.get("cards", []), question, total_chars=5200)
+            else:
+                query = (payload.get("rag_query", "") or "") + " " + question
+                excerpts = common._retrieve(feature, query, payload.get("rag_extra"), payload)
+            prompt = ai.build_prompt(
+                history.FEATURE_NAMES[feature], payload.get("fact", ""), question,
+                excerpts, user_profile=up, history=recent,
+            )
 
         def persist(text: str) -> int:
             return history.save(pid, feature, question, text, payload, key)
@@ -294,3 +308,6 @@ _make_calc_and_deduce("ziwei_marriage", calculations.calc_ziwei_marriage)
 _make_calc_and_deduce("astrology_marriage", calculations.calc_astrology_marriage)
 _make_calc_and_deduce("liuyao", calculations.calc_liuyao)
 _make_calc_and_deduce("qimen", calculations.calc_qimen)
+# 紫微与其他功能共用同一套 calc/deduce/dedupe/缓存/落盘链路；
+# 仅 prompt 规则集因十二宫推演体量较大，通过回调插槽接入。
+_make_calc_and_deduce("ziwei", calculations.calc_ziwei, ai.build_ziwei_prompt_from_payload)

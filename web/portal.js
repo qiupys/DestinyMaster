@@ -2677,11 +2677,10 @@
     return true;
   }
   /* ================= AI 流式解读（共用） ================= */
-  /* 从 deduce URL 反推 feature（/api/<feat>/deduce 或 /api/deduce 紫微） */
+  /* 从 deduce URL 反推 feature：全功能统一 /api/<feat>/deduce（含紫微） */
   function featureOfUrl(url) {
     var m = /\/api\/([a-z_]+)\/deduce/.exec(url);
-    if (m) return m[1];
-    return "ziwei";   // /api/deduce 是紫微专用
+    return m ? m[1] : "ziwei";
   }
   /* 对话导入用户信息：按注册表 arity 造 Person 快照。
      本人来自登录档案 S.profile / S.profileBirth；对方信息由双人功能在发起解读前
@@ -3987,25 +3986,32 @@
       if (input) input.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); zwAsk(input.value.trim()); } };
     }
   }
-  /* AI 推演：紫微与其他功能走完全相同的统一链路（/api/deduce → SSE → hid → 追问）。
-     推演参数用命盘 id 保证与本盘一致；渲染/免责/追问条全部复用通用 streamToUrl。 */
+  /* AI 推演：紫微与其余功能走同一个统一工厂（/api/ziwei/deduce → SSE → hid → 追问）。
+     出生参数用通用 year/month/day/hour，目标流年像八字一样拼进问题文本（不造专属参数），
+     宫位主体措辞本身已在问题里；盘面事实由后端从出生参数确定性重建。 */
   function zwAsk(q, outSel, inputSel, focusPalace) {
     var st = zwS();
     if (!q) { toast("请先写下你想问的问题"); var i0 = $(inputSel || "#zw-q"); if (i0) i0.focus(); return; }
-    if (!st.id) { toast("命盘未就绪，请稍候"); return; }
+    if (!st.id || !st.birth) { toast("命盘未就绪，请稍候"); return; }
     var out = $(outSel || "#zw-ai-out");
     if (!out) return;
-    // 运势盘选中的流年必须随提问带给后端，否则后端只拿到命盘 id，只能按今日运限解读
-    // （用户在运势盘选了 2027，AI 却仍按 2026 丙午年作答）。命格/本命视图不传，保持只论本命的口径。
+    // 运势盘选中的流年拼进问题文本——与八字「只看 2027 流年」同一套语义，
+    // 后端从问题解析目标时点；命格/本命视图不拼，保持只论本命的口径。
     var year = st.view === "fortune" ? (parseInt(st.year, 10) || "") : "";
-    // 宫位提问：把主体宫 + 三方四正/四化作为检索聚焦词传给后端，保证文献覆盖面，
-    // 而非只命中单宫词条（解读口径由后端 prompt 的「主体宫位法则」约束）。
-    var focus = focusPalace ? focusPalace + ",三方四正,四化" : "";
-    // 轮次身份与后端指纹对齐：命盘 + 流年 + 宫位。任一变化都是新一轮，不命中旧解读、不塞进旧轮。
-    var rk = "chart|" + st.id + (year ? "|" + year : "") + (focus ? "|" + focus : "");
+    if (year && q.indexOf(String(year)) < 0) q = "（只看 " + year + " 年流年）" + q;
+    // 轮次身份与后端 payload 对齐：命盘身份 + 时点 + 主体宫。变化即新一轮。
+    var focus = focusPalace ? ("|" + focusPalace) : "";
+    var rk = "chart|" + st.id + (year ? "|" + year : "") + focus;
     if (!prepareNewQuestion(out, q, rk)) return;
-    var url = "/api/deduce?id=" + encodeURIComponent(st.id) + "&q=" + encodeURIComponent(q) +
-      (year ? "&year=" + year : "") + (focus ? "&focus=" + encodeURIComponent(focus) : "") + authParam();
+    var birth = st.birth;
+    var seg = String(birth.date || "").split("-");
+    var params = new URLSearchParams({
+      year: seg[0] || "", month: seg[1] || "", day: seg[2] || "",
+      hour: birth.hour != null ? birth.hour : (birth.timeIndex === 12 ? 23 : (birth.timeIndex === 0 ? 0 : birth.timeIndex * 2 - 1)),
+      minute: birth.minute || 0, gender: birth.gender || "男",
+      calendar: birth.calendar || "solar", q: q
+    });
+    var url = "/api/ziwei/deduce?" + params.toString() + authParam();
     streamToUrl(url, "AI 解读", q, out, false, rk);
   }
   function zwHoro(retried) {

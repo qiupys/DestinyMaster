@@ -11,6 +11,14 @@
 
 ---
 
+## v129 (2026-11-26)
+- [refactor] 紫微彻底并入统一工厂：删除独立 `/api/deduce` 与紫微专属指纹（`ziwei_fingerprint`/`ensure_ziwei_fingerprints`），紫微改走 `/api/ziwei/calc` + `/api/ziwei/deduce`，与其他 10 功能共用同一套 dedupe_key / 缓存命中 / SSE 回放 / 落盘 / 追问链路。
+- [refactor] 消除紫微专属参数：v128 曾给紫微造 `date`/`time_index`/`target_year` 等新参数，实则八字选流年只把「只看 2027 流年」拼进问题文本即可；紫微改为复用通用 `year/month/day/hour`，hour→时辰用共用 `hour_to_time_index`，目标流年用共用 `parse_target_period` 从问题文本解析，宫位主体措辞本身就在问题里。
+- [refactor] 统一工厂新增可选 `prompt_builder` 回调插槽：紫微十二宫专属规则集通过回调接入（单一 prompt 来源，追问也复用），不再为此另写一套路由。calc_ziwei 的 payload 显式带出生身份，排除易变的今日运限与随机 chart_id。
+- [fix] 存量紫微历史（老格式 / v128 指纹）首次解读时归一到统一 payload 与 dedupe_key，升级前的对话同样能被同题命中。
+- [refactor] 本地目录 `ziwei-upgrade` 更名为 `destiny-master`（线上部署目录 `/opt/ziwei` 不变）；README 与测试脚注路径同步。
+- [test] 紫微测试改为打统一接口并断言统一 key；全矩阵 API 61（12 skip）/对象 37/契约 169/变异 4/E2E 45/浏览器 148 全绿。
+
 ## v128 (2026-11-26)
 - [fix] 紫微同盘+同流年+同宫位+同问题重复生成解读：根因是前端从未向 /api/deduce 传去重 key，而后端命中条件 `if key` 恒为假，紫微是所有功能里唯一从未命中过历史缓存的；存量记录 dedupe_key 也全为 NULL。
 - [refactor] 紫微专属稳定指纹 `history.ziwei_fingerprint`：只取出生盘面（剔除每日变化的「当前运限（今日）」段）+ 选定流年/月 + 聚焦宫位 + 问题原文，排除随机 chart_id 与 RAG 结果；后端在落盘前据此查 feature_history，命中直接回放原 answer/hid。

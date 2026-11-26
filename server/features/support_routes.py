@@ -37,14 +37,11 @@ def _followup_prompt(pid: int, item: dict, question: str, up: str, recent: list[
     payload = item.get("payload") or {}
     prior = _prior_rounds(item, recent)
     if feature == "ziwei":
-        data = dict(payload.get("ziwei_data") or {})
-        kws = rag.keywords_from(question + " " + item.get("question", ""),
-                                extra=(payload.get("rag_extra") or []))
-        kb = rag.retrieve(kws)
-        if kb:
-            data["kb_block"] = ("【知识库摘录（星曜/宫位/格局释义，供引用增强解读；"
-                                "若与盘面数据冲突，以盘面数据为准）】\n" + "\n\n".join(kb) + "\n\n")
-        return ai.build_ziwei_prompt(data, question, prior, user_profile=up)
+        # 与首轮解读共用同一个 prompt 回调：RAG 实时检索、规则集单一来源。
+        query_payload = dict(payload)
+        query_payload["rag_query"] = ((payload.get("rag_query") or "") + " "
+                                      + item.get("question", "")).strip()
+        return ai.build_ziwei_prompt_from_payload(query_payload, question, up, prior)
     if feature == "tarot":
         excerpts = tarot.retrieve_excerpts(payload.get("cards", []), question, total_chars=5200)
     else:

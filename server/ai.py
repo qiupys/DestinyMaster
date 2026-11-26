@@ -18,6 +18,24 @@ import prompt as _zw_prompt
 prepare_ziwei = _zw_prompt.prepare_ziwei
 build_ziwei_prompt = _zw_prompt.assemble_ziwei
 
+
+def build_ziwei_prompt_from_payload(payload: dict, question: str,
+                                    user_profile: str, recent: list) -> str:
+    """统一工厂的紫微 prompt 回调：从确定性 payload 装配专属解读 prompt。
+
+    RAG 文献在解读时重新检索，不写入 payload —— 与其余功能的「盘面事实入 key、
+    文献不入 key」口径一致，保证同盘同题跨刷新/跨天稳定命中历史缓存。
+    """
+    import rag as _rag
+    data = dict(payload.get("ziwei_data") or {})
+    kws = _rag.keywords_from(question + " " + (payload.get("rag_query") or ""),
+                             extra=payload.get("rag_extra") or [])
+    kb = _rag.retrieve(kws)
+    if kb:
+        data["kb_block"] = ("【知识库摘录（星曜/宫位/格局释义，供引用增强解读；"
+                            "若与盘面数据冲突，以盘面数据为准）】\n" + "\n\n".join(kb) + "\n\n")
+    return _zw_prompt.assemble_ziwei(data, question, recent, user_profile=user_profile)
+
 DISCLAIMER = (
     "以上内容基于传统命理文献与象征体系作参考性解读，仅供自我探索与文化娱乐，"
     "不构成任何医疗、法律、投资或其他现实决策建议。命运始终掌握在自己手中。"

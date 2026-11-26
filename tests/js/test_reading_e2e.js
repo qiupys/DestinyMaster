@@ -310,7 +310,8 @@ function sessionState(page, feature, slot) {
     // ---- I. 紫微：切宫位/切视图不得丢对话（对象与 DOM 投影必须一致） ----
     console.log("\n[I] 紫微切宫位保留解读与追问");
     await page.evaluate(function () { window.ReadingCore.clearAll(); });
-    await page.route("**/api/deduce*", function (route) {
+    // v129 起紫微与其余功能共用 /api/<feature>/deduce，不再有独立 /api/deduce。
+    await page.route("**/api/ziwei/deduce*", function (route) {
       route.fulfill({ status: 200, contentType: "text/event-stream",
         body: sse("紫微 mock 宫位解读：以该宫为主体，结合三方四正。", 400001) });
     });

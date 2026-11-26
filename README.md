@@ -85,9 +85,9 @@ SQLite  用户档案 + 全功能历史（含追问链）
 ## 目录结构
 
 ```
-ziwei-upgrade/
+destiny-master/
 ├─ server/                 # FastAPI 后端
-│  ├─ main.py              # 应用入口：档案、紫微排盘/运限数据层、紫微推演入口
+│  ├─ main.py              # 应用入口：档案、紫微排盘/运限数据层（推演统一在 features/feature_routes）
 │  ├─ feature_api.py       # 兼容门面：router / _with_disclaimer
 │  ├─ features/            # common / context / calculations / feature_routes / support_routes
 │  ├─ astrology.py         # 占星本命盘（Swiss Ephemeris）
