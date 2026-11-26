@@ -11,6 +11,11 @@
 
 ---
 
+## v144 (2026-11-26)
+- [fix] 追问频繁出现「解读失败：network error」：根因不是并发限制（全天 429 为 0），而是 `/api/history/followup` 漏配 SSE 长读超时，命中常规 `/api/` 的 nginx 默认 60s，模型首包稍慢就被掐断。线上 nginx 增加追问精确 location：`proxy_read_timeout 300s` + `proxy_buffering off` + `X-Accel-Buffering no`，不共享 deduce 的并发 2 额度，避免追问挤占首轮解读。
+- [fix] `features.common.answer_events` 全链路 SSE 加 15s 注释帧（`: ping`）保活：等待模型增量期间持续有字节，任何中间层都不会因静默超时断流；注释不是 `data:` 事件，前端解析器忽略，正文/免责/落盘/[DONE] 语义不变。取消时取消上游任务、关闭异步生成器并留痕，不再静默吞异常。
+- [test] 新增 `tests/api/test_sse_heartbeat.py`：验证长首包保活帧、正文顺序与落盘不变、取消清理。静态前端未改，不 bump 版本号；线上 nginx 配置先备份至 `/root/nginx-backups/` 再 reload。
+
 ## v143 (2026-11-26)
 - [fix] 八字「大运→流年→流月」真正联动：后端 `bazi.chart` 原来只给今年起 10 年流年，点后面大运时流年列表根本没有数据可切，表现为「流年不跟着大运变」；现在流年覆盖当前十年 + 全部展示大运年份（每年带节气月柱与 `dayun` 归属），`liuyue_of_year` 加按年缓存避免重复算。前端按大运年份区间投影流年，点大运换整排流年并把流月重置到该大运默认年；点流年再刷新流月（原逻辑保留）。流年/流月干支仍全部来自后端 Board，前端不做命理推断。
 - [refactor] 删除双人表单「早晚子时」开关：全项目无读取点、后端 payload 与个人中心基础信息均无对应字段，属死控件；同时清掉 `extraKnow` 插入位与 `.mrg-zz` 样式。阳历/农历与出生日期同行等高、段间距 sm 的 v142 调整保留。

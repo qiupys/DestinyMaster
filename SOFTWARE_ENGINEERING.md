@@ -64,6 +64,7 @@ calc（确定性计算，出盘面/牌面/卦面）
 
 - 紫微保留 `/api/chart` + `/api/horoscope` 排盘数据层（命盘是有状态大对象），但推演时把命盘结构化为 `ziwei_data` 存 payload，追问不依赖内存 chart。**服务重启后 CHARTS 清空，deduce 会用登录档案 birth 确定性重建同一张盘**（`_rebuild_session_from_profile`），保证解读不中断。
 - 免责声明幂等，deduce / followup / 缓存回放三条路径都带。
+- **所有 AI SSE 必须保活**：`features.common.answer_events` 每 15s 发一个 SSE 注释帧 `: ping`（不是 `data:` 事件，前端忽略），防止模型冷启动/上游拥塞的长首包被中间层判为静默超时。线上 nginx 对 `/api/<feature>/deduce` 与 `/api/history/followup` 都必须 `proxy_read_timeout 300s` + `proxy_buffering off` + `X-Accel-Buffering no`；追问不共享 deduce 的 `limit_conn destiny_aiconn 2`，避免互相挤占。`network error` 先查 nginx error.log 的 `upstream timed out`，再查 429，别先改前端文案。
 
 ## 3. 关键约束（踩过坑，勿回退）
 

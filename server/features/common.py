@@ -98,6 +98,13 @@ def sse_replay(answer: str, hid: int | None = None) -> StreamingResponse:
 
 _sse_replay = sse_replay
 
+# SSE 保活间隔：模型冷启动/上游拥塞时首包可能等数十秒。nginx 对普通 /api/ 的
+# proxy_read_timeout 默认 60s，流中只要有一段时间没有字节就会掐断连接，前端
+# 只看到 "network error"。每 15s 发一个 SSE 注释帧即可让中间层保持连接，
+# 注释帧不是 data: 事件，前端解析器会忽略，不影响正文/落盘/免责链路。
+SSE_PING_SECONDS = 15.0
+_SSE_PING = ": ping\n\n"
+
 
 def answer_events(prompt: str, persist, *, save_on_cancel: bool = True):
     """统一 AI 流式回复 + 免责 + 落盘链路。
@@ -108,11 +115,23 @@ def answer_events(prompt: str, persist, *, save_on_cancel: bool = True):
     async def gen():
         full = ""
         disc_sent = False
+        stream = ai.stream_answer(prompt)
+        pending = asyncio.ensure_future(stream.__anext__())
         try:
-            async for delta in ai.stream_answer(prompt):
-                if delta:
-                    full += delta
-                    yield sse_event({"delta": delta})
+            while True:
+                done, _ = await asyncio.wait({pending}, timeout=SSE_PING_SECONDS)
+                if not done:
+                    yield _SSE_PING
+                    continue
+                try:
+                    delta = pending.result()
+                except StopAsyncIteration:
+                    break
+                pending = asyncio.ensure_future(stream.__anext__())
+                if not delta:
+                    continue
+                full += delta
+                yield sse_event({"delta": delta})
             if full.strip():
                 tail = with_disclaimer(full)
                 if tail != full.rstrip():
@@ -125,6 +144,17 @@ def answer_events(prompt: str, persist, *, save_on_cancel: bool = True):
                 yield sse_event({"hid": hid})
             yield "data: [DONE]\n\n"
         except asyncio.CancelledError:
+            if not pending.done():
+                pending.cancel()
+                try:
+                    await pending
+                except (StopAsyncIteration, asyncio.CancelledError):
+                    from applog import log
+                    log.info("SSE 取消：上游模型流已停止")
+                except Exception as exc:
+                    # 取消时上游异常也要留痕，不再静默吞掉
+                    from applog import log
+                    log.warning("SSE 取消时模型上游异常：%s", type(exc).__name__)
             if save_on_cancel and full.strip():
                 if not disc_sent:
                     full = with_disclaimer(full)
@@ -132,5 +162,13 @@ def answer_events(prompt: str, persist, *, save_on_cancel: bool = True):
                 if hid:
                     yield sse_event({"hid": hid})
             raise
+        finally:
+            aclose = getattr(stream, "aclose", None)
+            if aclose:
+                try:
+                    await aclose()
+                except Exception as exc:
+                    from applog import log
+                    log.warning("SSE 流关闭异常：%s", type(exc).__name__)
 
     return gen()
