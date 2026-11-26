@@ -158,7 +158,7 @@ function sessionState(page, feature, slot) {
     });
     await page.fill(".ai-follow input", "短期呢？");
     await page.press(".ai-follow input", "Enter");
-    await page.waitForSelector(".ai-follow-slot .p-ai.done", { timeout: 10000 });
+    await page.waitForSelector(".ai-follow-slot .pf-hist-fu.done", { timeout: 10000 });
     await page.waitForTimeout(200);
     st = await sessionState(page, "liuyao");
     check(st.current && st.current.followups.length === 1, "B1 追问挂到当前 Reading.followups", st.current && String(st.current.followups.length));
@@ -169,6 +169,15 @@ function sessionState(page, feature, slot) {
         inSlot: document.querySelectorAll("#ly-result .ai-follow-slot .ai-follow-btn").length };
     });
     check(boxes.total === 1 && boxes.inSlot === 0, "B4 追问框不堆叠、结果卡不挂新框", JSON.stringify(boxes));
+    // v127：追问结果内联为 .pf-hist-fu 段落，不再是带卡头/展开按钮的独立 .p-ai 卡
+    var inlineShape = await page.evaluate(function () {
+      var slot = document.querySelector("#ly-result .ai-follow-slot");
+      return { paras: slot ? slot.querySelectorAll(":scope > .pf-hist-fu").length : 0,
+        cards: slot ? slot.querySelectorAll(":scope > .p-ai").length : 0,
+        heads: slot ? slot.querySelectorAll(".pf-fu-q").length : 0 };
+    });
+    check(inlineShape.paras === 1 && inlineShape.cards === 0 && inlineShape.heads === 1,
+      "B4b 追问内联为问+答段落、无独立卡/展开按钮", JSON.stringify(inlineShape));
 
     // 第二次追问（沿用同一追问条）——产品对追问按钮有 1.2s 防抖，等解锁再发
     await page.waitForFunction(function () {
@@ -206,25 +215,27 @@ function sessionState(page, feature, slot) {
     check(st.archived[0].followups.length === 2, "C3 归档轮保留完整追问链");
     check(st.current && st.current.question === "换个问题：能加仓吗？", "C4 新问题成为 current");
 
-    // ---- D. 快照：reload 后对象无损恢复 ----
-    console.log("\n[D] 快照恢复");
+    // ---- D. 会话边界：reload 即新会话，旧对话不恢复 ----
+    console.log("\n[D] 刷新清空（本次打开页面会话边界）");
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(700);
-    // reload 后仍在 liuyao 页，对象应从 sessionStorage 恢复
+    // v127：会话边界=本次打开页面。刷新后 epoch 变化，旧快照必须被丢弃；
+    // 当前对象仓库为空、sessionStorage 不残留本账号的快照。
     var restored = await page.evaluate(function () {
-      var blob = null;
+      var snaps = [];
       try {
         var uid = JSON.parse(localStorage.getItem("zw-profile")).id;
         var raw = sessionStorage.getItem("zs-snap-liuyao-" + uid);
-        blob = raw ? JSON.parse(raw).core : null;
+        if (raw) snaps.push("liuyao");
       } catch (e) {}
       var s = window.ReadingCore.session("liuyao");
-      return { hasBlob: !!blob, q: s.current && s.current.question,
-        arc: s.archived.length, fu: s.archived[0] && s.archived[0].followups.length };
+      return { snaps: snaps, q: s.current && s.current.question, arc: s.archived.length };
     });
-    check(restored.hasBlob, "D1 sessionStorage 含对象快照 core 字段");
-    check(restored.q === "换个问题：能加仓吗？", "D2 reload 后 current 无损恢复", restored.q);
-    check(restored.arc === 1 && restored.fu === 2, "D3 reload 后归档轮与追问链无损", JSON.stringify(restored));
+    check(restored.snaps.length === 0, "D1 刷新后旧快照被清除（不残留本次打开页面之前的对话）", JSON.stringify(restored.snaps));
+    check(!restored.q && restored.arc === 0, "D2 刷新后当前会话对象为空（不串上次对话）", JSON.stringify(restored));
+    // 同一次打开页面内，SPA 切换功能页再切回，对话仍保留（epoch 未变）
+    await page.goto(BASE + "/#/liuyao", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(300);
 
     // ---- E. 退出登录清空对象 ----
     console.log("\n[E] 退出登录清理");
@@ -452,7 +463,8 @@ function sessionState(page, feature, slot) {
           return k + ":" + !!snap.core[k].current;
         }).join(",") : "NO_SNAP" };
     });
-    check(m.card && m.obj, "M1 刷新后宫位对话与对象一致", JSON.stringify(m));
+    // v127：会话边界=本次打开页面，刷新后上一次的宫位对话不恢复（盘面仍正常渲染）
+    check(!m.card && !m.obj && m.arc === 0, "M1 刷新后宫位对话清空（不串上次会话）", JSON.stringify(m));
     // v123 回归：快照恢复曾整体覆盖结果区 innerHTML，抹掉渲染时绑定的
     // tab / 宫位 onclick —— 刷新后三个视图全点不动、宫位锁死在上一轮选中的宫。
     var m2 = await page.evaluate(function () {
@@ -558,15 +570,16 @@ function sessionState(page, feature, slot) {
     var q2 = await page.evaluate(function () {
       var st = document.querySelector("#p-stage-bazi");
       var cards = st ? st.querySelectorAll(".round-archive .p-ai-archived") : [];
-      var bad = 0, follow = 0;
-      Array.prototype.forEach.call(cards, function (c) {
-        bad += c.querySelectorAll(".tool-ai").length;
-        follow += c.querySelectorAll(".ai-follow-btn").length;
-      });
-      return { cards: cards.length, bad: bad, follow: follow };
+      var bad = 0;
+      Array.prototype.forEach.call(cards, function (c) { bad += c.querySelectorAll(".tool-ai").length; });
+      var uid = JSON.parse(localStorage.getItem("zw-profile")).id;
+      var raw = sessionStorage.getItem("zs-snap-bazi-" + uid);
+      return { cards: cards.length, bad: bad, snapGone: !raw };
     });
-    check(q1.key && q2.cards >= 1 && q2.bad === 0 && q2.follow >= 1,
-      "Q1 存量快照归档卡残留按钮清除且追问保留", JSON.stringify({ q1: q1, q2: q2 }));
+    // v127：旧 epoch 快照（本次构造的存量快照）在刷新后被整体丢弃——
+    // 归档卡连同残留按钮都不再出现，这是比「事后清按钮」更彻底的会话隔离保证。
+    check(q1.key && q2.snapGone && q2.cards === 0 && q2.bad === 0,
+      "Q1 旧会话快照刷新后整体丢弃（对话/按钮都不串入）", JSON.stringify({ q1: q1, q2: q2 }));
 
     check(jsErrors.length === 0, "Z. 全程无前端 JS 报错", jsErrors.slice(0, 2).join(" | "));
     await browser.close();

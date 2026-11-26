@@ -607,20 +607,22 @@ details.p-disclose .inner { padding-bottom: 12px; }
 }
 .ai-follow-btn:hover { border-color:var(--wx-jin); color:var(--wx-jin); }
 .ai-follow-btn:disabled { opacity:.55; cursor:wait; }
-/* 追问结果槽在输入栏上方：结果之间用分隔线连续铺开，输入栏紧随其后。
-   追问结果不再套圆角卡壳——保留 .p-ai 节点以兼容渲染/测试/快照恢复链路，
-   仅用 CSS 去掉边框和圆角，避免「圆弧矩形叠圆弧矩形」的嵌套感（与历史详情追问链同风格）。
-   v119：标题此前被降级为 sm/灰点，读起来像脚注、没有段落起点；改为 base/600/墨色+金点，
-   顶部分隔改实线并留 gap-md 呼吸，每轮追问成为清晰可读的独立段落。 */
+/* 追问结果内联铺在输入栏上方（v127）：每轮「问+答」是一个 .pf-hist-fu 段落，
+   用分隔线连续铺开，没有独立卡片壳、没有卡头「展开」按钮——与个人中心历史详情同构。
+   这样追问链读起来是解读正文的延续，而不是一叠可折叠的小卡。 */
 .ai-follow-slot { padding:0 20px; }
-.ai-follow-slot > .p-ai {
-  margin-top:var(--gap-md); padding-top:var(--gap-md); border:0; border-top:var(--line-w) solid var(--line-strong);
-  border-radius:0; overflow:visible; background:none;
+.ai-follow-slot > .pf-hist-fu {
+  margin-top:var(--gap-md); padding-top:var(--gap-md); border-top:var(--line-w) solid var(--line-strong);
 }
-.ai-follow-slot > .p-ai .p-ai-head { padding:0 0 var(--gap-sm); background:none; font-size:var(--fs-base); font-weight:600; color:var(--ink-2); }
-.ai-follow-slot > .p-ai .p-ai-head .dot { width:7px; height:7px; background:var(--wx-jin); }
-.ai-follow-slot > .p-ai .p-ai-body { padding:0; }
+.ai-follow-slot > .pf-hist-fu .pf-fu-q { margin:0 0 var(--gap-sm); font-size:var(--fs-base); font-weight:600; color:var(--ink-2); }
+.ai-follow-slot > .pf-hist-fu .pf-fu-body { padding:0; }
 .ai-follow-slot + .ai-follow { margin-top:var(--gap-sm); }
+/* 存量快照兼容：早期追问曾渲染成 .ai-follow-slot > .p-ai 独立卡，恢复后仍按内联呈现，
+   且不再给追问子卡显示卡头「收起/展开」（追问结果一律常开）。 */
+.ai-follow-slot > .p-ai { margin-top:var(--gap-md); padding-top:var(--gap-md); border:0;
+  border-top:var(--line-w) solid var(--line-strong); border-radius:0; overflow:visible; background:none; }
+.ai-follow-slot > .p-ai > .p-ai-head { display:none; }
+.ai-follow-slot > .p-ai > .p-ai-body { padding:0; }
 @media (max-width: 560px) {
   .ai-follow { padding:13px 15px 16px; }
   .ai-follow-row { flex-direction:column; align-items:stretch; }

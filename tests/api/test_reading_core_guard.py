@@ -96,6 +96,34 @@ class TestReadingCoreGuard(unittest.TestCase):
         self.assertIsNotNone(m, "找不到 archiveRound")
         self.assertNotIn("resultCard.innerHTML", m.group(0), "归档仍在复制盘面 DOM HTML")
 
+    def test_session_boundary_is_page_epoch(self):
+        """v127：会话边界=本次打开页面。快照必须带内存 epoch + token，恢复时校验，
+        刷新（新 epoch）即丢弃旧对话——绝不能把上次打开的对话串进当前功能页。"""
+        self.assertIn("pageEpoch", JS, "缺少页面 epoch（本次打开页面的会话身份）")
+        self.assertIn("snap.pageEpoch !== S.pageEpoch", JS, "恢复时未校验 epoch，刷新会串旧对话")
+        self.assertIn("snap.profileToken !== tokenNow", JS, "恢复时未校验登录态，换号会串对话")
+        # restoreStageSnap 内必须真的删除过期快照，而不是静默 return
+        m = re.search(r"function restoreStageSnap\(.*?\n  \}", JS, re.S)
+        self.assertIsNotNone(m, "找不到 restoreStageSnap")
+        self.assertIn("removeItem(snapKey(feat))", m.group(0), "过期快照未被清除")
+
+    def test_followups_are_inline_paragraphs(self):
+        """v127：追问结果内联成问+答段落，不渲染带卡头/展开按钮的独立 .p-ai 卡。"""
+        # 追问分支生成 .pf-hist-fu 段落而非 .p-ai 卡
+        self.assertIn('isFollow\n      ? \'<div class="pf-hist-fu"', JS, "追问未内联为段落")
+        self.assertIn("class=\"pf-fu-q\"", JS, "追问段落缺少「问」标题")
+        self.assertIn("class=\"pf-fu-body\"", JS, "追问段落缺少答案容器")
+        # 新提问才渲染 .p-ai 卡头；追问走三元分支的 .pf-hist-fu，不再攒独立卡
+        m = re.search(r"function streamToUrl\(.*?\n  \}", JS, re.S)
+        self.assertIsNotNone(m, "找不到 streamToUrl")
+        self.assertIn("isFollow\n      ?", m.group(0), "追问未走独立的内联渲染分支")
+        # 存量快照的旧追问卡折叠态要清掉，让「问+答」常开
+        self.assertIn("p-ai-folded\", scope).forEach", JS, "存量追问卡折叠态未清理")
+        # 归档追问链时优先取内联段落 HTML，而不是旧 .p-ai-body 提取
+        am = re.search(r"function archiveRound\(.*?\n  \}", JS, re.S)
+        self.assertIsNotNone(am)
+        self.assertIn('classList.contains("pf-hist-fu")', am.group(0), "归档未识别内联追问段落")
+
 
 if __name__ == "__main__":
     unittest.main()

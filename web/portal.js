@@ -15,7 +15,12 @@
     profile: null,       // {id, token, name}
     busy: false,
     stageCache: {},      // feature -> 持久 DOM 容器；切页只隐藏/显示，不销毁
+    pageEpoch: "",       // 本次打开页面（内存随机值，不持久化）：同一 SPA 切功能页不变，刷新即新
   };
+  // v127「本次打开页面」会话边界：刷新（含关标签重开）即视为新会话，旧对话不恢复。
+  // epoch 只在内存里，刷新后 JS 重新执行生成新值；快照里的旧 epoch 对不上即丢弃。
+  try { S.pageEpoch = String(Date.now()) + "-" + Math.random().toString(36).slice(2); }
+  catch (e) { S.pageEpoch = String(Math.random()); }
 
   /* 容器 → 解读会话：feature 显式传入优先；紫微运势盘用独立 slot 与命格盘隔离。
      黄历 personal/pair 共用 #hl-result，靠调用方传入的 feature 区分（不靠 DOM）。 */
@@ -402,6 +407,10 @@
         if (el) outHtml[sel] = el.innerHTML;
       });
       sessionStorage.setItem(snapKey(feat), JSON.stringify({
+        // v127：会话边界=本次打开页面。epoch 是内存随机值，刷新即变；
+        // 恢复时 epoch 不符的快照一律丢弃，杜绝上次打开的对话串进当前功能页。
+        pageEpoch: S.pageEpoch,
+        profileToken: S.profile && S.profile.token ? S.profile.token : "",
         // v116：解读状态以对象为真相源（含轮次/归档/追问链）；DOM 仅作视觉投影。
         core: Core.serializeFeature(feat),
         rootHtml: root ? root.innerHTML : null,
@@ -425,6 +434,14 @@
     if (!raw) return;
     var snap;
     try { snap = JSON.parse(raw); } catch (e) { return; }
+    // v127：会话边界=本次打开页面。epoch 对不上（刷新/重开标签页）或登录态变了（换号），
+    // 就是上一次会话的残留——直接丢弃，不恢复任何对话/归档。这是「不要把历史对话
+    // 展示在当前功能下」的架构保证：只有本次打开页面内产生的对话才会被恢复。
+    var tokenNow = S.profile && S.profile.token ? S.profile.token : "";
+    if (snap.pageEpoch !== S.pageEpoch || snap.profileToken !== tokenNow) {
+      try { sessionStorage.removeItem(snapKey(feat)); } catch (e2) { warn("清除过期快照失败", e2); }
+      return;
+    }
     var st = S.stageCache[stageFeat || feat];
     if (!st || st.dataset.snapRestored === "1") return;
     // 命盘类排盘是异步的（拉档案/算盘后 innerHTML 重建结果区）。等结果卡出现再恢复快照，
@@ -2493,12 +2510,15 @@
     }
     var main = ais[0];
     var bodyHtml = extractReviewBody(main);
-    // 追问链（槽内的追问结果卡）文本也并入归档卡正文，保证回看时能读到完整对话
+    // 追问链并入归档卡正文，保证回看时能读到完整对话。
+    // v127：追问已内联成 .pf-hist-fu（自带「追问：问 + 答」），直接取其 HTML；
+    // 兼容存量快照里旧结构 .p-ai（从 .p-ai-body 提取）。
     var slot = $(".ai-follow-slot", main);
     if (slot && slot.children.length) {
-      bodyHtml += '<div class="pf-hist-fu">' + Array.prototype.slice.call(slot.children).map(function (fu) {
-        return extractReviewBody(fu) || (fu.textContent || "");
-      }).join("") + '</div>';
+      bodyHtml += Array.prototype.slice.call(slot.children).map(function (fu) {
+        if (fu.classList && fu.classList.contains("pf-hist-fu")) return fu.innerHTML;
+        return '<div class="pf-hist-fu">' + (extractReviewBody(fu) || (fu.textContent || "")) + '</div>';
+      }).join("");
     }
     // 盘面摘要并入卡体顶部，避免再套一层结果卡。
     // v126：优先从 Board 对象重新投影（只读、天然无按钮/事件）——盘面是对象，
@@ -2702,13 +2722,18 @@
     if (S.busyKeys[bkey]) { toast("此处解读进行中，请稍候"); return; }
     S.busyKeys[bkey] = true;
     var holderId = "ai-" + Date.now();
-    // 新提问的旧轮归档已在 streamAI / 抽牌流程里完成（整轮移出结果容器）；
-    // 这里只负责渲染新卡，追问子卡走 beforeend 插入追问 slot。
+    // 新提问的旧轮归档已在 streamAI / 抽牌流程里完成（整轮移出结果容器）。
+    // v127：追问不再渲染成独立 .p-ai 卡（带卡头/展开按钮的一条条），而是内联段落
+    // （「问+答」连续铺在解读卡正文里，与个人中心历史详情同构）——取消追问卡壳与展开。
     var isNewQuestion = tag === "AI 解读";
+    var isFollow = tag === "追问";
     var headLabel = isNewQuestion ? "新提问" : esc(tag);
-    var html = '<div class="p-ai" id="' + holderId + '"' + (rk ? ' data-rk="' + esc(rk) + '"' : '') + '><div class="p-ai-head"><span class="dot"></span>' +
-      '<span class="p-ai-title">' + headLabel + ' · ' + esc(question) + '</span></div>' +
-      '<div class="p-ai-body"><span class="p-cursor"></span></div></div>';
+    var html = isFollow
+      ? '<div class="pf-hist-fu" id="' + holderId + '"><p class="pf-fu-q"><b>追问：</b>' + esc(question) + '</p>' +
+        '<div class="pf-fu-body"><span class="p-cursor"></span></div></div>'
+      : '<div class="p-ai" id="' + holderId + '"' + (rk ? ' data-rk="' + esc(rk) + '"' : '') + '><div class="p-ai-head"><span class="dot"></span>' +
+        '<span class="p-ai-title">' + headLabel + ' · ' + esc(question) + '</span></div>' +
+        '<div class="p-ai-body"><span class="p-cursor"></span></div></div>';
     if (isNewQuestion) {
       // 解读卡一律排在【提问框下方】：先提问、再解读，符合阅读顺序。
       // 六爻/奇门的提问框(.bz-ask)与盘面(.p-result)同在结果容器内，若插到盘面之后会
@@ -2723,14 +2748,15 @@
         else container.insertAdjacentHTML("afterbegin", html);
       }
     } else container.insertAdjacentHTML("beforeend", html);
-    var body = $(".p-ai-body", $("#" + holderId));
+    var holder = $("#" + holderId);
+    var body = $(".pf-fu-body", holder) || $(".p-ai-body", holder);
     // 点击 AI 解读后立即滚到解读框，避免停留在结果上方
     $("#" + holderId).scrollIntoView({ behavior: "smooth", block: "nearest" });
     var full = "", buf = "", hid = 0;
     // v116：对象联动。新解读=创建 Reading（带参与人快照）；追问=定位所属 Reading。
     // 参与人快照从当前登录档案构造，解读一旦开始即冻结，追问沿用同一份。
     var sess = sessOf(container);
-    var reading = null, isFollow = tag === "追问", sourceFeature = "";
+    var reading = null, sourceFeature = "";
     if (isNewQuestion) {
       reading = sess.begin(question, rk, currentPersons(featureOfUrl(url)));
     } else {
@@ -2873,7 +2899,10 @@
   }
   /* 会话快照恢复后：重新绑定所有带 data-hid 的解读卡追问框 */
   function rebindFollows(root) {
-    $$(".p-ai[data-hid]", root || document).forEach(function (card) { bindFollowBar(card); });
+    var scope = root || document;
+    // v127：存量快照里的追问曾是可折叠 .p-ai 卡，清掉折叠类让「问+答」常开内联呈现。
+    $$(".ai-follow-slot > .p-ai.p-ai-folded", scope).forEach(function (c) { c.classList.remove("p-ai-folded"); });
+    $$(".p-ai[data-hid]", scope).forEach(function (card) { bindFollowBar(card); });
   }
 
   /* ================= 个人中心 ================= */

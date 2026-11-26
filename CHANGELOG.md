@@ -11,6 +11,11 @@
 
 ---
 
+## v127 (2026-11-26)
+- [fix] 追问结果内联进解读正文：不再渲染成「追问 · xxx」独立卡+展开按钮（那条点展开还打不开），改为「追问：问 + 答」连续段落，与个人中心历史详情同构；存量快照旧追问卡隐藏卡头、清折叠态。
+- [fix] 会话边界收窄为「本次打开页面」：快照写入内存 epoch + 登录 token，恢复时校验，刷新/关标签重开/换号即丢弃旧对话——杜绝上次打开的对话与归档卡串进当前功能页。SPA 内切功能页仍保留（epoch 不变）。
+- [test] 静态护栏锁定会话 epoch 校验与追问内联渲染；E2E/浏览器矩阵刷新语义改为「清空」，新增追问内联结构断言。
+
 ## v126 (2026-11-26)
 - [refactor] 盘面一等对象化：新增 reading-core.js 的 Board 对象（feature/kind/roundKey/data/params/castTime/createdAt，数据深拷贝+逐层冻结），Reading 持有冻结盘面，ReadingSession 以 roundKey 为键管理盘面仓库（含 latestBoard + bindBoardToRound）。12 功能 calc 落地全部 putBoard 存结构化盘面数据，DOM 降级为投影。
 - [refactor] 归档盘面摘要改为从 Board 对象投影（boardView）：牌面/卦象/六爻/奇门有专用投影，命盘类走通用事实摘要；归档卡不再复制旧 DOM HTML，历史回看读的是解读那一刻冻结的对象数据。按钮/事件从架构上不可能漏进历史卡（投影函数不生成按钮），不再只靠事后字符串清理。

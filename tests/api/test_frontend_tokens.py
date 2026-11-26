@@ -56,18 +56,19 @@ class TestFrontendTokens(unittest.TestCase):
                           f"{selector} 未提升到辅助字号 token")
 
     def test_followup_result_reads_as_paragraph(self):
-        """v119：追问结果是独立段落，标题不得退回脚注式 sm 灰字。"""
-        head = _block(".ai-follow-slot > .p-ai .p-ai-head")
+        """v127：追问结果内联为「问+答」段落，不套独立卡片/展开按钮（与个人中心历史详情同构）。"""
+        head = _block(".ai-follow-slot > .pf-hist-fu .pf-fu-q")
         self.assertIn("var(--fs-base)", head, "追问标题应回到正文基准字号")
         self.assertNotIn("var(--fs-sm)", head, "追问标题不得降级为说明小字")
         self.assertIn("font-weight:600", head)
         self.assertIn("var(--ink-2)", head)
-        dot = _block(".ai-follow-slot > .p-ai .p-ai-head .dot")
-        self.assertIn("var(--wx-jin)", dot, "追问圆点应与主解读卡一致用强调色")
-        card = _block(".ai-follow-slot > .p-ai")
-        self.assertIn("border-top:var(--line-w) solid var(--line-strong)", card,
+        para = _block(".ai-follow-slot > .pf-hist-fu")
+        self.assertIn("border-top:var(--line-w) solid var(--line-strong)", para,
                       "追问段落分隔应为实线，不用浅虚线")
-        self.assertIn("margin-top:var(--gap-md)", card)
+        self.assertIn("margin-top:var(--gap-md)", para)
+        # 存量快照兼容：旧追问卡的卡头必须隐藏，不再显示「收起/展开」
+        legacy = _block(".ai-follow-slot > .p-ai > .p-ai-head")
+        self.assertIn("display:none", legacy, "旧结构追问卡头须隐藏，杜绝展开按钮")
         self.assertIn("var(--fs-sm)", _block(".pf-follow-note"), "追问说明文字应为 sm 而非辅助 xs")
 
     def test_shared_controls_use_height_token(self):

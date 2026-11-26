@@ -255,21 +255,7 @@ function login(page, user) {
       check(arcRo.bad === 0, "archive: " + f + " 归档卡只读化（无 AI 触发按钮）", JSON.stringify(arcRo));
       check(arcRo.follow >= 1, "archive: " + f + " 归档卡保留追问入口", JSON.stringify(arcRo));
 
-      // reload：快照恢复对象与 DOM
-      await page.waitForTimeout(350);
-      await page.reload({ waitUntil: "domcontentloaded" });
-      try {
-        await page.waitForFunction(function (o) {
-          var s = window.ReadingCore.session(o.f);
-          return s.current && s.current.question === o.q2;
-        }, { f: f, q2: Q2 }, { timeout: 8000 });
-        var rl = await page.evaluate(function (s) {
-          return !!(document.querySelector(s + " .p-ai.done"));
-        }, out);
-        check(rl, "reload: " + f + " 快照恢复对象与 DOM", String(rl));
-      } catch (e) { check(false, "reload: " + f + " 快照恢复对象与 DOM", String(e).slice(0, 120)); }
-
-      // switch：切走再切回，会话与投影都保留
+      // switch：切走再切回（同一页面打开内，epoch 不变），会话与投影都保留
       await page.goto(BASE + "/#/home", { waitUntil: "domcontentloaded" });
       await page.goto(BASE + "/" + ui.route, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(700);
@@ -278,6 +264,20 @@ function login(page, user) {
         return { cur: !!s.current, card: !!document.querySelector(o.out + " .p-ai.done") };
       }, { f: f, out: out });
       check(sw.cur && sw.card, "switch: " + f + " 功能切换后对话完整", JSON.stringify(sw));
+
+      // reload（v127 会话边界=本次打开页面）：刷新即新会话，旧对话与快照不恢复
+      await page.waitForTimeout(350);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(500);
+      var rl = await page.evaluate(function (o) {
+        var s = window.ReadingCore.session(o.f);
+        var uid = JSON.parse(localStorage.getItem("zw-profile")).id;
+        var raw = null;
+        try { raw = sessionStorage.getItem("zs-snap-" + o.f + "-" + uid); } catch (e) {}
+        return { cur: !!s.current, card: !!document.querySelector(o.out + " .p-ai.done"), snapGone: !raw };
+      }, { f: f, out: out });
+      check(!rl.cur && !rl.card && rl.snapGone,
+        "reload: " + f + " 刷新清空旧会话对话与快照", JSON.stringify(rl));
 
       // logout：对象与快照清空；再登录给下一功能用
       await page.evaluate(function () { localStorage.removeItem("zw-profile"); });
