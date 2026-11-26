@@ -1565,6 +1565,10 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 /* v138：十神/神煞卡是 bzAnalysisHTML 直接挂在结果根下的 .p-card，不在 .p-result 容器内，
    吃不到 `.p-result .p-card` 的 760 约束，曾撑到 804px 比表单卡宽 22px。并入 --content-w 单一宽度源。 */
 .bz-analysis { margin: var(--gap-sm) auto 0; max-width: var(--content-w); }
+/* v141：大运/流年/流月选项独立成卡，挂在结果根下，同样并入 --content-w 单一宽度源；
+   首段不再画顶部分割线，后续段沿用 .bz-sec 分隔。 */
+.bz-options { margin: var(--gap-sm) auto 0; max-width: var(--content-w); }
+.bz-options > .bz-sec:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .bz-analysis .bz-sec-h { margin-bottom: var(--gap-sm); }
 .bz-god-grid, .bz-sha-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--gap-sm); }
 @media (max-width: 680px) { .bz-god-grid, .bz-sha-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
@@ -1781,6 +1785,14 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
   .mrg-person .place-fields { margin-top: var(--gap-sm); }
   .mrg-person .pl-grid { gap: var(--gap-xs); }
   .mrg-person .mrg-zz { margin-top: var(--gap-sm); }
+  /* v140：双栏下把阳历/农历收进出生日期标签行，两个开关同行，纵向少占两行。
+     只改 .mrg-person 内的 roomy 表单，不动单人出生表单与结果盘面。 */
+  .mrg-person .bf-date-field { flex-direction: row; align-items: center; gap: var(--gap-sm); }
+  .mrg-person .bf-date-field .bf-cal { flex: 1; padding: var(--gap-xs); }
+  .mrg-person .bf-date-field .bf-cal button { flex: 1; padding: 0 var(--gap-xs); font-size: var(--fs-sm); }
+  .mrg-person .bf-date-field .bf-lab { font-size: var(--fs-sm); }
+  .mrg-person .bf-know-row { display: flex; align-items: center; gap: var(--gap-sm); flex-wrap: wrap; }
+  .mrg-person .bf-know-row .mrg-zz { margin-top: 0; }
 }
 
 /* 六爻盘面 */

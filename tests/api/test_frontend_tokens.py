@@ -114,6 +114,25 @@ class TestFrontendTokens(unittest.TestCase):
         self.assertIn("var(--content-w)", block, ".bz-analysis 未并入单一宽度源")
         self.assertIn("auto", block, ".bz-analysis 缺少水平居中，宽度设了也不会对齐")
 
+    def test_bazi_options_card_between_analysis_and_ask(self):
+        """v141：大运/流年/流月选项独立成卡，位于十神/神煞分析之后、提问卡之前，并并入单一宽度源。"""
+        self.assertIn('class="p-card bz-options"', JS, "八字选项未独立成卡")
+        self.assertLess(JS.index("bzAnalysisHTML(d)"), JS.index('class="p-card bz-options"'),
+                        "选项卡必须在神煞分析之后")
+        self.assertLess(JS.index('class="p-card bz-options"'), JS.index('class="bz-ask"'),
+                        "选项卡必须在提问卡之前")
+        block = _block(".bz-options")
+        self.assertIn("var(--content-w)", block, "选项卡未并入单一宽度源")
+        self.assertIn("auto", block, "选项卡未水平居中")
+
+    def test_pair_birth_form_rows_share_line(self):
+        """v140：双栏合婚的阳历/农历并入出生日期标签行，早晚子时并入时间开关行。"""
+        self.assertIn('class="bf-field bf-date-field"', JS, "出生日期标签行未结构化为 bf-date-field")
+        self.assertIn('class="bf-know-row"', JS, "两个开关未并入 bf-know-row")
+        self.assertIn("extraKnow: earlyZi", JS, "早晚子时未从共用出生模板插入开关行")
+        self.assertIn(".mrg-person .bf-date-field", CSS, "双栏日期标签行缺少专属布局")
+        self.assertIn(".mrg-person .bf-know-row", CSS, "双栏开关行缺少专属布局")
+
     def test_analysis_note_beats_generic_card_paragraph(self):
         """v139：十神说明段在 .p-card 内，必须多一个元素选择器压过 `.p-card p`，
         否则 margin/font/color/line-height 被通用规则吃掉，只剩分割线贴住柱卡边框。"""

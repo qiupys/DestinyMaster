@@ -1043,10 +1043,13 @@
     // roomy（双人表单）专用：标签与它所属控件绑成 .bf-field，段与段之间统一间距。
     // 旧版把标签/控件拆成 6 个 grid item 全用 11px row-gap，标签下空一大截。
     if (opts.roomy) {
+      // v140：双栏合婚把「阳历/农历」并入出生日期标签行；可选的早晚子时开关由调用方
+      // 以 extraKnow 传入，与「我知道出生时间」同行，减少两栏里的纵向占用。
+      var knowRow = '<div class="bf-know-row">' + knowHTML + (opts.extraKnow || "") + '</div>';
       return '<div class="bf-wrap bf-roomy">' + head +
         '<div class="bf-fields">' +
-          '<div class="bf-sec"><div class="bf-field">' + labDate + calHTML + '</div>' + dateHTML + '</div>' +
-          '<div class="bf-sec">' + knowHTML +
+          '<div class="bf-sec"><div class="bf-field bf-date-field">' + labDate + calHTML + '</div>' + dateHTML + '</div>' +
+          '<div class="bf-sec">' + knowRow +
             '<div class="bf-field" id="' + pfx + '-timewrap">' + labTime + timeHTML + '</div>' + hintHTML +
           '</div>' +
         '</div>' + mbazi +
@@ -1298,6 +1301,8 @@
      两人并列、字段完全一致：姓名 + 性别 + 出生信息 + 出生地 + 导入本人信息。
      不默认带入档案；登录用户点「导入本人信息」才把档案填入当前这一方。 */
   function pairPersonHTML(pfx, side, label) {
+    // v140：早晚子时开关并入出生表单的时间开关行；只在共用模板里换位置，字段 id 不变。
+    var earlyZi = '<label class="p-switch mrg-zz"><input type="checkbox" id="' + pfx + '-earlyzi" /><span>早晚子时</span></label>';
     return '<div class="mrg-person">' +
       '<div class="mrg-ph"><span>' + esc(label) + '</span>' +
         (S.profile ? '<button type="button" class="mrg-import" data-import="' + pfx + '">导入本人信息</button>' : '') +
@@ -1308,8 +1313,7 @@
           '<option' + (side === "男" ? " selected" : "") + '>男</option>' +
           '<option' + (side === "女" ? " selected" : "") + '>女</option></select></div>' +
       '</div>' +
-      birthFieldsHTML(pfx, { title: "出生信息", noBazi: true, roomy: true }) +
-      '<label class="p-switch mrg-zz"><input type="checkbox" id="' + pfx + '-earlyzi" /><span>早晚子时</span></label>' +
+      birthFieldsHTML(pfx, { title: "出生信息", noBazi: true, roomy: true, extraKnow: earlyZi }) +
       placeFieldsHTML(pfx, { hint: "出生地用于真太阳时校正，未收录城市可选邻近城市。" }) +
     '</div>';
   }
@@ -1883,13 +1887,17 @@
           '<div class="result-head"><div class="result-title">四柱盘面</div>' + profileAside() + '</div>' +
           '<div class="p-card">' + note + kv + wxHtml +
             '<div class="bz-sec"><div class="bz-sec-h">神煞</div>' + ssHtml + '</div>' +
-            '<div class="bz-sec"><div class="bz-sec-h">大运<span>十年一运 · 点选可据此提问</span></div>' + curLine + dyHtml + '</div>' +
-            '<div class="bz-sec"><div class="bz-sec-h">流年<span>今年起十年 · 点选后可看该年流月</span></div>' + lnHtml + '</div>' +
-            '<div class="bz-sec"><div class="bz-sec-h">流月<span>节气月柱 · 点选可据此提问</span></div>' +
-              '<div id="bz-liuyue">' + lyRowHTML(defLnForLy) + '</div></div>' +
           '</div>' +
         '</div>' +
         bzAnalysisHTML(d) +
+        // v141：大运/流年/流月是可点选的「选项」，不是四柱盘面的一部分；
+        // 独立成卡放在神煞分析之后、提问卡之前，与紫微运势选择栏同一层级。
+        '<div class="p-card bz-options">' +
+          '<div class="bz-sec"><div class="bz-sec-h">大运<span>十年一运 · 点选可据此提问</span></div>' + curLine + dyHtml + '</div>' +
+          '<div class="bz-sec"><div class="bz-sec-h">流年<span>今年起十年 · 点选后可看该年流月</span></div>' + lnHtml + '</div>' +
+          '<div class="bz-sec"><div class="bz-sec-h">流月<span>节气月柱 · 点选可据此提问</span></div>' +
+            '<div id="bz-liuyue">' + lyRowHTML(defLnForLy) + '</div></div>' +
+        '</div>' +
         '<div class="bz-ask">' +
           '<div class="bz-ask-h">就这张盘提问<span id="bz-pick">未选择大运、流年或流月</span></div>' +
           '<div class="p-suggest zw-chips">' + chips.map(function (c) {

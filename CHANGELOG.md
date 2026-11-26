@@ -11,6 +11,14 @@
 
 ---
 
+## v141 (2026-11-26)
+- [refactor] 八字大运/流年/流月从「四柱盘面」卡中拆出，独立为 `.p-card bz-options`，放在十神/神煞分析之后、提问卡之前，与紫微运势选择栏同一层级；选项点选的事件委托仍挂在 `#bz-result`，交互不变。选项卡挂在结果根下，显式并入 `--content-w` 单一宽度源并居中，首段不再多画分割线。
+- [test] 前端 token 护栏新增选项卡顺序与宽度源断言；设计系统表补组件说明。portal.js / portal.css / index.html bump v141。
+
+## v140 (2026-11-26)
+- [style] 双人合婚表单继续压缩纵向占用：共用 `birthFieldsHTML(roomy)` 新增 `bf-date-field`，把「阳历/农历」分段控件收进「出生日期」标签行，两个按钮与标签同为 `--fs-sm`；新增 `bf-know-row`，把「早晚子时」开关并入「我知道出生时间」同一行（早子时字段 id 不变）。布局只在 `min-width:901px` 的 `.mrg-person` 双栏 compact 下生效，单人出生表单与结果盘面不动。
+- [test] 前端 token 护栏新增双栏行结构与作用域断言；设计系统唯一来源表补两行组件说明。portal.js / portal.css / index.html bump v140。
+
 ## v139 (2026-11-26)
 - [fix] 十神分析卡底部说明的分割线贴住四柱卡边框、看起来重叠：说明段 `<p class="p-note bz-analysis-note">` 在 `.p-card` 内，`.p-card p`（0,1,1）覆盖了 `.bz-analysis-note`（0,1,0）的 `margin/font-size/color/line-height`，只剩 `padding-top/border-top` 生效，所以横线没有留白、文字也误用了卡片正文字号。选择器改为 `.bz-analysis p.bz-analysis-note` 恢复设计意图，线宽并入 `--line-w` token，横线与上方卡片恢复 `--gap-sm` 间距。
 - [test] 前端 token 护栏新增说明段选择器特异性与 token 断言。portal.css / index.html bump v139。
