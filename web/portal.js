@@ -1043,14 +1043,14 @@
     // roomy（双人表单）专用：标签与它所属控件绑成 .bf-field，段与段之间统一间距。
     // 旧版把标签/控件拆成 6 个 grid item 全用 11px row-gap，标签下空一大截。
     if (opts.roomy) {
-      // v140：双栏合婚把「阳历/农历」并入出生日期标签行；可选的早晚子时开关由调用方
-      // 以 extraKnow 传入，与「我知道出生时间」同行，减少两栏里的纵向占用。
-      var knowRow = '<div class="bf-know-row">' + knowHTML + (opts.extraKnow || "") + '</div>';
+      // v142：双栏合婚把「阳历/农历」并入出生日期标签行；早晚子时由调用方以 extraTime
+      // 传入，与「时/分」选择同排（对齐分钟列），不再是单独一行。
+      var timeRow = '<div class="bf-time-row">' + timeHTML + (opts.extraTime || "") + '</div>';
       return '<div class="bf-wrap bf-roomy">' + head +
         '<div class="bf-fields">' +
           '<div class="bf-sec"><div class="bf-field bf-date-field">' + labDate + calHTML + '</div>' + dateHTML + '</div>' +
-          '<div class="bf-sec">' + knowRow +
-            '<div class="bf-field" id="' + pfx + '-timewrap">' + labTime + timeHTML + '</div>' + hintHTML +
+          '<div class="bf-sec">' + knowHTML +
+            '<div class="bf-field" id="' + pfx + '-timewrap">' + labTime + timeRow + '</div>' + hintHTML +
           '</div>' +
         '</div>' + mbazi +
       '</div>';
@@ -1301,7 +1301,7 @@
      两人并列、字段完全一致：姓名 + 性别 + 出生信息 + 出生地 + 导入本人信息。
      不默认带入档案；登录用户点「导入本人信息」才把档案填入当前这一方。 */
   function pairPersonHTML(pfx, side, label) {
-    // v140：早晚子时开关并入出生表单的时间开关行；只在共用模板里换位置，字段 id 不变。
+    // v142：早晚子时开关移到时/分选择同一行（对齐分钟列）；只在共用模板里换位置，字段 id 不变。
     var earlyZi = '<label class="p-switch mrg-zz"><input type="checkbox" id="' + pfx + '-earlyzi" /><span>早晚子时</span></label>';
     return '<div class="mrg-person">' +
       '<div class="mrg-ph"><span>' + esc(label) + '</span>' +
@@ -1313,7 +1313,7 @@
           '<option' + (side === "男" ? " selected" : "") + '>男</option>' +
           '<option' + (side === "女" ? " selected" : "") + '>女</option></select></div>' +
       '</div>' +
-      birthFieldsHTML(pfx, { title: "出生信息", noBazi: true, roomy: true, extraKnow: earlyZi }) +
+      birthFieldsHTML(pfx, { title: "出生信息", noBazi: true, roomy: true, extraTime: earlyZi }) +
       placeFieldsHTML(pfx, { hint: "出生地用于真太阳时校正，未收录城市可选邻近城市。" }) +
     '</div>';
   }

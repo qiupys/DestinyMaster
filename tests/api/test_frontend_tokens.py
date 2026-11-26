@@ -126,12 +126,13 @@ class TestFrontendTokens(unittest.TestCase):
         self.assertIn("auto", block, "选项卡未水平居中")
 
     def test_pair_birth_form_rows_share_line(self):
-        """v140：双栏合婚的阳历/农历并入出生日期标签行，早晚子时并入时间开关行。"""
+        """v142：阳历/农历与出生日期同行且外框等高；早晚子时与时/分选择同排。"""
         self.assertIn('class="bf-field bf-date-field"', JS, "出生日期标签行未结构化为 bf-date-field")
-        self.assertIn('class="bf-know-row"', JS, "两个开关未并入 bf-know-row")
-        self.assertIn("extraKnow: earlyZi", JS, "早晚子时未从共用出生模板插入开关行")
+        self.assertIn('class="bf-time-row"', JS, "早晚子时未并入时/分同排")
+        self.assertIn("extraTime: earlyZi", JS, "早晚子时未从共用出生模板插入时分行")
         self.assertIn(".mrg-person .bf-date-field", CSS, "双栏日期标签行缺少专属布局")
-        self.assertIn(".mrg-person .bf-know-row", CSS, "双栏开关行缺少专属布局")
+        self.assertIn("height: var(--control-h-compact); padding: 0;", CSS, "阳历/农历外框未与日期按钮等高")
+        self.assertIn(".mrg-person .bf-time-row", CSS, "双栏时分行缺少专属布局")
 
     def test_analysis_note_beats_generic_card_paragraph(self):
         """v139：十神说明段在 .p-card 内，必须多一个元素选择器压过 `.p-card p`，

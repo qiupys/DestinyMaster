@@ -1779,20 +1779,22 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
   .mrg-person .tf-field label, .mrg-person .bf-lab,
   .mrg-person .p-switch { font-size: var(--fs-sm); }
   .mrg-person .mrg-ph, .mrg-person .bf-title { font-size: var(--fs-base); }
-  .mrg-person .bf-roomy .bf-fields { gap: var(--gap-xs); }
-  .mrg-person .bf-roomy .bf-sec, .mrg-person .bf-roomy .bf-field { gap: var(--gap-xs); }
+  .mrg-person .bf-roomy .bf-fields { gap: var(--gap-sm); }
+  .mrg-person .bf-roomy .bf-sec { gap: var(--gap-sm); }
+  .mrg-person .bf-roomy .bf-field { gap: var(--gap-xs); }
   .mrg-person > .tf-grid { margin-bottom: var(--gap-sm); }
   .mrg-person .place-fields { margin-top: var(--gap-sm); }
   .mrg-person .pl-grid { gap: var(--gap-xs); }
   .mrg-person .mrg-zz { margin-top: var(--gap-sm); }
-  /* v140：双栏下把阳历/农历收进出生日期标签行，两个开关同行，纵向少占两行。
+  /* v142：双栏下阳历/农历收进出生日期标签行，外框与日期按钮等高；早晚子时移到时/分同排。
      只改 .mrg-person 内的 roomy 表单，不动单人出生表单与结果盘面。 */
   .mrg-person .bf-date-field { flex-direction: row; align-items: center; gap: var(--gap-sm); }
-  .mrg-person .bf-date-field .bf-cal { flex: 1; padding: var(--gap-xs); }
-  .mrg-person .bf-date-field .bf-cal button { flex: 1; padding: 0 var(--gap-xs); font-size: var(--fs-sm); }
+  .mrg-person .bf-date-field .bf-cal { flex: 1; height: var(--control-h-compact); padding: 0; }
+  .mrg-person .bf-date-field .bf-cal button { flex: 1; height: 100%; padding: 0 var(--gap-xs); font-size: var(--fs-xs); }
   .mrg-person .bf-date-field .bf-lab { font-size: var(--fs-sm); }
-  .mrg-person .bf-know-row { display: flex; align-items: center; gap: var(--gap-sm); flex-wrap: wrap; }
-  .mrg-person .bf-know-row .mrg-zz { margin-top: 0; }
+  .mrg-person .bf-time-row { display: grid; grid-template-columns: 1fr 1fr auto; align-items: center; gap: var(--gap-xs); }
+  .mrg-person .bf-time-row .bf-time { display: contents; }
+  .mrg-person .bf-time-row .mrg-zz { margin-top: 0; }
 }
 
 /* 六爻盘面 */
