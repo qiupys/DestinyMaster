@@ -51,6 +51,7 @@
   --radius-lg: 12px;
   --radius-pill: 999px;
   --control-h: 42px;
+  --control-h-compact: 36px;  /* 并列窄栏表单（双人合婚/择日）：每列约 333px，避免 42px 控件撑满 */
   --btn-h: 42px;
   --btn-primary-h: 46px;
   --line-w: 1px;
@@ -668,6 +669,8 @@ details.p-disclose .inner { padding-bottom: 12px; }
 /* ---------- 弹层 / toast ---------- */
 .p-modal { position:fixed; inset:0; background:rgba(17,24,39,.45); display:grid; place-items:center; z-index:100; backdrop-filter:blur(3px); }
 .p-modal-box { position:relative; width:min(420px,90vw); background:var(--bg); border:1px solid var(--line); border-radius:16px; padding:28px; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+/* v137 注册弹窗字段多（出生日期/出生地/性别），加宽缓解拥挤；登录页保持 420px。 */
+.p-modal-box.is-reg { width:min(600px,92vw); }
 .p-modal-x { position:absolute; right:14px; top:10px; background:transparent; border:0; font-size:var(--fs-xl); color:var(--ink-3); cursor:pointer; }
 /* 管理员入口与弹层 */
 .p-admin-link { display:flex; align-items:center; gap:10px; width:100%; margin-top:10px; padding:8px 12px; font:inherit; font-size:var(--fs-sm);
@@ -896,6 +899,7 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
     -webkit-overflow-scrolling: touch;
   }
   .p-modal-box { width: 100%; max-width: 420px; padding: 22px 18px; border-radius: var(--radius-lg); margin: auto 0; }
+  .p-modal-box.is-reg { width: 100%; max-width: 520px; }
 
   /* 个人中心 */
   .p-profile-head { gap: 12px; }
@@ -1558,7 +1562,9 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .bz-cur { margin: 0 0 8px; font-size: var(--fs-xs); color: var(--ink-3); }
 
 /* 八字：十神分析 / 神煞分析卡（v130，从 Board.data 投影，逐柱展开） */
-.bz-analysis { margin-top: var(--gap-sm); }
+/* v138：十神/神煞卡是 bzAnalysisHTML 直接挂在结果根下的 .p-card，不在 .p-result 容器内，
+   吃不到 `.p-result .p-card` 的 760 约束，曾撑到 804px 比表单卡宽 22px。并入 --content-w 单一宽度源。 */
+.bz-analysis { margin: var(--gap-sm) auto 0; max-width: var(--content-w); }
 .bz-analysis .bz-sec-h { margin-bottom: var(--gap-sm); }
 .bz-god-grid, .bz-sha-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--gap-sm); }
 @media (max-width: 680px) { .bz-god-grid, .bz-sha-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
@@ -1755,6 +1761,24 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
   .mrg-two, .mrg-pair { grid-template-columns: 1fr; }
   .mrg-rel { flex-direction: column; gap: 2px; }
   .mrg-rel b { flex: none; }
+}
+/* v137 双人表单紧凑尺度：两列各约 333px，全宽表单的 42px 控件 + 14px 字在
+   139px 姓名框 / 90px 出生地下拉里显得撑。字号降一级（控件 base / 标签 sm），
+   控件高走 --control-h-compact，段间距收紧；只作用于 .mrg-person 内的填写控件，
+   不动结果盘面（.mrg-p-card / .mrg-pal 等已是 --fs-xs 小字）。
+   限定 min-width:901px：更窄屏走 900px 断点的 16px 防 iOS 缩放，且单列不需紧凑。 */
+@media (min-width: 901px) {
+  .mrg-person .ti, .mrg-person .bf-datebtn { height: var(--control-h-compact); font-size: var(--fs-base); }
+  .mrg-person .bf-cal button { height: var(--control-h-compact); font-size: var(--fs-base); }
+  .mrg-person .tf-field label, .mrg-person .bf-lab,
+  .mrg-person .p-switch { font-size: var(--fs-sm); }
+  .mrg-person .mrg-ph, .mrg-person .bf-title { font-size: var(--fs-base); }
+  .mrg-person .bf-roomy .bf-fields { gap: var(--gap-xs); }
+  .mrg-person .bf-roomy .bf-sec, .mrg-person .bf-roomy .bf-field { gap: var(--gap-xs); }
+  .mrg-person > .tf-grid { margin-bottom: var(--gap-sm); }
+  .mrg-person .place-fields { margin-top: var(--gap-sm); }
+  .mrg-person .pl-grid { gap: var(--gap-xs); }
+  .mrg-person .mrg-zz { margin-top: var(--gap-sm); }
 }
 
 /* 六爻盘面 */

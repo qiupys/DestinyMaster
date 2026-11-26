@@ -936,6 +936,9 @@
       '<div id="p-auth-form"></div>';
     function showForm(t) {
       $$(".p-auth-tabs button", box).forEach(function (b) { b.classList.toggle("on", b.dataset.t === t); });
+      // 注册表单字段多（出生日期/出生地/性别），弹窗加宽缓解拥挤；登录保持紧凑。
+      var modalBox = $("#p-modal .p-modal-box");
+      if (modalBox) modalBox.classList.toggle("is-reg", t === "reg");
       var f = $("#p-auth-form", box);
       if (t === "login") {
         f.innerHTML =
@@ -951,11 +954,14 @@
             '<div class="p-frow"><label class="p-flabel">密码（≥6位）</label><input class="p-input" id="au-pass" type="password" /></div>' +
             '<div class="p-frow"><label class="p-flabel">确认密码</label><input class="p-input" id="au-pass2" type="password" /></div>' +
           '</div>' +
-          '<div class="p-frow" style="margin-top:16px">' + birthFieldsHTML("au", { title: "出生信息", compact: true }) + '</div>' +
+          '<div class="p-frow" style="margin-top:16px">' + birthFieldsHTML("au", { title: "出生信息", noBazi: true, compact: true }) + '</div>' +
           '<div class="p-frow" style="margin-top:12px"><label class="p-flabel">性别</label><div class="p-seg" id="au-gender"><button class="on" data-v="男">男</button><button data-v="女">女</button></div></div>' +
+          // 注册出生地与八字/占星共用同一套三级联动控件；必填，仅入档不校正排盘。
+          placeFieldsHTML("au", { hint: "出生地用于统一档案资料；列表未含的城市可选邻近城市。" }) +
           '<div class="p-err" id="au-err"></div>' +
           '<button class="auth-submit" id="au-submit">注册并登录</button>';
         birthFieldsBind("au");
+        placeFieldsBind("au", {});
         segBind($("#au-gender", f));
       }
       $("#au-submit", f).onclick = function () { submitAuth(t); };
@@ -1580,6 +1586,14 @@
     }
     if (pass !== $("#au-pass2").value) { err.textContent = "两次密码不一致"; return; }
     var gender = segVal($("#au-gender"));
+    // 注册出生地与八字/占星统一为三级联动：必填，仅入档，不做真太阳时校正。
+    var pl = placeCollect("au");
+    if (!pl.city || pl.lat == null || pl.lon == null) { err.textContent = "请选择出生地点"; return; }
+    function withPlace(birth) {
+      birth.country = pl.country; birth.province = pl.province; birth.city = pl.city;
+      birth.place = pl.place; birth.lat = pl.lat; birth.lon = pl.lon; birth.tz = pl.tz;
+      return birth;
+    }
     var bc = birthCollect("au");
     if (bc.mode === "bazi") {
       // 八字方式：先由四柱反查出生公历日期，再建立档案
@@ -1591,16 +1605,16 @@
         .then(function (d) {
           if (!d.ok) { err.textContent = d.error || "无法由该八字推算出生日期"; return; }
           doAuth("/api/profile/register", { name: name, password: pass,
-            birth: { calendar: "solar", year: d.year, month: d.month, day: d.day,
-              hour: d.hour, minute: 0, know_time: true, gender: gender } }, "档案已建立", err);
+            birth: withPlace({ calendar: "solar", year: d.year, month: d.month, day: d.day,
+              hour: d.hour, minute: 0, know_time: true, gender: gender }) }, "档案已建立", err);
         })
         .catch(function (e) { err.textContent = "网络错误：" + e.message; });
       return;
     }
     if (!bc.year || !bc.month || !bc.day) { err.textContent = "请选择出生日期"; return; }
     doAuth("/api/profile/register", { name: name, password: pass,
-      birth: { calendar: bc.calendar, year: bc.year, month: bc.month, day: bc.day,
-        hour: bc.hour, minute: bc.minute, know_time: bc.know_time, gender: gender } }, "档案已建立", err);
+      birth: withPlace({ calendar: bc.calendar, year: bc.year, month: bc.month, day: bc.day,
+        hour: bc.hour, minute: bc.minute, know_time: bc.know_time, gender: gender }) }, "档案已建立", err);
   }
 
   // 八字日期部分查询串：日期方式带 calendar/year/...；八字方式带四柱干支
@@ -1720,10 +1734,11 @@
         '<div class="tf-group"><div class="tf-gt">基本信息</div>' +
           '<div class="tf-grid">' +
             '<div class="tf-field"><label>性别</label><select class="ti" id="bz-gender"><option>男</option><option>女</option></select></div>' +
-            '<div class="tf-field"><label>出生地（可选）</label><input class="ti" id="bz-place" placeholder="请输入出生地" /></div>' +
           '</div>' +
         '</div>' +
         '<div class="tf-group">' + birthFieldsHTML("bz", { title: "时间信息" }) + '</div>' +
+        // 出生地与占星/注册共用同一套三级联动控件；必填，仅收集入档，不做真太阳时校正。
+        placeFieldsHTML("bz", { hint: "出生地用于统一档案资料；列表未含的城市可选邻近城市。" }) +
         '<button class="tool-submit" id="bz-calc">开始计算八字</button>' +
         '<div class="p-err" id="bz-err"></div>' +
       '</div></div>' +
@@ -1736,10 +1751,14 @@
       ], "年柱以立春为界、月柱以节气为界；全部字段由程序确定性计算，同一出生信息永远得到同一盘面。登录后可直接带入档案里的出生资料。");
 
     birthFieldsBind("bz");
+    placeFieldsBind("bz");
     var params = function () {
       var b = birthCollect("bz");
       b.gender = $("#bz-gender").value;
-      b.birth_place = $("#bz-place").value.trim();
+      // 出生地与占星/注册统一为三级联动：收集为身份字段并入 dedupe key，仅入档不校正排盘。
+      var pl = placeCollect("bz");
+      ["country", "province", "city", "place", "lat", "lon", "tz"].forEach(function (k) { b[k] = pl[k]; });
+      b.birth_place = pl.place;
       return b;
     };
     var lastQS = "";   // 本次排盘的出生参数，供下方提问复用
@@ -1747,8 +1766,15 @@
     $("#bz-calc").onclick = function () {
       var isAuto = autoCalcFlag; autoCalcFlag = false;
       var p = params();
+      // 出生地必填：三级联动默认选中「中国·北京」，但显式校验经纬度，避免空值进入档案。
+      if (!p.city || p.lat == null || p.lon == null) {
+        $("#bz-err").textContent = "请选择出生地点"; return;
+      }
       var qs = baziQS(p) +
-        "&gender=" + encodeURIComponent(p.gender) + "&birth_place=" + encodeURIComponent(p.birth_place);
+        "&gender=" + encodeURIComponent(p.gender) + "&birth_place=" + encodeURIComponent(p.birth_place) +
+        "&country=" + encodeURIComponent(p.country) + "&province=" + encodeURIComponent(p.province) +
+        "&city=" + encodeURIComponent(p.city) + "&place=" + encodeURIComponent(p.place) +
+        "&lat=" + p.lat + "&lon=" + p.lon + "&tz=" + p.tz;
       // 用户主动改过出生信息 → 排盘成功后写回档案（档案是全站唯一数据源）
       var saveBirth = S.bzSaveBirth && S.profile;
       if (saveBirth) qs += "&save=1" + authParam();
@@ -1970,6 +1996,7 @@
             birthFieldsBind("bz", { calendar: "solar", year: yyyy, month: mm, day: dd,
               hour: b.hour != null ? b.hour : 12, minute: b.minute != null ? b.minute : 0,
               know_time: b.know_time !== false });
+            placeFieldsBind("bz", b);
             if (b.gender) $("#bz-gender").value = (b.gender === "male" ? "男" : b.gender === "female" ? "女" : b.gender);
             // 自动排盘：填好档案出生信息后直接出结果
             if ($("#bz-date").value) { autoCalcFlag = true; $("#bz-calc").click(); }

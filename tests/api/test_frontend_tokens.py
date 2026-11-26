@@ -88,6 +88,38 @@ class TestFrontendTokens(unittest.TestCase):
     def test_no_inline_font_size_in_templates(self):
         self.assertNotIn("font-size:", JS, "模板里仍有内联 font-size，样式应留在 portal.css 的 token 层")
 
+    def test_birthplace_shared_control_unified_and_required(self):
+        """v137：八字/占星/注册统一复用 placeFieldsHTML 三级联动，出生地必填，不做真太阳时校正。"""
+        # 八字页不再保留旧的「出生地（可选）」自由文本框（id 仍叫 bz-place，但由 placeFieldsHTML 生成）
+        self.assertNotIn("出生地（可选）", JS, "八字页仍有旧的「出生地（可选）」文本框")
+        self.assertIn('placeFieldsHTML("bz"', JS, "八字页未接入统一出生地控件")
+        self.assertIn('placeFieldsBind("bz")', JS, "八字页未绑定统一出生地控件")
+        self.assertIn('placeFieldsHTML("au"', JS, "注册弹窗未接入统一出生地控件")
+        self.assertIn("请选择出生地点", JS, "注册/八字缺少出生地必填校验")
+        # 真太阳时开关不得回到产品模板（预览里那版被否掉了：仅收集不用）
+        self.assertNotIn("使用真太阳时", JS, "产品模板出现真太阳时开关，与「仅收集不用」口径冲突")
+
+    def test_marriage_compact_uses_token_and_scoped(self):
+        """v137：合婚表单 compact 高度走 token，且只作用于填写控件不碰结果盘面。"""
+        block = _block(".portal-body")
+        self.assertIn("--control-h-compact: 36px", block, "缺少紧凑控件高度 token")
+        self.assertIn("height: var(--control-h-compact)", CSS, "compact 规则未使用高度 token")
+        # compact 规则必须限定 .mrg-person 作用域，不得全局改 .ti
+        self.assertIn(".mrg-person .ti", CSS, "compact 未限定在合婚填写表单作用域")
+
+    def test_analysis_cards_share_content_width(self):
+        """v138：十神/神煞卡挂在结果根外（非 .p-result 内），必须自己并入 --content-w，
+        否则吃不到 `.p-result .p-card` 的 760 约束，撑到 804px 比表单卡宽 22px。"""
+        block = _block(".bz-analysis")
+        self.assertIn("var(--content-w)", block, ".bz-analysis 未并入单一宽度源")
+        self.assertIn("auto", block, ".bz-analysis 缺少水平居中，宽度设了也不会对齐")
+
+    def test_register_modal_widened_only_on_reg_tab(self):
+        """v137：仅注册 tab 加宽弹窗缓解拥挤，登录保持 420px。"""
+        self.assertIn(".p-modal-box.is-reg", CSS, "缺少注册弹窗加宽规则")
+        self.assertIn("width:min(600px,92vw)", CSS, "注册弹窗未加宽到 600px")
+        self.assertIn('classList.toggle("is-reg"', JS, "login/reg 切换未同步弹窗宽度状态")
+
     def test_asset_version_bumped_with_css_change(self):
         # 只锁版本下限（v114 为该护栏引入基线），避免每次正经 bump 都要改测试。
         # 版本回退到基线以下（缓存破坏失效）仍会被这里拦住。

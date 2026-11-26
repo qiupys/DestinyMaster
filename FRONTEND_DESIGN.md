@@ -55,7 +55,9 @@
 | 出生资料表单 | `birthFieldsHTML/Bind/Collect` | 所有出生日期/时间/农历表单唯一模板；`opts`：`simple`=隐八字+农历，`noBazi`=只隐八字（档案编辑保留农历互转），`noLunar`=只隐农历 |
 | 任意公历时刻 | `dateTimeHTML/Bind/Collect` | 梅花指定起卦、黄历第二人八字；共用日历 `openDateLookup`，禁用原生 `datetime-local` |
 | 日历弹窗 | 全局单例 `dpEl` / `openDateLookup` | 两种模式由 `dpOnPick` 是否为空区分 |
-| 出生地三级联动 | `placeFieldsHTML/Bind/Collect` + `GEO_DATA` | 国家→省/州→城市；三列同一行，窄屏 <620 折单列；城市 select id=`${pfx}-city` |
+| 出生地三级联动 | `placeFieldsHTML/Bind/Collect` + `GEO_DATA` | 国家→省/州→城市；三列同一行，窄屏 <620 折单列；城市 select id=`${pfx}-city`；八字/占星/注册三处统一复用且必填，仅收集入档不做真太阳时校正 |
+| 双人表单 compact | `.mrg-person` + `--control-h-compact` | `min-width:901px` 生效：控件 36 / 控件字 base / 标签 sm / 卡头 base，间距收紧一档；只作用于填写控件，不动 `.mrg-p-card` 结果盘面 |
+| 注册弹窗宽度 | `.p-modal-box.is-reg` | 注册 tab 加宽 600px（移动 520px），登录保持 420px；`openAuth.showForm` 按 tab 切 `is-reg` |
 | 提问卡 | `.bz-ask` / `.zw-ask` / `.zw-d-ask` / `.bz-ask.as-ask` | 统一 `max-width:var(--content-w)`，禁止写死宽度 |
 | 门禁提示框 | `.p-bazi-gate`（`.ok`/`.warn`） | 统一放表单第一个子元素 |
 | AI 流式解读 | `streamToUrl` / `streamAI` | 统一 SSE 渲染、免责、追问条；新功能不得自写 fetch |
