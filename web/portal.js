@@ -333,11 +333,22 @@
     var arc = $(".round-archive", st);
     if (!root && !arc) return;
     try {
+      // v123：各输出槽单独存一份。紫微命格槽(#zw-ai-out)与宫位槽(#zw-d-ai-out)互斥，
+      // 只读当前视图的 rootHtml 会丢掉另一槽的解读卡；缓存里保留暂未挂回的节点。
+      var outHtml = {};
+      Core.outsOf(feat).forEach(function (sel) {
+        var el = $(sel, st) || (OUT_CACHE[feat] && OUT_CACHE[feat][sel]);
+        if (el) outHtml[sel] = el.innerHTML;
+      });
       sessionStorage.setItem(snapKey(feat), JSON.stringify({
         // v116：解读状态以对象为真相源（含轮次/归档/追问链）；DOM 仅作视觉投影。
         core: Core.serializeFeature(feat),
         rootHtml: root ? root.innerHTML : null,
         rootId: root ? root.id : null,
+        outHtml: outHtml,
+        // 紫微视图状态（选中宫位/视图/年份）：盘面是动态渲染的，快照必须记录身份，
+        // 否则刷新后回到默认盘面，宫位槽的解读卡虽有对象却无处投影。
+        zwState: feat === "ziwei" && S.zw ? { view: S.zw.view, sel: S.zw.sel, year: S.zw.year } : null,
         arcHtml: arc ? arc.innerHTML : null,
         formHidden: (function () {
           var fc = $(".tool-card[id$='-form-card']", st);
@@ -371,7 +382,45 @@
         tries++; setTimeout(attempt, 100); return;
       }
       var restored = false;
-      if (snap.rootHtml != null && root) { root.innerHTML = snap.rootHtml; restored = true; }
+      // 对象先恢复，紫微再按快照的视图状态重绘盘面（事件随渲染重新绑定），
+      // 最后回填解读槽——顺序反了会被 preserveOutputs 刷掉。
+      Core.restoreFeature(snap.core || {});
+      if (feat === "ziwei" && snap.zwState && zwS().chart) {
+        var z = zwS();
+        z.view = snap.zwState.view || z.view;
+        z.sel = snap.zwState.sel != null ? snap.zwState.sel : null;
+        z.year = snap.zwState.year || z.year;
+        zwRender();
+        restored = true;
+      }
+      if (feat === "ziwei" && root) {
+        // v123：紫微盘面是动态渲染且 tab / 宫位 onclick 绑在节点上，绝不能用旧
+        // innerHTML 整体覆盖（刷新后整盘点不动、像锁死在财帛宫）。只回填解读输出槽：
+        // 当前视图没有的槽暂存，切到对应视图时由 preserveOutputs 挂回。
+        var tmp = document.createElement("div");
+        if (snap.rootHtml != null) tmp.innerHTML = snap.rootHtml;
+        if (!OUT_CACHE[feat]) OUT_CACHE[feat] = {};
+        Core.outsOf(feat).forEach(function (sel) {
+          var html = snap.outHtml && snap.outHtml[sel];
+          var src = null;
+          if (html != null) {
+            src = document.createElement("div");
+            src.innerHTML = html;
+          } else {
+            // 兼容 v122 及更早的快照（没有 outHtml 字段）：从 rootHtml 里挖。
+            var id = sel.replace(/^#/, "");
+            src = tmp.querySelector(sel) || tmp.querySelector("#" + id);
+          }
+          if (!src) return;
+          var dst = $(sel, root);
+          if (dst) { dst.innerHTML = src.innerHTML; OUT_CACHE[feat][sel] = dst; }
+          else OUT_CACHE[feat][sel] = src;
+          restored = true;
+        });
+      } else if (snap.rootHtml != null && root) {
+        // 其他功能结果区是静态 HTML，快照整块回填即可（盘面本身不重绘）。
+        root.innerHTML = snap.rootHtml; restored = true;
+      }
       if (snap.arcHtml != null) {
         var arc = $(".round-archive", st);
         if (!arc) { arc = document.createElement("div"); arc.className = "round-archive"; st.appendChild(arc); }
@@ -383,7 +432,6 @@
       }
       if (restored) {
         // 对象状态与 DOM 投影同步恢复：追问/去重判断从对象读，必须与画面一致。
-        Core.restoreFeature(snap.core || {});
         st.dataset.snapRestored = "1";
         rebindFollows(st);
       }

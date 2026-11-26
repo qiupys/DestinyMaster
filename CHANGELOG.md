@@ -11,6 +11,11 @@
 
 ---
 
+## v123 (2026-11-26)
+- [fix][严重] 紫微刷新后「命格/本命/运势」三个视图和十二宫位点全点不动、运势盘像锁死在财帛宫：根因是 v121 为修刷新丢对话引入的 `restoreStageSnap()` 用快照 `rootHtml` 整体覆盖 `#zw-result`，把渲染时绑在 tab / 宫位节点上的 `onclick` 一起抹成 `null`（浏览器实测：刷新前 `typeof onclick === "function"`，刷新后 `object`，点运势 tab 后当前视图仍是 plate）。改为只回填解读输出槽，盘面 DOM 与事件保持当前渲染结果；当前视图不存在的槽暂存进 `OUT_CACHE`，切到对应视图时由 `preserveOutputs()` 原样挂回。快照新增按槽 `outHtml`（解决紫微命格槽与宫位槽互斥时另一槽解读卡丢失）和 `zwState`（视图/选中宫/年份，恢复时先按状态重绘盘面再回填解读卡）。
+- [test] `test_reading_e2e.js` M 组新增 M2/M3/M4 三项回归断言：刷新后 tab/宫位事件绑定保留、运势视图可点击切换、宫位可点选；40→43 项全绿。
+- [docs][发布] portal.js / index.html bump v123。
+
 ## v122 (2026-11-25)
 - [refactor][test] 建立声明式测试矩阵：`tests/contracts.json` 作为「功能 × 场景 × 不变量」单一事实源，必须与 `FEATURES` 注册表严格对齐；新增 `test_chain_matrix.py`（真实引擎链路：calc 展示事实逐字进 prompt / 问题回填 / 同盘回放 / 追问保盘 / 身份变化新轮 / 非法锁盘显式报错）、`test_contract_matrix.js`（对象层 9 类不变量对全部功能生成断言）、`test_browser_matrix.js`（全部功能 × 7 高频场景，真实 HTTP + mock AI）、`test_mutation_probes.js`（注入历史 bug 验证矩阵会报警）、`test_contract_matrix_guard.py`（防漏登记），并收口为一条命令 `node tests/js/run_matrix.js`。
 - [fix] 矩阵新发现并修复两处真 bug：① 占星 `paintAstro()` 无条件 `archiveRound()`，同参数重绘就把当前解读归档、画面空 —— 改为与八字同构的 `chartKey` 判定 + `preserveOutputs()`；② 双人择日复用老黄历舞台时对象写进 `huangli` 单人会话（两个 Person 丢失），快照也按 `huangli` 存导致刷新丢对话 —— `sessOf` 按 `#hl-tabs` pair 状态归到 `huangli_pair`，切 tab 归档传实际 `feat`，`saveStageSnap/restoreStageSnap` 按 Reading 所属功能存取并复用老黄历舞台。

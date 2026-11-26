@@ -453,6 +453,30 @@ function sessionState(page, feature, slot) {
         }).join(",") : "NO_SNAP" };
     });
     check(m.card && m.obj, "M1 刷新后宫位对话与对象一致", JSON.stringify(m));
+    // v123 回归：快照恢复曾整体覆盖结果区 innerHTML，抹掉渲染时绑定的
+    // tab / 宫位 onclick —— 刷新后三个视图全点不动、宫位锁死在上一轮选中的宫。
+    var m2 = await page.evaluate(function () {
+      var t = document.querySelector("#zw-tabs button[data-v='fortune']");
+      var p = document.querySelector("#zw-plate .zw-pal");
+      return { tab: t ? typeof t.onclick : "no-tab", pal: p ? typeof p.onclick : "no-pal" };
+    });
+    check(m2.tab === "function" && m2.pal === "function",
+      "M2 刷新后盘面 tab/宫位事件绑定保留", JSON.stringify(m2));
+    await page.click("#zw-tabs button[data-v='fortune']");
+    await page.waitForTimeout(300);
+    var m3 = await page.evaluate(function () {
+      var on = document.querySelector("#zw-tabs button.on");
+      return { view: on ? on.dataset.v : "", plate: !!document.querySelector("#zw-plate") };
+    });
+    check(m3.view === "fortune" && m3.plate, "M3 刷新后运势视图可点击切换", JSON.stringify(m3));
+    await page.click("#zw-tabs button[data-v='plate']");
+    await page.waitForTimeout(200);
+    await page.click("#zw-plate .zw-pal");
+    await page.waitForTimeout(200);
+    var m4 = await page.evaluate(function () {
+      return { detail: !!document.querySelector(".zw-detail"), sel: !!document.querySelector("#zw-plate .zw-pal.sel") };
+    });
+    check(m4.detail && m4.sel, "M4 刷新后宫位可点选", JSON.stringify(m4));
 
     // ---- N. 登录 / 退出登录：对象与缓存彻底隔离 ----
     console.log("\n[N] 登录退出缓存隔离");
