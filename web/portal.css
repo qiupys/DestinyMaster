@@ -1586,7 +1586,9 @@ select.ti { appearance: none; background-image: linear-gradient(45deg,transparen
 .bz-sha em.good { background: var(--br-good); }
 .bz-sha em.bad { background: var(--cinnabar); }
 .bz-sha em.mid { background: var(--ink-3); }
-.bz-analysis-note { margin: var(--gap-sm) 0 0; padding-top: var(--gap-sm); border-top: 1px solid var(--line);
+/* 说明段在 .p-card 内，必须比 `.p-card p` 多一个元素选择器，否则 margin/font/color/line-height 全被通用规则吃掉：
+   v139 前只生效 padding-top/border-top，分割线直接贴住上方四柱卡边框，视觉上像重叠。 */
+.bz-analysis p.bz-analysis-note { margin: var(--gap-sm) 0 0; padding-top: var(--gap-sm); border-top: var(--line-w) solid var(--line);
   font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.7; }
 
 /* 八字：结果下方的提问卡（与四柱盘面同宽居中） */

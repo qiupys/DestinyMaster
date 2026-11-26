@@ -114,6 +114,16 @@ class TestFrontendTokens(unittest.TestCase):
         self.assertIn("var(--content-w)", block, ".bz-analysis 未并入单一宽度源")
         self.assertIn("auto", block, ".bz-analysis 缺少水平居中，宽度设了也不会对齐")
 
+    def test_analysis_note_beats_generic_card_paragraph(self):
+        """v139：十神说明段在 .p-card 内，必须多一个元素选择器压过 `.p-card p`，
+        否则 margin/font/color/line-height 被通用规则吃掉，只剩分割线贴住柱卡边框。"""
+        block = _block(".bz-analysis p.bz-analysis-note")
+        self.assertTrue(block, "说明段选择器特异性不足，被 .p-card p 覆盖")
+        for token in ("margin: var(--gap-sm)", "padding-top: var(--gap-sm)",
+                      "border-top: var(--line-w)", "font-size: var(--fs-xs)",
+                      "color: var(--ink-3)"):
+            self.assertIn(token, block, f"说明段缺少 {token}")
+
     def test_register_modal_widened_only_on_reg_tab(self):
         """v137：仅注册 tab 加宽弹窗缓解拥挤，登录保持 420px。"""
         self.assertIn(".p-modal-box.is-reg", CSS, "缺少注册弹窗加宽规则")

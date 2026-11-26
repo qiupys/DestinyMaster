@@ -11,6 +11,10 @@
 
 ---
 
+## v139 (2026-11-26)
+- [fix] 十神分析卡底部说明的分割线贴住四柱卡边框、看起来重叠：说明段 `<p class="p-note bz-analysis-note">` 在 `.p-card` 内，`.p-card p`（0,1,1）覆盖了 `.bz-analysis-note`（0,1,0）的 `margin/font-size/color/line-height`，只剩 `padding-top/border-top` 生效，所以横线没有留白、文字也误用了卡片正文字号。选择器改为 `.bz-analysis p.bz-analysis-note` 恢复设计意图，线宽并入 `--line-w` token，横线与上方卡片恢复 `--gap-sm` 间距。
+- [test] 前端 token 护栏新增说明段选择器特异性与 token 断言。portal.css / index.html bump v139。
+
 ## v138 (2026-11-26)
 - [fix] 十神分析/神煞分析卡宽度对齐：两卡由 `bzAnalysisHTML()` 直接挂在 `#bz-result` 结果根下、不在 `.p-result` 容器内，吃不到 `.p-result .p-card` 的 760 约束，实测撑到 804px（比表单卡/四柱盘卡左右各宽 22px）。给 `.bz-analysis` 显式并入 `--content-w` 单一宽度源并水平居中，实测回到 left286/right1046/760px，与工具卡、四柱盘卡、提问卡完全对齐。不改 --content-w 数值本身，遵守"全部内容区单一宽度源"铁律。
 - [test] 前端 token 护栏新增 `.bz-analysis` 宽度源断言。portal.css / index.html bump v138。
