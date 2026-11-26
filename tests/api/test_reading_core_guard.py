@@ -96,6 +96,25 @@ class TestReadingCoreGuard(unittest.TestCase):
         self.assertIsNotNone(m, "找不到 archiveRound")
         self.assertNotIn("resultCard.innerHTML", m.group(0), "归档仍在复制盘面 DOM HTML")
 
+    def test_every_feature_has_dedicated_board_projection(self):
+        """v131：12 功能全部注册 Board 专属投影，通用摘要只做兜底。
+        命盘/合婚/黄历的核心对象数组（十神、神煞、宫位、行星、跨盘关系）
+        不能再被 generalBoardView 跳过；投影必须只读，不得带交互元素。"""
+        features = ("bazi", "ziwei", "meihua", "liuyao", "qimen", "tarot", "astrology",
+                    "huangli", "huangli_pair", "bazi_marriage", "ziwei_marriage",
+                    "astrology_marriage")
+        for feature in features:
+            self.assertIn("BOARD_VIEWS." + feature + " =", JS,
+                          f"{feature} 未注册专属 Board 投影")
+        start = JS.index("function generalBoardView(")
+        end = JS.index("function boardView(featureName, board)")
+        projections = JS[start:end]
+        for field in ("ten_god_detail", "shensha_by_pillar", "palaces", "planets",
+                      "aspects", "cross", "yi", "ji"):
+            self.assertIn(field, projections, f"Board 投影未读取核心字段 {field}")
+        for forbidden in ("<button", "<input", "onclick=", "data-q=", "addEventListener"):
+            self.assertNotIn(forbidden, projections, f"Board 投影含交互元素 {forbidden}")
+
     def test_session_boundary_is_page_epoch(self):
         """v127：会话边界=本次打开页面。快照必须带内存 epoch + token，恢复时校验，
         刷新（新 epoch）即丢弃旧对话——绝不能把上次打开的对话串进当前功能页。"""

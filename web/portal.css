@@ -432,6 +432,9 @@ details.p-disclose .inner { padding-bottom: 12px; }
 .pf-arch-fact .pf-board-digest { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .pf-fact { color: var(--ink-2); }
 .pf-fact b { color: var(--ink); font-weight: 600; margin-right: 6px; }
+/* v131：Board 专属投影的分组标题（命盘/合婚/黄历），唯一来源在这里 */
+.pf-board-digest .pf-fact { max-width: 100%; }
+.pf-digest-h { flex: 0 0 100%; font-size: var(--fs-md); font-weight: 600; color: var(--ink); }
 /* 归档轮只读：JS 归档时已移除 AI 解读按钮/快捷 chips/开关（防止用旧牌解读新问题）；
    追问框保留可用——在归档轮里追问仍沿用本轮旧牌/旧卦。这里 CSS 兜底隐藏解读类按钮。 */
 .round-item-bd .p-suggest, .round-item-bd .tool-ai, .round-item-bd .p-switch { display: none !important; }

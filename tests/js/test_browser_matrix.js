@@ -153,7 +153,13 @@ function login(page, user) {
       if (ui.fillBeforeCast) await page.fill(qbox, Q1);
       // 登录态命盘类会自动排盘：只有结果区还没有提问入口时才手动点起盘。
       if (ui.cast && !(await page.$(ui.ask))) { await click(page, ui.cast); await page.waitForTimeout(450); }
-      if (ui.preAskClick) { await click(page, ui.preAskClick); await page.waitForTimeout(250); }
+      if (ui.preAskClick) {
+        // 紫微登录自动排盘走真实 py-iztro + node 运限，慢于固定 350ms 的等待；
+        // 先等 tab 真正渲染再点，避免矩阵在机器繁忙时偶发「找不到 #zw-ask」。
+        try { await page.waitForSelector(ui.preAskClick, { timeout: 20000 }); }
+        catch (e) { check(false, f + " 盘面 tab 就绪", "找不到 " + ui.preAskClick); continue; }
+        await click(page, ui.preAskClick); await page.waitForTimeout(250);
+      }
       try { await page.waitForSelector(ui.ask, { timeout: 8000 }); }
       catch (e) { check(false, f + " 盘面就绪", "找不到 " + ui.ask); continue; }
       try { await page.waitForSelector(qbox, { timeout: 5000 }); }
@@ -259,6 +265,14 @@ function login(page, user) {
       await page.goto(BASE + "/#/home", { waitUntil: "domcontentloaded" });
       await page.goto(BASE + "/" + ui.route, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(700);
+      // 命盘类登录自动排盘 + 快照恢复是异步链路，固定 700ms 在机器繁忙时会
+      // 先于恢复完成就断言。按状态等待（超时仍会让下面的 check 报出具体状态）。
+      try {
+        await page.waitForFunction(function (o) {
+          var s = window.ReadingCore.session(o.f);
+          return !!s.current && !!document.querySelector(o.out + " .p-ai.done");
+        }, { f: f, out: out }, { timeout: 10000 });
+      } catch (e) { /* 交由下方 check 输出诊断信息 */ }
       var sw = await page.evaluate(function (o) {
         var s = window.ReadingCore.session(o.f);
         return { cur: !!s.current, card: !!document.querySelector(o.out + " .p-ai.done") };

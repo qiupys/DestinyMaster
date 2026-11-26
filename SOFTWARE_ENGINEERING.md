@@ -96,7 +96,7 @@ calc（确定性计算，出盘面/牌面/卦面）
 1. bump `web/index.html` 的 `portal.css?v=` / `portal.js?v=`（版本号唯一来源，toybox `sed -i ''` 不稳定，用编辑工具）。
 2. 填写 `CHANGELOG.md`（强制，见文件顶部规范）。
 3. 提交并推送 git。
-4. scp 改动文件到运行目录 → 校验 md5 一致 → `systemctl restart ziwei`（仅改静态前端时不必重启，但 bump 版本号必做）。
+4. scp 改动文件到运行目录 `/opt/destiny` → 校验 md5 一致 → `systemctl restart destiny`（仅改静态前端时不必重启，但 bump 版本号必做）。旧目录 `/opt/ziwei` / 旧服务 `ziwei` 已于 v131 迁移下线。
 5. 线上跑全部 E2E + 检查服务 active + 应用日志无 error/traceback/segfault。
 6. SSH 偶发 `channel refused`，用 `-o ControlMaster=no -o ControlPath=none` 直连。
 

@@ -80,6 +80,257 @@
     if (!lines.length) return "";
     return '<div class="p-result"><div class="p-card pf-board-digest">' + lines.join("") + '</div></div>';
   }
+  /* ===== 命盘/合婚/黄历的专属投影（v131）=====
+   * 通用 generalBoardView 只列标量，十个核心盘面字段（四柱、十神细节、神煞、
+   * 宫位、行星、相位、跨盘关系等）是对象/数组，会被整段跳过，归档摘要因此残缺。
+   * 这里为每个功能注册纯函数投影：输入只有冻结的 Board.data，输出只读 HTML，
+   * 没有按钮/事件/提问框，与牌面/卦面投影同构。 */
+  function digestFact(label, value) {
+    if (value == null || value === "" || value === false) return "";
+    if (Array.isArray(value) && !value.length) return "";
+    return '<span class="pf-fact"><b>' + esc(label) + '</b>' + esc(String(value)) + '</span>';
+  }
+  function digestCard(title, facts) {
+    var rows = facts.filter(Boolean);
+    if (!rows.length) return "";
+    return '<div class="p-result"><div class="p-card pf-board-digest">' +
+      '<span class="pf-fact pf-digest-h"><b>' + esc(title) + '</b>盘面事实 · 只读</span>' +
+      rows.join("") + '</div></div>';
+  }
+  function digestStars(list, limit) {
+    if (!list || !list.length) return "无主星";
+    var max = limit || 4;
+    return list.slice(0, max).map(function (star) {
+      return (star.name || "") + (star.brightness ? "(" + star.brightness + ")" : "") +
+        (star.mutagen ? "化" + star.mutagen : "");
+    }).join("、") + (list.length > max ? " 等" : "");
+  }
+  function digestPillars(pillars, gods) {
+    var labels = { year: "年", month: "月", day: "日", hour: "时" };
+    return Object.keys(labels).map(function (key) {
+      var tenGod = (gods || {})[key];
+      return labels[key] + " " + ((pillars || {})[key] || "—") + (tenGod ? "(" + tenGod + ")" : "");
+    }).join(" · ");
+  }
+  function baziBoardView(boardData) {
+    var labels = { year: "年", month: "月", day: "日", hour: "时" };
+    var wuxing = boardData.wuxing || {}, nayin = boardData.nayin || {};
+    var facts = [
+      digestFact("四柱十神", digestPillars(boardData.pillars, boardData.ten_gods)),
+      digestFact("日主", boardData.day_master),
+      digestFact("纳音", Object.keys(labels).map(function (key) {
+        return labels[key] + " " + (nayin[key] || "—");
+      }).join(" · ")),
+      digestFact("五行", Object.keys(wuxing).map(function (key) { return key + (wuxing[key] || 0); }).join(" ")),
+      digestFact("神煞", (boardData.shensha || []).map(function (item) {
+        return item.name + "（" + (item.pillars || []).join("、") + "柱）";
+      }).join("；"))
+    ];
+    // 对象/数组核心事实：逐柱十神（含藏干）与逐柱神煞，通用摘要原本整段跳过。
+    var detail = boardData.ten_god_detail || {}, byPillar = boardData.shensha_by_pillar || {};
+    Object.keys(labels).forEach(function (key) {
+      var item = detail[key] || {}, parts = [];
+      if (item.main) parts.push(item.main + (item.main_desc ? "（" + item.main_desc + "）" : ""));
+      var hidden = (item.hidden || []).map(function (x) { return x.gan + x.shi_shen; });
+      if (hidden.length) parts.push("藏干 " + hidden.join("、"));
+      if (parts.length) facts.push(digestFact(labels[key] + "柱十神", parts.join(" · ")));
+      var shensha = (byPillar[key] || []).map(function (x) { return x.name; });
+      if (shensha.length) facts.push(digestFact(labels[key] + "柱神煞", shensha.join("、")));
+    });
+    var current = boardData.current || {};
+    if (current.dayun) facts.push(digestFact("当前大运", current.dayun + "（" +
+      (current.dayun_range || []).join("-") + "，" + (current.age || "—") + "岁）"));
+    if (boardData.target_year) {
+      var liunian = null, liuyue = null;
+      (boardData.liunian || []).forEach(function (yearItem) {
+        if (yearItem.year !== boardData.target_year) return;
+        liunian = yearItem;
+        (yearItem.liuyue || []).forEach(function (monthItem) {
+          if (monthItem.month === boardData.target_month) liuyue = monthItem;
+        });
+      });
+      facts.push(digestFact("推演时点", boardData.target_year + "年" +
+        (liunian ? " " + liunian.ganzhi : "") +
+        (liuyue ? " · " + boardData.target_month + "月 " + liuyue.ganzhi + "（节气月柱）" : "")));
+    }
+    return digestCard("八字", facts);
+  }
+  BOARD_VIEWS.bazi = baziBoardView;
+  function ziweiBoardView(boardData) {
+    var palaces = (boardData.palaces || []).slice().sort(function (a, b) {
+      return (a.index || 0) - (b.index || 0);
+    });
+    var facts = [
+      digestFact("农历", boardData.lunarDate),
+      digestFact("干支", boardData.chineseDate),
+      digestFact("五行局", boardData.fiveElementsClass),
+      digestFact("命主身主", "命主 " + (boardData.soul || "—") + " · 身主 " + (boardData.body || "—"))
+    ];
+    var soul = null;
+    palaces.forEach(function (palace) { if (palace.name === "命宫") soul = palace; });
+    if (soul) facts.push(digestFact("命宫", (soul.heavenlyStem || "") + (soul.earthlyBranch || "") +
+      " · " + digestStars(soul.majorStars)));
+    facts.push(digestFact("十二宫主星", palaces.map(function (palace) {
+      return palace.name + " " + digestStars(palace.majorStars, 2);
+    }).join("；")));
+    var mutagens = {};
+    palaces.forEach(function (palace) {
+      [palace.majorStars, palace.minorStars].forEach(function (stars) {
+        (stars || []).forEach(function (star) {
+          if (star.mutagen && !mutagens[star.mutagen]) {
+            mutagens[star.mutagen] = star.name + "化" + star.mutagen + "落" + palace.name;
+          }
+        });
+      });
+    });
+    ["禄", "权", "科", "忌"].forEach(function (key) {
+      if (mutagens[key]) facts.push(digestFact("生年四化", mutagens[key]));
+    });
+    var horo = boardData.horoscope || {};
+    if (horo.decadal) facts.push(digestFact("大限", (horo.decadal.heavenlyStem || "") +
+      (horo.decadal.earthlyBranch || "") + (horo.decadal.range ? " · " + horo.decadal.range.join("-") + "岁" : "")));
+    if (horo.yearly) facts.push(digestFact("流年", (horo.yearly.heavenlyStem || "") +
+      (horo.yearly.earthlyBranch || "") + (horo.yearly.solarRange ? " · " + horo.yearly.solarRange.join("~") : "")));
+    if (horo.monthly) facts.push(digestFact("流月", (horo.monthly.heavenlyStem || "") +
+      (horo.monthly.earthlyBranch || "") + (horo.monthly.solarRange ? " · " + horo.monthly.solarRange.join("~") : "")));
+    return digestCard("紫微命盘", facts);
+  }
+  BOARD_VIEWS.ziwei = ziweiBoardView;
+  function astroBoardView(boardData) {
+    function pos(item) {
+      if (!item) return "—";
+      return (item.sign || "—") + " " + (item.degree || "") +
+        (item.house ? " · 第" + item.house + "宫" : "");
+    }
+    var facts = [
+      digestFact("太阳", pos(boardData.sun)),
+      digestFact("月亮", pos(boardData.moon)),
+      digestFact("上升", pos(boardData.asc)),
+      digestFact("中天", pos(boardData.mc)),
+      digestFact("宫制", boardData.house_system),
+      digestFact("元素", Object.keys(boardData.element || {}).map(function (key) {
+        return key + (boardData.element[key] || 0);
+      }).join(" "))
+    ];
+    facts.push(digestFact("行星落座", (boardData.planets || []).filter(function (planet) {
+      return planet.key !== "sun" && planet.key !== "moon";
+    }).map(function (planet) {
+      return planet.name + " " + (planet.sign || "—") + " " + (planet.degree || "") +
+        (planet.house ? " 第" + planet.house + "宫" : "") + (planet.retro ? " 逆行" : "");
+    }).join("；")));
+    facts.push(digestFact("主要相位", (boardData.aspects || []).slice(0, 8).map(function (aspect) {
+      return aspect.a + " " + aspect.name + " " + aspect.b + "（" + aspect.orb + "°）";
+    }).join("；")));
+    return digestCard("占星本命盘", facts);
+  }
+  BOARD_VIEWS.astrology = astroBoardView;
+  function pairBoardFacts(boardData, kind) {
+    var first = boardData.a_data || {}, second = boardData.b_data || {}, cross = boardData.cross || {};
+    var facts = [digestFact("甲方", first.name || "甲方"), digestFact("乙方", second.name || "乙方")];
+    if (kind === "bazi") {
+      facts.push(digestFact("甲方四柱十神", digestPillars(first.pillars, first.ten_gods)));
+      facts.push(digestFact("乙方四柱十神", digestPillars(second.pillars, second.ten_gods)));
+      facts.push(digestFact("甲方日主", (first.day_master || "—") + " · " +
+        ((first.strength || {}).level || "—") + " / " + ((first.strength || {}).favor || "—")));
+      facts.push(digestFact("乙方日主", (second.day_master || "—") + " · " +
+        ((second.strength || {}).level || "—") + " / " + ((second.strength || {}).favor || "—")));
+      var day = cross.day_pillar_relation || {}, dayPair = day.pair || {};
+      facts.push(digestFact("日柱夫妻宫", (dayPair.a || "—") + " / " + (dayPair.b || "—") + " · " +
+        (day.relations || []).map(function (relation) { return relation.relation; }).join("、")));
+      facts.push(digestFact("柱位关系", (cross.pillar_groups || []).filter(function (group) {
+        return (group.relations || []).some(function (relation) {
+          return !/无合冲刑害破/.test(relation.relation || "");
+        });
+      }).slice(0, 8).map(function (group) {
+        return group.who + "：" + (group.relations || []).filter(function (relation) {
+          return !/无合冲刑害破/.test(relation.relation || "");
+        }).map(function (relation) { return relation.relation; }).join("、");
+      }).join("；")));
+      var tenGod = cross.ten_god_cross || {};
+      facts.push(digestFact("跨盘十神", "甲看乙 " + (tenGod.a_day_master_over_b || []).map(function (x) {
+        return x.who + "=" + x.ten_god;
+      }).join("、") + "；乙看甲 " + (tenGod.b_day_master_over_a || []).map(function (x) {
+        return x.who + "=" + x.ten_god;
+      }).join("、")));
+      var spouse = cross.spouse_star || {};
+      ["a_spouse_star_in_b", "b_spouse_star_in_a"].forEach(function (key) {
+        var item = spouse[key];
+        if (item) facts.push(digestFact("配偶星 " + (item.seen_from || key),
+          (item.target_gods || []).join("、") + "：" + (item.present ? "对方盘中可见" : "对方盘中未见")));
+      });
+    } else if (kind === "ziwei") {
+      ["命宫", "夫妻宫", "福德宫"].forEach(function (name) {
+        [first, second].forEach(function (person, index) {
+          var palace = person[name] || {};
+          facts.push(digestFact((index ? "乙方" : "甲方") + name, (palace.branch || "—") +
+            " · " + digestStars(palace.majorStars, 3)));
+        });
+      });
+      [first, second].forEach(function (person, index) {
+        var mutagen = person.birth_mutagens || {}, parts = [];
+        ["禄", "权", "科", "忌"].forEach(function (key) {
+          (mutagen[key] || []).forEach(function (star) { parts.push(star.name + "化" + key); });
+        });
+        if (parts.length) facts.push(digestFact((index ? "乙方" : "甲方") + "生年四化", parts.join("、")));
+      });
+      ["夫妻宫对照", "命宫对照", "福德宫对照"].forEach(function (key) {
+        var item = cross[key] || {};
+        if (item.a || item.b) facts.push(digestFact(key, (item.a && item.a.branch ? item.a.branch : "—") +
+          " / " + (item.b && item.b.branch ? item.b.branch : "—")));
+      });
+      facts.push(digestFact("四化投射", (cross["四化投射"] || []).map(function (item) {
+        return item.from + " " + item.star + "化" + item.mutagen + "→" + item.to_name + item.to_palace;
+      }).slice(0, 8).join("；")));
+      ["运限时间线"].forEach(function (key) {
+        var item = cross[key] || {};
+        if (item.a || item.b) facts.push(digestFact(key, "甲 " + ((item.a || {}).decadal || {}).name +
+          " · 乙 " + ((item.b || {}).decadal || {}).name));
+      });
+    } else {
+      [first, second].forEach(function (person, index) {
+        var label = index ? "乙方" : "甲方";
+        facts.push(digestFact(label + "三方", "太阳 " + ((person.sun || {}).sign || "—") +
+          " · 月亮 " + ((person.moon || {}).sign || "—") + " · 上升 " + ((person.asc || {}).sign || "—")));
+      });
+      facts.push(digestFact("跨盘相位", (cross.aspects || []).slice(0, 10).map(function (aspect) {
+        return aspect.a + " " + aspect.name + " " + aspect.b + "（" + aspect.orb + "°）";
+      }).join("；")));
+    }
+    return facts;
+  }
+  function baziMarriageBoardView(boardData) {
+    return digestCard("八字合婚", pairBoardFacts(boardData, "bazi"));
+  }
+  BOARD_VIEWS.bazi_marriage = baziMarriageBoardView;
+  function ziweiMarriageBoardView(boardData) {
+    return digestCard("紫微合婚", pairBoardFacts(boardData, "ziwei"));
+  }
+  BOARD_VIEWS.ziwei_marriage = ziweiMarriageBoardView;
+  function astroMarriageBoardView(boardData) {
+    return digestCard("占星合盘", pairBoardFacts(boardData, "astro"));
+  }
+  BOARD_VIEWS.astrology_marriage = astroMarriageBoardView;
+  function huangliBoardView(boardData, board) {
+    var isPair = board && board.feature === "huangli_pair";
+    var info = boardData.jieqi_info || {};
+    var currentJieqi = info.current || info.prev || {};
+    var nextJieqi = info.next || {};
+    var facts = [
+      digestFact(isPair ? "择日" : "公历", boardData.solar),
+      digestFact("农历", boardData.lunar + " · " + (boardData.week || "")),
+      digestFact("干支生肖", (boardData.ganzhi || "") + " · " + (boardData.shengxiao || "")),
+      digestFact("宜", (boardData.yi || []).slice(0, 12).join("、")),
+      digestFact("忌", (boardData.ji || []).slice(0, 12).join("、")),
+      digestFact("吉神", (boardData.jishen || []).join("、")),
+      digestFact("凶煞", (boardData.xiongsha || []).join("、")),
+      digestFact("冲煞", (boardData.chong || "") + " · " + (boardData.sha || "") + " · 空亡 " + (boardData.kongwang || "")),
+      digestFact("值神", (boardData.tianshen || "") + "（" + (boardData.tianshen_type || "") + "）· " + (boardData.zhixing || "")),
+      digestFact("节气", (currentJieqi.name || "—") + (nextJieqi.name ? " → " + nextJieqi.name + "（" + (nextJieqi.time || "") + "）" : ""))
+    ];
+    return digestCard(isPair ? "双人择日" : "老黄历", facts);
+  }
+  BOARD_VIEWS.huangli = huangliBoardView;
+  BOARD_VIEWS.huangli_pair = huangliBoardView;
   function boardView(featureName, board) {
     if (!board) return "";
     var renderProjection = BOARD_VIEWS[featureName] || generalBoardView;
